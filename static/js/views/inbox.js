@@ -20,7 +20,7 @@ const InboxView = {
     const wrap = h('div', { class: 'view inbox-view', style: 'display:flex;flex-direction:column;height:100%;min-height:0;' });
     const hdr = h('div', { class: 'hdr' }, [
       h('div', { class: 'kelpie-brand' }, [
-        h('span', { class: 'kelpie-mark' }, [h('img', { src: 'kelpie-mark.png', alt: '', width: '22', height: '22' })]),
+        h('span', { class: 'kelpie-mark' }, [h('img', { src: 'kelpie-mark.png', alt: '', width: '28', height: '28' })]),
         h('h1', null, 'kelpie'),
       ]),
       h('span', { class: 'dot ' + (sse.connected ? 'up' : 'down'), id: 'conn-dot' }),
