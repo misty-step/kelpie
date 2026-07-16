@@ -1,0 +1,2996 @@
+/* ═══════════════════════════════════════════════════════════════════
+   aesthetic v0.25.0
+   The Misty Step design system. https://github.com/misty-step/aesthetic
+
+   The law:
+   · One size. Exactly one font size on every surface; the headline is
+     heavier and blacker, never larger.
+   · Three inks by three weights (400 / 550 / 800): nine registers.
+   · The accent is yours. Define your scheme and use it with judgment;
+     identity comes from ink, hairlines, type, and motion — never from
+     a color-counting rule. Color earns its place; it is not ambient.
+   · Status rides the glyph: danger, success, and warning color the
+     Lucide icon, never the sentence, never a filled pill.
+   · Every view fits the viewport. 100dvh screens, no page scrolling;
+     when content exceeds one screen, a quiet nav swaps views.
+   · Motion is feedback, never decoration: small, brief, eased, and
+     gone when the user prefers reduced motion. State resolutions are
+     gentler (--ae-gentle) and resolve once — success persists, it is
+     never rewound. Nothing changes size while it animates.
+   · Buttons are not links: contained ink shapes. Links navigate,
+     buttons act.
+   · Light and dark, defaulting to the system, with a user toggle.
+
+   Steering: every token is a CSS custom property; downstream projects
+   pin a named theme or steer the scheme — --ae-accent /
+   --ae-accent-dark, and the status triplet when their domain needs
+   different hues. Everything else is the shared identity.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── tokens ───────────────────────────────────────────────────────── */
+
+:root {
+  --ae-surface: #fcfcfc;
+  --ae-wash: #f3f3f3;
+  --ae-ink: #151515;
+  --ae-ink-muted: #737373;
+  --ae-ink-faint: #a3a3a3;
+  --ae-line: #e9e9e9;
+  --ae-accent: #2643d0;
+
+  /* status inks: hue rides the glyph, words stay ink */
+  --ae-ok: #15714b;
+  --ae-warn: #8a5f32;
+  --ae-err: #a84138;
+
+  /* categorical inks: identity, not judgment — N agents, N series, N
+     actors need N distinguishable hues with no severity meaning. Ride
+     the word on .ae-chip (see below); this is the one place a hue is
+     allowed to color text, because there is no glyph to carry it and
+     nothing is being judged. */
+  --ae-cat-0: #8c2f1f;
+  --ae-cat-1: #2c6e62;
+  --ae-cat-2: #a67c1e;
+  --ae-cat-3: #6b4c86;
+  --ae-cat-4: #46586b;
+  --ae-cat-5: #5b7444;
+  --ae-cat-6: #3d5a80;
+  --ae-cat-7: #a1452e;
+
+  /* dark counterparts, resolved by the mode blocks below */
+  --ae-surface-dark: #121212;
+  --ae-wash-dark: #1b1b1b;
+  --ae-ink-dark: #ededed;
+  --ae-ink-muted-dark: #8f8f8f;
+  --ae-ink-faint-dark: #5c5c5c;
+  --ae-line-dark: #262626;
+  --ae-accent-dark: #8c9eff;
+  --ae-ok-dark: #6fd2a8;
+  --ae-warn-dark: #c49d72;
+  --ae-err-dark: #e58379;
+  --ae-cat-0-dark: #d06a4f;
+  --ae-cat-1-dark: #54bba4;
+  --ae-cat-2-dark: #d8b25a;
+  --ae-cat-3-dark: #b98fe0;
+  --ae-cat-4-dark: #93a8c2;
+  --ae-cat-5-dark: #9bc47a;
+  --ae-cat-6-dark: #7ea1d1;
+  --ae-cat-7-dark: #e08a6a;
+
+  --ae-font: 'Geist', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --ae-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ae-w-regular: 400;
+  --ae-w-medium: 550;
+  --ae-w-black: 800;
+
+  --ae-measure: 38rem; /* rem: bars in the 13px chrome register must not shrink the measure */
+  --ae-measure-wide: 68rem;
+  --ae-radius: 0;
+  --ae-breakpoint-sm: 40rem; /* phones and narrow split-view: one-column data */
+  --ae-breakpoint-md: 48rem; /* tablet portrait: shell chrome leaves the side */
+  --ae-breakpoint-lg: 64rem; /* small laptop: boards can hold columns */
+
+  /* the spacing scale: consumers use these instead of ad-hoc em values.
+     The token-guard (015) will enforce them. Off-scale internal values
+     are left as literals — the scale is the vocabulary going forward. */
+  --ae-space-0: 0.1em; /* micro — tag padding, chrome adjustments */
+  --ae-space-1: 0.25em; /* tight — icon gaps, control insets */
+  --ae-space-2: 0.5em; /* small — button padding, small gaps */
+  --ae-space-3: 0.75em; /* medium — control padding, row gaps */
+  --ae-space-4: 1em; /* base — group padding, standard gap */
+  --ae-space-5: 1.5em; /* comfortable — section internals */
+  --ae-space-6: 2em; /* spacious — section gaps, stage padding */
+  --ae-space-7: 2.5em; /* large — document section spacing */
+  --ae-space-8: 3em; /* section — top-level margins */
+
+  /* z-index scale: named layers so consumers don't guess at magic numbers */
+  --ae-z-backdrop: 40; /* modal backdrop below its decision panel */
+  --ae-z-dialog: 41; /* modal decision panel */
+  --ae-z-pop: 50; /* portaled menus and popovers above modal decisions */
+  --ae-z-tip: 60; /* portaled tooltips above popovers and dialogs */
+  --ae-z-toast: 100; /* toasts, persistent notifications */
+
+  /* motion: feedback, never decoration */
+  --ae-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --ae-quick: 160ms;
+  --ae-soft: 240ms;
+  --ae-gentle: 480ms; /* state resolutions: slower than feedback, never abrupt */
+
+  color-scheme: light dark;
+}
+
+/* named themes: opt-in flavor presets over the same token contract.
+   Projects pin one on <html data-ae-theme="moss">, or include
+   recipes/theme.js to let users switch. Theme presets steer accent and
+   categorical inks; status semantics stay the house triplet unless a
+   project deliberately overrides them. */
+:root[data-ae-theme='ultramarine'] {
+  --ae-accent: #2643d0;
+  --ae-accent-dark: #8c9eff;
+  --ae-cat-0: #8c2f1f;
+  --ae-cat-1: #2c6e62;
+  --ae-cat-2: #a67c1e;
+  --ae-cat-3: #6b4c86;
+  --ae-cat-4: #46586b;
+  --ae-cat-5: #5b7444;
+  --ae-cat-6: #3d5a80;
+  --ae-cat-7: #a1452e;
+  --ae-cat-0-dark: #d06a4f;
+  --ae-cat-1-dark: #54bba4;
+  --ae-cat-2-dark: #d8b25a;
+  --ae-cat-3-dark: #b98fe0;
+  --ae-cat-4-dark: #93a8c2;
+  --ae-cat-5-dark: #9bc47a;
+  --ae-cat-6-dark: #7ea1d1;
+  --ae-cat-7-dark: #e08a6a;
+}
+
+:root[data-ae-theme='moss'] {
+  --ae-accent: #2f6b3f;
+  --ae-accent-dark: #80d98e;
+  --ae-cat-0: #6f3f1f;
+  --ae-cat-1: #2f6b3f;
+  --ae-cat-2: #8a6a1f;
+  --ae-cat-3: #5d5686;
+  --ae-cat-4: #4b6470;
+  --ae-cat-5: #55743d;
+  --ae-cat-6: #3d6472;
+  --ae-cat-7: #934b2f;
+  --ae-cat-0-dark: #d28a5f;
+  --ae-cat-1-dark: #80d98e;
+  --ae-cat-2-dark: #d6b65c;
+  --ae-cat-3-dark: #b8a8e8;
+  --ae-cat-4-dark: #9ab8c4;
+  --ae-cat-5-dark: #a8d68a;
+  --ae-cat-6-dark: #88c4d2;
+  --ae-cat-7-dark: #df8a62;
+}
+
+:root[data-ae-theme='ember'] {
+  --ae-accent: #c2410c;
+  --ae-accent-dark: #ff8a5c;
+  --ae-cat-0: #9b2f1f;
+  --ae-cat-1: #6b5a2f;
+  --ae-cat-2: #8a5f32;
+  --ae-cat-3: #6d4c86;
+  --ae-cat-4: #5a6172;
+  --ae-cat-5: #5b7444;
+  --ae-cat-6: #3d5a80;
+  --ae-cat-7: #a1452e;
+  --ae-cat-0-dark: #f08a70;
+  --ae-cat-1-dark: #c49d72;
+  --ae-cat-2-dark: #ffb45c;
+  --ae-cat-3-dark: #b98fe0;
+  --ae-cat-4-dark: #93a8c2;
+  --ae-cat-5-dark: #9bc47a;
+  --ae-cat-6-dark: #7ea1d1;
+  --ae-cat-7-dark: #ff8a5c;
+}
+
+:root[data-ae-theme='violet'] {
+  --ae-accent: #6d28d9;
+  --ae-accent-dark: #c4a3ff;
+  --ae-cat-0: #8c2f5a;
+  --ae-cat-1: #2c6e62;
+  --ae-cat-2: #8a721e;
+  --ae-cat-3: #6d28d9;
+  --ae-cat-4: #46586b;
+  --ae-cat-5: #5b7444;
+  --ae-cat-6: #3d5a80;
+  --ae-cat-7: #9945a1;
+  --ae-cat-0-dark: #e08ab8;
+  --ae-cat-1-dark: #54bba4;
+  --ae-cat-2-dark: #d8b25a;
+  --ae-cat-3-dark: #c4a3ff;
+  --ae-cat-4-dark: #93a8c2;
+  --ae-cat-5-dark: #9bc47a;
+  --ae-cat-6-dark: #7ea1d1;
+  --ae-cat-7-dark: #df8ae8;
+}
+
+/* auto dark: follows the OS unless the page pins a mode */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-ae-mode='light']) {
+    --ae-surface: var(--ae-surface-dark);
+    --ae-wash: var(--ae-wash-dark);
+    --ae-ink: var(--ae-ink-dark);
+    --ae-ink-muted: var(--ae-ink-muted-dark);
+    --ae-ink-faint: var(--ae-ink-faint-dark);
+    --ae-line: var(--ae-line-dark);
+    --ae-accent: var(--ae-accent-dark);
+    --ae-ok: var(--ae-ok-dark);
+    --ae-warn: var(--ae-warn-dark);
+    --ae-err: var(--ae-err-dark);
+    --ae-cat-0: var(--ae-cat-0-dark);
+    --ae-cat-1: var(--ae-cat-1-dark);
+    --ae-cat-2: var(--ae-cat-2-dark);
+    --ae-cat-3: var(--ae-cat-3-dark);
+    --ae-cat-4: var(--ae-cat-4-dark);
+    --ae-cat-5: var(--ae-cat-5-dark);
+    --ae-cat-6: var(--ae-cat-6-dark);
+    --ae-cat-7: var(--ae-cat-7-dark);
+  }
+}
+
+/* pinned modes narrow color-scheme so UA widgets (scrollbars, form
+   controls) match the pinned mode instead of following the OS */
+.light,
+[data-ae-mode='light'] {
+  color-scheme: light;
+}
+
+/* pinned dark: class or attribute set by the site's mode toggle */
+:root.dark,
+:root[data-ae-mode='dark'] {
+  color-scheme: dark;
+  --ae-surface: var(--ae-surface-dark);
+  --ae-wash: var(--ae-wash-dark);
+  --ae-ink: var(--ae-ink-dark);
+  --ae-ink-muted: var(--ae-ink-muted-dark);
+  --ae-ink-faint: var(--ae-ink-faint-dark);
+  --ae-line: var(--ae-line-dark);
+  --ae-accent: var(--ae-accent-dark);
+  --ae-ok: var(--ae-ok-dark);
+  --ae-warn: var(--ae-warn-dark);
+  --ae-err: var(--ae-err-dark);
+  --ae-cat-0: var(--ae-cat-0-dark);
+  --ae-cat-1: var(--ae-cat-1-dark);
+  --ae-cat-2: var(--ae-cat-2-dark);
+  --ae-cat-3: var(--ae-cat-3-dark);
+  --ae-cat-4: var(--ae-cat-4-dark);
+  --ae-cat-5: var(--ae-cat-5-dark);
+  --ae-cat-6: var(--ae-cat-6-dark);
+  --ae-cat-7: var(--ae-cat-7-dark);
+}
+
+/* ── base ─────────────────────────────────────────────────────────── */
+
+html {
+  scroll-behavior: auto;
+}
+
+body {
+  margin: 0;
+  background: var(--ae-surface);
+  color: var(--ae-ink);
+  font-family: var(--ae-font);
+  font-size: 16px;
+  font-weight: var(--ae-w-regular);
+  line-height: 1.8;
+  cursor: default; /* no I-beam on static text; pointer/text are earned */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* one size: nothing earns scale, only ink and weight */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+li,
+dt,
+dd,
+blockquote,
+figcaption,
+label,
+input,
+textarea,
+button,
+table {
+  font-size: 1em;
+  font-family: inherit;
+  line-height: inherit;
+  margin: 0;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--ae-font-mono);
+  font-size: 0.92em;
+}
+
+::selection {
+  background: var(--ae-wash);
+  color: var(--ae-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ae-ink);
+  outline-offset: 3px;
+}
+
+/* links: ink at rest, warm to accent on hover (the locked treatment).
+   Approved alternates, documented for easy change, live in the README:
+   marker sweep and draw-on-hover. */
+a {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--ae-ink-faint);
+  padding-block: 0.35em;
+  margin-block: -0.35em;
+  transition:
+    color var(--ae-quick) var(--ae-ease),
+    text-decoration-color var(--ae-quick) var(--ae-ease);
+}
+
+a:hover {
+  color: var(--ae-accent);
+  text-decoration-color: currentColor;
+}
+
+/* list rows: the whole row is the link, so the cursor never crosses a
+   dead band between rows */
+.ae-row-link {
+  display: block;
+  text-decoration: none;
+  padding: 0.42em 0;
+  margin-block: 0;
+  color: inherit;
+}
+
+.ae-row-link:hover {
+  color: inherit;
+}
+
+.ae-row-link .ae-item {
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-row-link:hover .ae-item {
+  color: var(--ae-accent);
+}
+
+/* ── screens: every view fits the viewport ────────────────────────── */
+
+/* the screen: one viewport, no page scroll */
+.ae-screen {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* a bar: quiet chrome at the top or bottom of a screen */
+.ae-bar {
+  flex: none;
+  width: min(var(--ae-measure), 100% - 5rem);
+  margin-inline: auto;
+  padding: 1.4em 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4em 1.5em;
+}
+
+/* the stage: the screen's content, vertically centered; a view that
+   cannot fit scrolls inside the stage, never the page */
+.ae-stage {
+  flex: 1;
+  min-height: 0;
+  width: min(var(--ae-measure), 100% - 5rem);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.ae-stage > * {
+  margin-block: auto;
+  padding-block: var(--ae-space-5);
+}
+
+/* long documents: top-aligned instead of centered */
+.ae-stage-scroll > * {
+  margin-block: 0;
+  padding-block: var(--ae-space-6);
+}
+
+/* a wide screen: catalog, specimen, and dashboard shapes that cannot
+   live in 38rem. One decision per screen — set it on .ae-screen. */
+.ae-wide .ae-bar,
+.ae-wide .ae-stage {
+  width: min(var(--ae-measure-wide), 100% - 5rem);
+}
+
+/* a view: one screenful of content; remount to replay the entrance */
+.ae-view {
+  animation: ae-enter var(--ae-soft) var(--ae-ease) both;
+}
+
+/* hash-routed views: one mounts at a time; the display toggle remounts
+   the view and replays its entrance (behavior: recipes/views.js) */
+[data-route] {
+  display: none;
+}
+
+[data-route].is-on {
+  display: block;
+}
+
+@keyframes ae-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* the nav: quiet words with a sliding ink underline. The site positions
+   .ae-nav-ind under the active item (left/width) on view change.
+   .ae-tabs is the same instrument pointed at panels instead of views:
+   role="tablist" buttons, aria-selected marks the open one. */
+.ae-nav,
+.ae-tabs {
+  position: relative;
+  display: flex;
+  gap: var(--ae-space-6);
+}
+
+.ae-nav a,
+.ae-nav button,
+.ae-tabs a,
+.ae-tabs button {
+  background: transparent;
+  border: 0;
+  padding: 0 0 0.6em;
+  margin-block: 0;
+  cursor: pointer;
+  color: var(--ae-ink-muted);
+  font-weight: var(--ae-w-medium);
+  text-decoration: none;
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-nav a:hover,
+.ae-nav button:hover,
+.ae-tabs a:hover,
+.ae-tabs button:hover {
+  color: var(--ae-ink);
+}
+
+.ae-nav [aria-current],
+.ae-nav .is-active,
+.ae-tabs [aria-current],
+.ae-tabs [aria-selected='true'],
+.ae-tabs .is-active {
+  color: var(--ae-ink);
+}
+
+.ae-nav-ind {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  background: var(--ae-ink);
+  transition:
+    left var(--ae-soft) var(--ae-ease),
+    width var(--ae-soft) var(--ae-ease);
+}
+
+/* chrome: the one sanctioned second size. Content gets 16px; chrome
+   (footers, utility links, metadata) gets 13px and muted ink. */
+.ae-chrome {
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+}
+
+.ae-chrome a {
+  color: var(--ae-ink-muted);
+  text-decoration: none;
+}
+
+.ae-chrome a:hover {
+  color: var(--ae-ink);
+}
+
+/* the footer: hairline-topped, two ends, chrome register */
+.ae-foot {
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+  border-top: 1px solid var(--ae-line);
+  padding-top: var(--ae-space-4);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--ae-space-4) var(--ae-space-6);
+  flex-wrap: wrap;
+}
+
+.ae-foot a {
+  color: var(--ae-ink-muted);
+  text-decoration: none;
+}
+
+.ae-foot a:hover {
+  color: var(--ae-ink);
+}
+
+.ae-foot-links {
+  display: inline-flex;
+  gap: var(--ae-space-5);
+  align-items: center;
+}
+
+/* icons: Lucide (ISC), inlined as SVG symbols. 1.5px stroke, round
+   caps, sized to ride alongside text. */
+.ae-icon {
+  width: 1.2em;
+  height: 1.2em;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  vertical-align: -0.2em;
+}
+
+/* icon-forward rows: Lucide gives the eye a scan target, but the law
+   stays unchanged — status hue rides the SVG, words stay ink. */
+.ae-status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ae-space-2);
+  color: var(--ae-ink);
+}
+
+.ae-status .ae-icon {
+  flex: none;
+}
+
+.ae-status-label {
+  color: var(--ae-ink);
+}
+
+/* Headless triggers render real buttons; remove UA chrome when a status
+   mark is used as the trigger without turning its words into a button. */
+button.ae-status {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.ae-icon-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--ae-space-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.ae-list-icon {
+  flex: none;
+  color: var(--ae-ink-muted);
+}
+
+.ae-icon-row:hover .ae-list-icon {
+  color: var(--ae-ink);
+}
+
+.ae-icon-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ae-icon-row-meta {
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+}
+
+/* decomposed list rows: incident feeds and dense activity lists should not
+   collapse into "time · app · type · status" prose. Each field gets a
+   label, a value, and an optional Lucide/app mark; status hue still rides
+   only the glyph. Compose .ae-row-link when the whole row navigates. */
+.ae-list-rows {
+  display: grid;
+  border-block: 1px solid var(--ae-line);
+}
+
+.ae-list-row {
+  display: grid;
+  grid-template-columns:
+    minmax(5.5em, 0.8fr) minmax(9em, 1.25fr) minmax(9em, 1fr)
+    minmax(7em, 0.9fr);
+  align-items: center;
+  gap: var(--ae-space-4);
+  padding: 0.68em 0;
+  border-bottom: 1px solid var(--ae-line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.ae-list-row:last-child {
+  border-bottom: 0;
+}
+
+.ae-list-row:hover {
+  color: inherit;
+}
+
+.ae-list-cell {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: var(--ae-space-2);
+  align-items: center;
+}
+
+.ae-list-cell:has(> .ae-icon),
+.ae-list-cell:has(> .ae-app-mark) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.ae-list-cell > .ae-icon,
+.ae-list-cell > .ae-app-mark {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.ae-list-cell > .ae-icon:not(.ae-ok):not(.ae-warn):not(.ae-err) {
+  flex: none;
+  color: var(--ae-ink-muted);
+}
+
+.ae-list-label {
+  grid-column: 1;
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  color: var(--ae-ink-faint);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ae-list-value {
+  grid-column: 1;
+  min-width: 0;
+  color: var(--ae-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-list-cell:has(> .ae-icon) > .ae-list-label,
+.ae-list-cell:has(> .ae-icon) > .ae-list-value,
+.ae-list-cell:has(> .ae-app-mark) > .ae-list-label,
+.ae-list-cell:has(> .ae-app-mark) > .ae-list-value {
+  grid-column: 2;
+}
+
+.ae-list-time .ae-list-value {
+  font-family: var(--ae-font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ae-ink-muted);
+}
+
+.ae-list-status {
+  justify-self: end;
+}
+
+.ae-list-status .ae-list-value {
+  font-weight: var(--ae-w-medium);
+}
+
+/* app identity: a Lucide project mark sized by the register it lives
+   in. The same mark works in a 13px rail and a 16px header. */
+.ae-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ae-space-3);
+  color: inherit;
+  text-decoration: none;
+  padding-block: 0.2em;
+  margin-block: 0;
+}
+
+.ae-logo:hover {
+  color: inherit;
+}
+
+.ae-logo .ae-name {
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-logo:hover .ae-name {
+  color: var(--ae-accent);
+}
+
+.ae-logo-compact {
+  gap: var(--ae-space-2);
+  font-size: 13px;
+}
+
+.ae-app-mark {
+  width: 2em;
+  height: 2em;
+  border: 1px solid var(--ae-line);
+  color: var(--ae-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.ae-app-mark .ae-icon {
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: 0;
+}
+
+.ae-logo-compact .ae-app-mark {
+  width: 1.8em;
+  height: 1.8em;
+}
+
+/* the mode toggle: an icon button; sun and moon rotate-crossfade.
+   Markup: button.ae-mode > svg.ae-icon.ae-sun + svg.ae-icon.ae-moon */
+.ae-mode {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2em;
+  height: 2.2em;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ae-ink-muted);
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+/* the icons are absolutely stacked, so the button has no in-flow text;
+   this zero-width space gives it a real baseline so bars can
+   baseline-align it with neighboring links */
+.ae-mode::before {
+  content: '\200b';
+}
+
+.ae-mode:hover {
+  color: var(--ae-ink);
+}
+
+.ae-mode .ae-icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1.25em;
+  height: 1.25em;
+  transition:
+    opacity var(--ae-quick) var(--ae-ease),
+    transform var(--ae-quick) var(--ae-ease);
+}
+
+.ae-mode .ae-sun {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+.ae-mode .ae-moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.6);
+}
+
+.dark .ae-mode .ae-sun,
+[data-ae-mode='dark'] .ae-mode .ae-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.6);
+}
+
+.dark .ae-mode .ae-moon,
+[data-ae-mode='dark'] .ae-mode .ae-moon {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+/* a panel: soft depth for dense content (forms). Radius stays 0. */
+.ae-panel {
+  background: var(--ae-surface);
+  padding: var(--ae-space-6);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 28px rgba(0, 0, 0, 0.06);
+}
+
+.dark .ae-panel,
+[data-ae-mode='dark'] .ae-panel {
+  background: var(--ae-wash);
+  box-shadow: none;
+}
+
+/* auto dark (no pinned mode): panel and mode icon follow the OS */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-ae-mode='light']) .ae-panel {
+    background: var(--ae-wash);
+    box-shadow: none;
+  }
+
+  :root:not(.light):not([data-ae-mode='light']) .ae-mode .ae-sun {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.6);
+  }
+
+  :root:not(.light):not([data-ae-mode='light']) .ae-mode .ae-moon {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+
+  :root:not(.light):not([data-ae-mode='light']) dialog.ae-dialog,
+  :root:not(.light):not([data-ae-mode='light']) .ae-dialog-panel {
+    background: var(--ae-wash);
+    box-shadow: none;
+  }
+
+  :root:not(.light):not([data-ae-mode='light']) dialog.ae-dialog::backdrop,
+  :root:not(.light):not([data-ae-mode='light']) .ae-dialog-backdrop {
+    background: rgba(18, 18, 18, 0.4);
+  }
+
+  :root:not(.light):not([data-ae-mode='light']) .ae-pop,
+  :root:not(.light):not([data-ae-mode='light']) .ae-pop-surface,
+  :root:not(.light):not([data-ae-mode='light']) .ae-toast {
+    background: var(--ae-wash);
+    box-shadow: none;
+  }
+
+  :root:not(.light):not([data-ae-mode='light']) [data-ae-tip]::after,
+  :root:not(.light):not([data-ae-mode='light']) .ae-tip-surface {
+    background: var(--ae-wash);
+  }
+}
+
+/* the dialog: the panel costume in the top layer. A decision is asked
+   in a soft-depth panel over a whisper of paper dim; Escape and the
+   quiet button decline it. Pair with <dialog> + showModal(). */
+dialog.ae-dialog {
+  border: 0;
+  border-radius: var(--ae-radius);
+  background: var(--ae-surface);
+  color: var(--ae-ink);
+  width: min(26em, calc(100vw - 3em));
+  box-sizing: border-box;
+  padding: var(--ae-space-6);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 12px 36px rgba(0, 0, 0, 0.09);
+}
+
+dialog.ae-dialog[open] {
+  animation: ae-enter var(--ae-soft) var(--ae-ease) both;
+}
+
+dialog.ae-dialog::backdrop {
+  background: rgba(252, 252, 252, 0.4);
+}
+
+.dark dialog.ae-dialog,
+[data-ae-mode='dark'] dialog.ae-dialog {
+  background: var(--ae-wash);
+  box-shadow: none;
+}
+
+.dark dialog.ae-dialog::backdrop,
+[data-ae-mode='dark'] dialog.ae-dialog::backdrop {
+  background: rgba(18, 18, 18, 0.4);
+}
+
+/* Headless dialog anatomy: Base UI renders separate popup and backdrop
+   elements rather than a native <dialog>. Behavior stays with Base UI;
+   these classes carry the same Aesthetic costume. */
+.ae-dialog-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  z-index: var(--ae-z-dialog);
+  border: 0;
+  border-radius: var(--ae-radius);
+  background: var(--ae-surface);
+  color: var(--ae-ink);
+  width: min(26em, calc(100vw - 3em));
+  box-sizing: border-box;
+  padding: var(--ae-space-6);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 12px 36px rgba(0, 0, 0, 0.09);
+  outline: none;
+}
+
+.ae-dialog-panel[data-open] {
+  animation: ae-enter var(--ae-soft) var(--ae-ease) both;
+}
+
+.ae-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ae-z-backdrop);
+  background: rgba(252, 252, 252, 0.4);
+}
+
+.dark .ae-dialog-panel,
+[data-ae-mode='dark'] .ae-dialog-panel {
+  background: var(--ae-wash);
+  box-shadow: none;
+}
+
+.dark .ae-dialog-backdrop,
+[data-ae-mode='dark'] .ae-dialog-backdrop {
+  background: rgba(18, 18, 18, 0.4);
+}
+
+/* the dialog's title and action row */
+.ae-dialog-title {
+  font-weight: var(--ae-w-black);
+  margin-bottom: var(--ae-space-2);
+}
+
+.ae-dialog-acts {
+  display: flex;
+  gap: var(--ae-space-4);
+  justify-content: flex-end;
+  margin-top: 1.8em;
+}
+
+/* the popover: a slip of surface anchored to its invoker — hairline
+   frame, soft depth, no dim. Pair with the native popover attribute
+   (or popovertarget); the recipe places it by the anchor. */
+.ae-pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  border: 1px solid var(--ae-line);
+  background: var(--ae-surface);
+  color: var(--ae-ink);
+  width: max-content;
+  max-width: 22em;
+  padding: 1em 1.2em;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 28px rgba(0, 0, 0, 0.06);
+}
+
+.ae-pop:popover-open {
+  animation: ae-enter var(--ae-quick) var(--ae-ease) both;
+}
+
+.ae-pop::backdrop {
+  background: transparent;
+}
+
+/* a popover holding only a menu drops the padding; the menu's own
+   inset carries it */
+.ae-pop > .ae-menu:only-child {
+  margin: -1em -1.2em;
+  border: 0;
+}
+
+.dark .ae-pop,
+[data-ae-mode='dark'] .ae-pop {
+  background: var(--ae-wash);
+  box-shadow: none;
+}
+
+/* Headless menu/popover popup: its Positioner owns geometry. */
+.ae-pop-positioner {
+  z-index: var(--ae-z-pop);
+}
+
+.ae-pop-surface {
+  position: relative;
+  z-index: var(--ae-z-pop);
+  border: 1px solid var(--ae-line);
+  background: var(--ae-surface);
+  color: var(--ae-ink);
+  width: max-content;
+  max-width: 22em;
+  padding: 1em 1.2em;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 28px rgba(0, 0, 0, 0.06);
+  outline: none;
+}
+
+.ae-pop-surface[data-open] {
+  animation: ae-enter var(--ae-quick) var(--ae-ease) both;
+}
+
+.ae-pop-surface > .ae-menu:only-child {
+  margin: -1em -1.2em;
+  border: 0;
+}
+
+.dark .ae-pop-surface,
+[data-ae-mode='dark'] .ae-pop-surface {
+  background: var(--ae-wash);
+  box-shadow: none;
+}
+
+/* the tip: a whisper that answers hover — chrome-register words in a
+   hairline slip. Patience built in: it waits a beat on hover, answers
+   focus at once. Set the words in data-ae-tip; keep them short. */
+[data-ae-tip] {
+  position: relative;
+}
+
+[data-ae-tip]::after {
+  content: attr(data-ae-tip);
+  position: absolute;
+  bottom: calc(100% + 0.6em);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ae-surface);
+  color: var(--ae-ink-muted);
+  border: 1px solid var(--ae-line);
+  font-family: var(--ae-font);
+  font-size: 13px;
+  font-weight: var(--ae-w-regular);
+  letter-spacing: normal;
+  line-height: 1.5;
+  padding: 0.25em 0.7em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: var(--ae-z-tip);
+  transition: opacity var(--ae-quick) var(--ae-ease);
+}
+[data-ae-tip]:hover::after {
+  opacity: 1;
+  transition-delay: 450ms;
+}
+
+[data-ae-tip]:focus-visible::after {
+  opacity: 1;
+}
+
+.dark [data-ae-tip]::after,
+[data-ae-mode='dark'] [data-ae-tip]::after {
+  background: var(--ae-wash);
+}
+
+/* Headless tooltip popup: a real element instead of [data-ae-tip]'s
+   generated pseudo-element. Base UI owns delay and positioning. */
+.ae-tip-positioner {
+  z-index: var(--ae-z-tip);
+}
+
+.ae-tip-surface {
+  z-index: var(--ae-z-tip);
+  background: var(--ae-surface);
+  color: var(--ae-ink-muted);
+  border: 1px solid var(--ae-line);
+  font-family: var(--ae-font);
+  font-size: 13px;
+  font-weight: var(--ae-w-regular);
+  letter-spacing: normal;
+  line-height: 1.5;
+  padding: 0.25em 0.7em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ae-tip-surface[data-open] {
+  animation: ae-enter var(--ae-quick) var(--ae-ease) both;
+}
+
+.dark .ae-tip-surface,
+[data-ae-mode='dark'] .ae-tip-surface {
+  background: var(--ae-wash);
+}
+
+/* the toast: news arrives at the edge and waits to be read. The tray
+   stacks bottom-right; each toast is a slip with the status on its
+   glyph. It persists until dismissed or replaced — never an anxious
+   timer by default. Behavior glue: recipes (aeToast). */
+.ae-toasts {
+  position: fixed;
+  right: 1.4em;
+  bottom: 1.4em;
+  z-index: var(--ae-z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6em;
+}
+
+.ae-toast {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  background: var(--ae-surface);
+  border: 1px solid var(--ae-line);
+  color: var(--ae-ink);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 0.7em 1.1em;
+  max-width: 26em;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 28px rgba(0, 0, 0, 0.06);
+  animation: ae-enter var(--ae-soft) var(--ae-ease) both;
+}
+
+.ae-toast.is-leaving {
+  opacity: 0;
+  transition: opacity var(--ae-quick) var(--ae-ease);
+}
+
+.ae-toast-x {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-left: 0.4em;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: inherit;
+  color: var(--ae-ink-faint);
+  cursor: pointer;
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-toast-x:hover {
+  color: var(--ae-ink);
+}
+
+.dark .ae-toast,
+[data-ae-mode='dark'] .ae-toast {
+  background: var(--ae-wash);
+  box-shadow: none;
+}
+
+/* ── registers ────────────────────────────────────────────────────── */
+
+/* the name: heavy and spaced, never large */
+.ae-name {
+  font-weight: var(--ae-w-black);
+  letter-spacing: 0.38em;
+}
+
+a.ae-name {
+  text-decoration: none;
+}
+
+/* the lede: the page's whole argument, plainly */
+.ae-lede {
+  max-width: 34em;
+  text-wrap: pretty;
+}
+
+/* a group: whitespace is the only divider */
+.ae-group {
+  margin-bottom: 2.6em;
+}
+
+.ae-group:last-child {
+  margin-bottom: 0;
+}
+
+.ae-group p {
+  margin-bottom: 0.15em;
+}
+
+/* a group heading: muted, spaced, medium */
+.ae-h {
+  font-weight: var(--ae-w-medium);
+  color: var(--ae-ink-muted);
+  letter-spacing: 0.18em;
+  margin-bottom: 0.7em;
+}
+
+/* an item that matters: medium ink */
+.ae-item {
+  font-weight: var(--ae-w-medium);
+}
+
+/* supporting matter: muted ink */
+.ae-dim {
+  color: var(--ae-ink-muted);
+}
+
+/* the accent: yours to define and spend with judgment */
+.ae-accent {
+  color: var(--ae-accent);
+  font-weight: var(--ae-w-medium);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 0.2em;
+}
+
+/* status inks: put these on the glyph (svg.ae-icon), never the
+   sentence — the word stays ink, the icon carries the hue */
+.ae-ok {
+  color: var(--ae-ok);
+}
+
+.ae-warn {
+  color: var(--ae-warn);
+}
+
+.ae-err {
+  color: var(--ae-err);
+}
+
+/* the tag: a word in the plate-caption voice — mono, spaced, hairline
+   at most. This is the badge, refused: no fill, no pill; status comes
+   as a glyph beside the word, never as a colored box. */
+.ae-tag {
+  display: inline-block;
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.14em;
+  color: var(--ae-ink-muted);
+  border: 1px solid var(--ae-line);
+  padding: 0.1em 0.6em;
+  vertical-align: 0.1em;
+}
+
+.ae-tag-bare {
+  border: 0;
+  padding: 0;
+}
+
+/* the chip: a categorical tag — N agents, N series, N actors need N
+   distinguishable hues with no severity meaning. This is not status
+   (.ae-ok/.ae-warn/.ae-err never apply here); the hue identifies, it
+   doesn't judge, so it's the one place the law lets a hue ride the
+   word instead of a glyph. Same grammar as .ae-tag — mono, hairline,
+   no fill — with the category's hue on both the border and the word
+   (currentColor ties them). Compose with .ae-cat-0 through .ae-cat-7;
+   .ae-chip-sub holds an optional muted trailing detail. */
+.ae-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  border: 1px solid currentColor;
+  padding: 0.12em 0.55em;
+  color: var(--ae-ink-muted);
+}
+
+.ae-chip-sub {
+  opacity: 0.75;
+}
+
+/* stat badges: a compact header summary, not a prose run. Values are
+   tabular and strong; labels are quiet; status, when needed, rides the
+   optional mark slot with .ae-ok/.ae-warn/.ae-err. Compose .ae-chip
+   inside only for categorical side-detail, never severity. */
+.ae-stat-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--ae-space-2);
+}
+
+.ae-stat-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ae-space-2);
+  border: 1px solid var(--ae-line);
+  padding: 0.34em 0.65em;
+  color: var(--ae-ink);
+  white-space: nowrap;
+}
+
+.ae-stat-mark {
+  font-family: var(--ae-font-mono);
+  font-size: 13px;
+  font-weight: var(--ae-w-black);
+}
+
+.ae-stat-value {
+  font-family: var(--ae-font-mono);
+  font-weight: var(--ae-w-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.ae-stat-label {
+  color: var(--ae-ink-muted);
+}
+
+.ae-stat-badge .ae-chip {
+  margin-left: var(--ae-space-1);
+}
+
+.ae-cat-0 {
+  color: var(--ae-cat-0);
+}
+
+.ae-cat-1 {
+  color: var(--ae-cat-1);
+}
+
+.ae-cat-2 {
+  color: var(--ae-cat-2);
+}
+
+.ae-cat-3 {
+  color: var(--ae-cat-3);
+}
+
+.ae-cat-4 {
+  color: var(--ae-cat-4);
+}
+
+.ae-cat-5 {
+  color: var(--ae-cat-5);
+}
+
+.ae-cat-6 {
+  color: var(--ae-cat-6);
+}
+
+.ae-cat-7 {
+  color: var(--ae-cat-7);
+}
+
+/* the keycap: a quiet square of wash around the key's name */
+kbd {
+  background: var(--ae-wash);
+  border: 1px solid var(--ae-line);
+  padding: 0.08em 0.5em;
+}
+
+/* ── forms: a line, not a box ─────────────────────────────────────── */
+
+.ae-label {
+  display: block;
+  font-weight: var(--ae-w-medium);
+  margin-bottom: var(--ae-space-0);
+}
+
+.ae-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--ae-ink);
+  cursor: text;
+  border: 0;
+  border-bottom: 1px solid var(--ae-line);
+  border-radius: var(--ae-radius);
+  padding: 0.4em 0 calc(0.4em - 1px);
+  transition: border-color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-input::placeholder {
+  color: var(--ae-ink-faint);
+}
+
+/* the focus ring: a 2px underline (not 1px) so the state reads at a
+   glance, never a glow. padding-bottom compensates the extra px so
+   the field doesn't shift height on focus. */
+.ae-input:focus-visible {
+  outline: none;
+  border-bottom-width: 2px;
+  border-bottom-color: var(--ae-ink);
+}
+
+textarea.ae-input {
+  resize: none;
+  min-height: 5.5em;
+}
+
+/* field validation: the line confesses, the glyph carries the hue,
+   the sentence stays ink. Set aria-invalid on the field; put the
+   message in a field note with a status icon. */
+.ae-input[aria-invalid='true'] {
+  border-bottom-color: var(--ae-err);
+}
+
+.ae-field-note {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45em;
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+  margin-top: 0.4em;
+}
+
+/* buttons are not links: contained shape, ink, never resizing.
+   Primary is solid ink by default; .ae-button-quiet is the hairline
+   secondary. Spend the accent on a button when the project's scheme calls
+   for it — where the accent goes is the consumer's judgment, not a rule. */
+.ae-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ae-space-2);
+  background: var(--ae-ink);
+  border: 1px solid var(--ae-ink);
+  border-radius: var(--ae-radius);
+  color: var(--ae-surface);
+  font-weight: var(--ae-w-medium);
+  padding: 0.55em 1.5em;
+  min-height: 44px;
+  cursor: pointer;
+  transition:
+    opacity var(--ae-quick) var(--ae-ease),
+    background-color var(--ae-quick) var(--ae-ease),
+    transform var(--ae-quick) var(--ae-ease);
+}
+
+.ae-button:hover {
+  opacity: 0.9;
+}
+
+.ae-button:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.ae-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+  transform: none;
+}
+
+.ae-button-quiet {
+  background: transparent;
+  color: var(--ae-ink);
+}
+
+.ae-button-quiet:hover {
+  background: var(--ae-wash);
+  opacity: 1;
+}
+
+/* the compact scale: a button living in the 13px chrome register —
+   toolbars, table rows, rails. Same shapes, smaller breath. */
+.ae-button-compact {
+  font-size: 13px;
+  padding: 0.35em 1em;
+  min-height: 32px;
+}
+
+/* the send moment: the label gives way to the resolved state, gently,
+   once. Success persists — disable the button instead of resetting it.
+   Markup: <button class="ae-button ae-send">
+             <span class="ae-send-label">Send message</span>
+             <span class="ae-send-done" aria-hidden="true">Sent
+               <svg class="ae-icon">…check…</svg></span>
+           </button>
+   Add .is-sent to resolve. The status icon sits AFTER the word.
+   The button never changes size: the resting label defines the box and
+   the resolved layer is absolutely stacked over it. */
+.ae-send {
+  position: relative;
+  overflow: hidden;
+}
+
+.ae-send .ae-send-label,
+.ae-send .ae-send-done {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ae-space-2);
+  transition:
+    opacity var(--ae-gentle) var(--ae-ease),
+    transform var(--ae-gentle) var(--ae-ease);
+}
+
+.ae-send .ae-send-done {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(45%);
+}
+
+.ae-send.is-sent .ae-send-label {
+  opacity: 0;
+  transform: translateY(-55%);
+}
+
+.ae-send.is-sent .ae-send-done {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ae-send.is-sent,
+.ae-send.is-sent:disabled {
+  opacity: 1;
+}
+
+/* ── choice marks: squares, since radius is 0 everywhere ──────────── */
+
+/* a choice row: the mark and its words share a line and one cursor */
+.ae-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.65em;
+  cursor: pointer;
+}
+
+.ae-choice + .ae-choice {
+  margin-top: 0.3em;
+}
+
+/* the checkbox: a pen-stroke square that fills with ink; the check is
+   drawn in surface. The radio is the same square holding an ink core —
+   a circle would be the only curve in the system, so there isn't one. */
+input.ae-check,
+input.ae-radio {
+  appearance: none;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  margin: 0;
+  display: inline-grid;
+  place-content: center;
+  background: transparent;
+  border: 1px solid var(--ae-ink-muted);
+  border-radius: var(--ae-radius);
+  cursor: pointer;
+  vertical-align: -0.12em;
+  transition:
+    border-color var(--ae-quick) var(--ae-ease),
+    background-color var(--ae-quick) var(--ae-ease);
+}
+
+input.ae-check:hover,
+input.ae-radio:hover,
+.ae-choice:hover input.ae-check,
+.ae-choice:hover input.ae-radio {
+  border-color: var(--ae-ink);
+}
+
+input.ae-check::before {
+  content: '';
+  width: 0.55em;
+  height: 0.3em;
+  margin-top: -0.12em;
+  border-left: 2px solid var(--ae-surface);
+  border-bottom: 2px solid var(--ae-surface);
+  transform: rotate(-45deg);
+  opacity: 0;
+  transition: opacity var(--ae-quick) var(--ae-ease);
+}
+
+input.ae-check:checked {
+  background: var(--ae-ink);
+  border-color: var(--ae-ink);
+}
+
+input.ae-check:checked::before {
+  opacity: 1;
+}
+
+input.ae-radio::before {
+  content: '';
+  width: 0.42em;
+  height: 0.42em;
+  background: var(--ae-ink);
+  opacity: 0;
+  transition: opacity var(--ae-quick) var(--ae-ease);
+}
+
+input.ae-radio:checked {
+  border-color: var(--ae-ink);
+}
+
+input.ae-radio:checked::before {
+  opacity: 1;
+}
+
+input.ae-check:disabled,
+input.ae-radio:disabled,
+input.ae-switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* the switch: a hairline channel and an ink slide — state reads from
+   position and fill, never from a green pill. The slide is the
+   feedback; it resolves once per flip. */
+input.ae-switch {
+  appearance: none;
+  position: relative;
+  width: 2.1em;
+  height: 1.15em;
+  flex: none;
+  margin: 0;
+  background: transparent;
+  border: 1px solid var(--ae-ink-muted);
+  border-radius: var(--ae-radius);
+  cursor: pointer;
+  vertical-align: -0.18em;
+  transition: border-color var(--ae-quick) var(--ae-ease);
+}
+
+input.ae-switch::before {
+  content: '';
+  position: absolute;
+  top: 0.14em;
+  bottom: 0.14em;
+  left: 0.14em;
+  width: 0.68em;
+  background: var(--ae-ink-muted);
+  transition:
+    left var(--ae-quick) var(--ae-ease),
+    background-color var(--ae-quick) var(--ae-ease);
+}
+
+input.ae-switch:hover {
+  border-color: var(--ae-ink);
+}
+
+input.ae-switch:checked {
+  border-color: var(--ae-ink);
+}
+
+input.ae-switch:checked::before {
+  left: calc(100% - 0.82em);
+  background: var(--ae-ink);
+}
+
+/* ── data: the table is an instrument, framed as a plate ──────────── */
+
+/* the table: terminal density — 13px mono, lowercase headers on a
+   wash band, hairline row rules. A column header shares its column's
+   alignment: put .num on the th AND its tds. */
+.ae-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--ae-font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ae-table th {
+  text-align: left;
+  font-weight: var(--ae-w-regular);
+  letter-spacing: 0.08em;
+  color: var(--ae-ink);
+  background: var(--ae-wash);
+  padding: 0.45em 1.4em 0.45em 0.7em;
+}
+
+.ae-table td {
+  border-top: 1px solid var(--ae-line);
+  padding: 0.42em 1.4em 0.42em 0.7em;
+}
+
+.ae-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+.ae-table .num {
+  text-align: right;
+}
+
+.ae-table .ae-item {
+  font-weight: var(--ae-w-medium);
+}
+
+/* sm table stack: add data-label to each td when a dense instrument must
+   survive phone width. The row becomes a ruled list of label/value pairs
+   instead of shrinking columns until they are unreadable. */
+@media (max-width: 40rem) {
+  .ae-table:has(td[data-label]) {
+    display: block;
+  }
+
+  .ae-table:has(td[data-label]) thead {
+    display: none;
+  }
+
+  .ae-table:has(td[data-label]) tbody,
+  .ae-table:has(td[data-label]) tr,
+  .ae-table:has(td[data-label]) td {
+    display: block;
+  }
+
+  .ae-table:has(td[data-label]) tbody tr {
+    border-top: 1px solid var(--ae-line);
+    padding: 0.55em 0;
+  }
+
+  .ae-table:has(td[data-label]) tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .ae-table:has(td[data-label]) td {
+    border-top: 0;
+    padding: 0.16em 0;
+    display: grid;
+    grid-template-columns: minmax(7em, 0.45fr) minmax(0, 1fr);
+    gap: var(--ae-space-3);
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .ae-table:has(td[data-label]) td::before {
+    content: attr(data-label);
+    color: var(--ae-ink-faint);
+    font-weight: var(--ae-w-regular);
+    letter-spacing: 0.08em;
+    text-align: left;
+  }
+
+  .ae-table:has(td[data-label]) td.num {
+    text-align: right;
+  }
+}
+
+/* the plate: a numbered figure frame around a table or specimen —
+   mono caption above, hairline frame, footnote rule below */
+.ae-plate {
+  border: 1px solid var(--ae-line);
+  padding: 1.4em 1.6em 1.2em;
+}
+
+.ae-plate-cap {
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ae-ink-muted);
+  margin-bottom: var(--ae-space-4);
+}
+
+.ae-plate-note {
+  font-size: 13px;
+  color: var(--ae-ink-faint);
+  border-top: 1px solid var(--ae-line);
+  padding-top: 0.8em;
+  margin-top: 1.1em;
+}
+
+/* the trail: a chronological run of events as the conversation it is —
+   a hairline spine, an ink tick per entry, time and actor in the
+   instrument register, the body in prose. Not a table: entries carry
+   variable-length bodies and states, so alignment comes from the spine,
+   not columns. The tick is a square, never a circle — the choice mark's
+   rule holds here too. Status, if an entry carries one, rides a glyph
+   in the body, never the tick or a filled pill. */
+.ae-trail {
+  list-style: none;
+  margin: 0 0 0 0.25em;
+  padding: 0;
+  border-left: 1px solid var(--ae-line);
+}
+
+.ae-trail-item {
+  position: relative;
+  padding: 0 0 1.3em 1.5em;
+}
+
+.ae-trail-item:last-child {
+  padding-bottom: 0;
+}
+
+.ae-trail-item::before {
+  content: '';
+  position: absolute;
+  left: -0.31em;
+  top: 0.5em;
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--ae-ink-faint);
+}
+
+.ae-trail-item.is-active::before {
+  background: var(--ae-accent);
+}
+
+.ae-trail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  flex-wrap: wrap;
+  margin-bottom: 0.25em;
+}
+
+.ae-trail-time {
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ae-ink-muted);
+}
+
+.ae-trail-who {
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ae-ink-muted);
+  border: 1px solid currentColor;
+  padding: 0.1em 0.55em;
+}
+
+.ae-trail-body {
+  font-size: 13px;
+  color: var(--ae-ink);
+}
+
+.ae-trail-body .ae-dim {
+  color: var(--ae-ink-muted);
+}
+
+/* the wall: a grid of instrument cards for many-of-a-kind status —
+   services, agents, targets. Each card is a hairline plate; status
+   rides the glyph (.ae-ok/.ae-warn/.ae-err on .ae-wall-mark), never a
+   filled tile or a colored border. The right column is optional: a
+   figure, a timestamp, a trace of recent readings. */
+.ae-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: var(--ae-space-6);
+}
+
+.ae-wall-card {
+  border: 1px solid var(--ae-line);
+  padding: var(--ae-space-4) var(--ae-space-5);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--ae-space-4);
+}
+
+.ae-wall-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ae-space-2) var(--ae-space-3);
+}
+
+.ae-wall-mark {
+  font-family: var(--ae-font-mono);
+  font-weight: var(--ae-w-black);
+  flex: none;
+}
+
+.ae-wall-mark.ae-icon {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.18em;
+}
+
+.ae-wall-meta {
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+  margin-top: 0.2em;
+}
+
+.ae-wall-figure {
+  text-align: right;
+}
+
+.ae-wall-figure .ae-num {
+  display: block;
+}
+
+.ae-wall-time {
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+}
+
+/* a trace: the wall figure's recent-readings strip — glyphs, not a
+   sparkline; the discrete cousin of .ae-spark */
+.ae-wall-trace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.18em;
+  color: var(--ae-ink-muted);
+  white-space: nowrap;
+}
+
+.ae-wall-trace .ae-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: 0;
+}
+
+/* the board: several columns of comparable work. Columns are hairline
+   lanes, not cards inside cards; at narrow widths they stack before their
+   contents are squeezed. */
+.ae-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--ae-space-6);
+  align-items: start;
+}
+
+.ae-column {
+  min-width: 0;
+  border-top: 1px solid var(--ae-line);
+  padding-top: var(--ae-space-4);
+}
+
+.ae-column-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ae-space-4);
+  margin-bottom: var(--ae-space-4);
+}
+
+.ae-column-title {
+  font-weight: var(--ae-w-medium);
+}
+
+.ae-column-meta {
+  font-family: var(--ae-font-mono);
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+  white-space: nowrap;
+}
+
+.ae-column-body {
+  display: grid;
+  gap: var(--ae-space-3);
+}
+
+.ae-board-card {
+  border-top: 1px solid var(--ae-line);
+  padding-top: var(--ae-space-3);
+}
+
+.ae-board-card:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* ── instruments: ink on a ruled line ─────────────────────────────── */
+
+/* the meter: a wash channel and an ink fill — a ruled line, never a
+   glowing pill. The fill takes a status ink only when the level IS
+   the signal (thresholds); ticks are hairline marks. Width changes
+   are state resolutions: gentle, once. */
+.ae-meter {
+  position: relative;
+  height: 4px;
+  background: var(--ae-wash);
+  border: 1px solid var(--ae-line);
+}
+
+.ae-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--ae-ink);
+  transition: width var(--ae-gentle) var(--ae-ease);
+}
+
+.ae-meter-fill.ae-ok {
+  background: var(--ae-ok);
+}
+
+.ae-meter-fill.ae-warn {
+  background: var(--ae-warn);
+}
+
+.ae-meter-fill.ae-err {
+  background: var(--ae-err);
+}
+
+.ae-meter-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--ae-ink-muted);
+}
+
+/* figures: tabular numerals that tick without jitter. Compose with the
+   weights — a hero figure is 800 and isolated, never larger. */
+.ae-num {
+  font-family: var(--ae-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the strong register: the one loud thing, by weight alone */
+.ae-strong {
+  font-weight: var(--ae-w-black);
+}
+
+/* a delta: the arrow carries the hue, the figure stays ink */
+.ae-delta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+}
+
+/* the spark: a pen-stroke trend — no axes, no area fill. Inline SVG:
+   <svg class="ae-spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+     <polyline points="0,18 20,14 40,16 60,9 80,11 100,4" /></svg> */
+.ae-spark {
+  width: 7em;
+  height: 1.1em;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  vertical-align: -0.15em;
+}
+
+/* the interval: the meter with a spread. A ruled track carrying a
+   [lo,hi] range band and a mean tick, so a score reads as a level AND
+   its confidence — and where two bands share a column, the lead is
+   inside the spread (the certification read). Marks are positioned by
+   inline left/width %, exactly like the meter. Every mark is a
+   rectangle, so radius 0 holds (round marks are the scatter's pen). */
+.ae-ci {
+  position: relative;
+  height: 1.6em;
+}
+
+.ae-ci::before {
+  /* the shared baseline rule the interval sits on */
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
+  background: var(--ae-line);
+}
+
+/* the [lo,hi] range band: a bounded mass with a hairline edge — never a
+   filled status pill. It draws in once from the mean (the meter's
+   width-as-resolution), gentle and only on first render. */
+.ae-ci-band {
+  position: absolute;
+  top: 50%;
+  height: 10px;
+  transform: translateY(-50%);
+  transform-origin: center;
+  background: color-mix(in oklab, var(--ae-ink) 9%, var(--ae-surface));
+  border: 1px solid var(--ae-ink-faint);
+  animation: ae-ci-draw var(--ae-soft) var(--ae-ease) both;
+}
+
+@keyframes ae-ci-draw {
+  from {
+    transform: translateY(-50%) scaleX(0.04);
+  }
+}
+
+/* the mean: a single ink tick, like .ae-meter-mark. is-lead spends the
+   accent on it — one accent role per view, the consumer's to assign. */
+.ae-ci-mean {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 1.15em;
+  transform: translate(-50%, -50%);
+  background: var(--ae-ink);
+}
+
+.ae-ci.is-lead .ae-ci-mean {
+  background: var(--ae-accent);
+}
+
+/* the no-fill variant: a thin lo→hi rule with square end caps, for a
+   field that should read as points rather than mass */
+.ae-ci-whisker {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--ae-ink-muted);
+}
+
+.ae-ci-cap {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 0.8em;
+  transform: translate(-50%, -50%);
+  background: var(--ae-ink-muted);
+}
+
+/* hover (or keyboard focus) reveals the exact figures at the track's
+   right edge — surface-backed so it rides over the baseline rule with
+   no layout shift. The mark carries the field; the numbers stay exact
+   on inspection. */
+.ae-ci-detail {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ae-space-2);
+  padding: 0.1em 0.2em 0.1em 0.7em;
+  background: var(--ae-surface);
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ae-ink);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ae-quick) var(--ae-ease);
+}
+
+.ae-ci-detail .ae-ci-bound {
+  color: var(--ae-ink-faint);
+}
+
+.ae-ci:hover .ae-ci-detail,
+.ae-ci:focus-within .ae-ci-detail {
+  opacity: 1;
+}
+
+/* touch has no hover: show the exact figures by default there, so the
+   precise read is never pointer-only. Screen readers get them from the
+   element's aria-label (role="img"). */
+@media (hover: none) {
+  .ae-ci-detail {
+    opacity: 1;
+  }
+}
+
+/* the plane: an XY field — cost against quality — with a Pareto
+   frontier. Like .ae-spark, the kit dresses a consumer-authored <svg>
+   (the consumer owns the data and the projection); round dots are the
+   pen (SVG <circle>, never a CSS radius), the frame/axes/ticks stay
+   radius 0. Default composition = frontier: a dashed guide threads the
+   non-dominated points, the pick is the lone accent dot, the rest drop
+   to faint. */
+.ae-plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--ae-font-mono);
+}
+.ae-plot-axis {
+  fill: none;
+  stroke: var(--ae-line);
+  stroke-width: 1;
+}
+.ae-plot-tick {
+  stroke: var(--ae-line);
+  stroke-width: 1;
+}
+.ae-plot-ticklabel {
+  fill: var(--ae-ink-faint);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.ae-plot-axislabel {
+  fill: var(--ae-ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.ae-plot-frontier {
+  fill: none;
+  stroke: var(--ae-ink);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ae-plot-crosshair {
+  stroke: var(--ae-ink-faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.ae-plot-dot {
+  fill: var(--ae-ink);
+  transition: fill var(--ae-soft) var(--ae-ease);
+}
+.ae-plot-dot.is-dominated {
+  fill: var(--ae-ink-faint);
+}
+.ae-plot-dot.is-chosen {
+  fill: var(--ae-accent);
+}
+.ae-plot-ring {
+  fill: none;
+  stroke: var(--ae-ink-muted);
+  stroke-width: 1.5;
+}
+.ae-plot-label {
+  fill: var(--ae-ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.ae-plot-label.is-dominated {
+  fill: var(--ae-ink-faint);
+}
+.ae-plot-label.is-chosen {
+  fill: var(--ae-accent);
+}
+
+/* a gate-failed datum is a colored mark where its dot would sit —
+   status rides the glyph; compose with .ae-ok / .ae-warn / .ae-err */
+.ae-plot-glyph {
+  fill: none;
+  stroke: var(--ae-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.ae-plot-glyph.ae-ok {
+  stroke: var(--ae-ok);
+}
+.ae-plot-glyph.ae-warn {
+  stroke: var(--ae-warn);
+}
+.ae-plot-glyph.ae-err {
+  stroke: var(--ae-err);
+}
+
+/* the flow: a pipeline as a diagram — hairline-framed nodes (hard
+   corners, radius 0) joined by orthogonal ink wires. Like the plot, the
+   kit dresses a consumer-authored <svg> so node and wire geometry share
+   one coordinate space; non-scaling strokes keep hairlines 1px at any
+   fit. State rides the frame and a glyph (✓ done, ✗ failed), the running
+   stage takes the accent, locked stages go dashed-faint. The default is
+   the spine: a row of stages, the gate/lineage backbone. */
+.ae-flow {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ae-node {
+  fill: var(--ae-surface);
+  stroke: var(--ae-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.ae-node.is-done {
+  stroke: var(--ae-ink-muted);
+}
+.ae-node.is-active {
+  stroke: var(--ae-accent);
+  stroke-width: 1.5;
+}
+.ae-node.is-locked {
+  fill: var(--ae-wash);
+  stroke: var(--ae-ink-faint);
+  stroke-dasharray: 3 3;
+}
+.ae-node.is-failed {
+  stroke: var(--ae-err);
+}
+
+/* the node label — the 13px instrument register, ink. State lives in the
+   frame and the glyph; only the running stage spends the accent. */
+.ae-node-label {
+  fill: var(--ae-ink);
+  font-family: var(--ae-font);
+  font-size: 13px;
+  font-weight: var(--ae-w-medium);
+}
+.ae-node-label.is-active {
+  fill: var(--ae-accent);
+  font-weight: var(--ae-w-black);
+}
+.ae-node-label.is-locked {
+  fill: var(--ae-ink-faint);
+  font-weight: var(--ae-w-regular);
+}
+
+/* a mono ordinal above the label, and mono in/out port labels at the
+   node's edges (a node's typed interface) */
+.ae-node-kicker {
+  fill: var(--ae-ink-faint);
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+.ae-node-port {
+  fill: var(--ae-ink-muted);
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.ae-node-port.is-locked {
+  fill: var(--ae-ink-faint);
+}
+.ae-node-stub {
+  stroke: var(--ae-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* the wire: an orthogonal ink connector (H/V segments only), colored by
+   the stage it feeds. A round junction marks a split or merge — the one
+   round mark, like the spark's caps; the frames stay square. */
+.ae-wire {
+  fill: none;
+  stroke: var(--ae-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.ae-wire.is-reached {
+  stroke: var(--ae-ink-muted);
+}
+.ae-wire.is-active {
+  stroke: var(--ae-accent);
+}
+.ae-wire.is-locked {
+  stroke: var(--ae-ink-faint);
+  stroke-dasharray: 3 3;
+}
+.ae-wire-junction {
+  fill: var(--ae-ink-muted);
+}
+.ae-wire-junction.is-active {
+  fill: var(--ae-accent);
+}
+
+/* ── choice controls: rows that open ──────────────────────────────── */
+
+/* a setting is a quiet hairline row — label left, current value right
+   in muted ink; activating it opens a chooser beneath. Progressive
+   disclosure: the form rests as a column of lines. */
+.ae-settings {
+  border-bottom: 1px solid var(--ae-line);
+}
+
+.ae-setting {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--ae-space-5);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--ae-line);
+  border-radius: var(--ae-radius);
+  padding: 0.8em 0;
+  margin: 0;
+  font: inherit;
+  line-height: inherit;
+  color: var(--ae-ink);
+  font-weight: var(--ae-w-medium);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ae-setting-val {
+  color: var(--ae-ink-muted);
+  font-weight: var(--ae-w-regular);
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-setting:hover .ae-setting-val {
+  color: var(--ae-ink);
+}
+
+/* the chooser: folds open under its row — the smooth expand is
+   feedback to the activation, once per action */
+.ae-setting-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--ae-soft) var(--ae-ease);
+}
+
+.ae-setting-panel.is-open {
+  grid-template-rows: 1fr;
+}
+
+.ae-setting-panel > * {
+  overflow: hidden;
+  min-height: 0;
+
+  /* the child's border and padding outlive a 0fr row; stop painting
+     them once the fold completes */
+  visibility: hidden;
+  transition: visibility 0s var(--ae-soft);
+}
+
+.ae-setting-panel.is-open > * {
+  visibility: visible;
+  transition: visibility 0s;
+}
+
+/* the menu: a quiet option list (also the long-select answer) */
+.ae-menu {
+  margin: 0 0 0.9em;
+  padding: 0.3em 0;
+  border: 1px solid var(--ae-line);
+  background: var(--ae-surface);
+  max-height: 14em;
+  overflow-y: auto;
+}
+
+.ae-menu button,
+.ae-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--ae-radius);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ae-ink-muted);
+  padding: 0.4em 1.1em;
+  cursor: pointer;
+  transition:
+    color var(--ae-quick) var(--ae-ease),
+    background-color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-menu button:hover,
+.ae-menu-item:hover,
+.ae-menu-item[data-highlighted] {
+  background: var(--ae-wash);
+  color: var(--ae-ink);
+}
+
+.ae-menu button.is-sel,
+.ae-menu-item.is-sel {
+  color: var(--ae-ink);
+  font-weight: var(--ae-w-medium);
+}
+
+/* the fold: disclosure as a hairline row — native details in the
+   settings costume. The marker is a mono plus that turns into a
+   close; the quarter-turn is the feedback, once per action. */
+details.ae-fold {
+  border-top: 1px solid var(--ae-line);
+}
+
+details.ae-fold:last-of-type {
+  border-bottom: 1px solid var(--ae-line);
+}
+
+.ae-fold summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--ae-space-5);
+  padding: 0.8em 0;
+  font-weight: var(--ae-w-medium);
+  cursor: pointer;
+}
+
+.ae-fold summary::marker {
+  content: '';
+}
+
+.ae-fold summary::after {
+  content: '+';
+  font-family: var(--ae-font-mono);
+  font-weight: var(--ae-w-regular);
+  color: var(--ae-ink-muted);
+  transition: rotate var(--ae-soft) var(--ae-ease);
+}
+
+.ae-fold[open] summary::after {
+  rotate: 45deg;
+}
+
+.ae-fold > :not(summary) {
+  padding-bottom: var(--ae-space-4);
+}
+
+/* ── structure: paths, waiting, and absence ───────────────────────── */
+
+/* the breadcrumb: a chrome-register path — here is ink, the way back
+   is muted, the separators are faint */
+.ae-crumbs {
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+}
+
+.ae-crumbs ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+}
+
+.ae-crumbs li {
+  display: flex;
+  gap: 0.6em;
+}
+
+.ae-crumbs li + li::before {
+  content: '/';
+  color: var(--ae-ink-faint);
+}
+
+.ae-crumbs a {
+  color: var(--ae-ink-muted);
+  text-decoration: none;
+}
+
+.ae-crumbs a:hover {
+  color: var(--ae-ink);
+}
+
+.ae-crumbs [aria-current] {
+  color: var(--ae-ink);
+  font-weight: var(--ae-w-medium);
+}
+
+/* waiting: still wash, never a shimmer. The skeleton holds the layout
+   in quiet blocks; motion is feedback and waiting is not an action —
+   the view's entrance acknowledges arrival. Give the words to a
+   chrome-register status line (role="status"), not to an animation. */
+.ae-skeleton {
+  display: block;
+  background: var(--ae-wash);
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ae-skeleton * {
+  visibility: hidden;
+}
+
+/* absence: an honest sentence where the content will be — muted words,
+   one quiet action, no illustration party */
+.ae-empty {
+  padding: 2.4em 0;
+  border-block: 1px solid var(--ae-line);
+}
+
+.ae-empty > p {
+  margin-bottom: 0.15em;
+}
+
+.ae-empty .ae-button {
+  margin-top: 1.2em;
+}
+
+/* opt-in via data-ae-anticipate on the form; the recipe drives
+   --ae-intent (0–0.6) on the nearest field's label and input.
+   Color only — nothing moves; focus snaps to the committed state;
+   off for touch, keyboards, and reduced motion. */
+[data-ae-anticipate] .ae-label {
+  color: color-mix(
+    in srgb,
+    var(--ae-ink) calc(var(--ae-intent, 0) * 100%),
+    var(--ae-ink-muted)
+  );
+  transition: color 120ms ease-out;
+}
+
+[data-ae-anticipate] .ae-input {
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--ae-ink) calc(var(--ae-intent, 0) * 100%),
+    var(--ae-line)
+  );
+  transition: border-color 120ms ease-out;
+}
+
+[data-ae-anticipate] .ae-label:has(+ .ae-input:focus-visible) {
+  color: var(--ae-ink);
+}
+
+[data-ae-anticipate] .ae-input:focus-visible {
+  border-bottom-color: var(--ae-ink);
+}
+
+/* ── the mode change: quick and interruptible ─────────────────────── */
+
+/* the recipe wraps the flip in document.startViewTransition and sets
+   .ae-vt-mode on the root for one quick beat. Rapid toggles call
+   skipTransition() and cut the in-flight animation. */
+.ae-vt-mode::view-transition-old(root),
+.ae-vt-mode::view-transition-new(root) {
+  animation-duration: var(--ae-quick);
+  animation-timing-function: var(--ae-ease);
+}
+
+/* fallback where view transitions are unsupported: every surface
+   eases its colors together for one quick beat */
+.ae-mode-easing,
+.ae-mode-easing *,
+.ae-mode-easing *::before,
+.ae-mode-easing *::after {
+  transition:
+    background-color var(--ae-quick) var(--ae-ease),
+    color var(--ae-quick) var(--ae-ease),
+    border-color var(--ae-quick) var(--ae-ease),
+    fill var(--ae-quick) var(--ae-ease),
+    stroke var(--ae-quick) var(--ae-ease) !important;
+}
+
+/* ── the app shell: a chrome rail beside the working desk ─────────── */
+
+/* the second archetype. One viewport, hairline-divided: a 13px rail
+   for places, a desk for work. The screen law holds — the desk
+   scrolls inside itself, the page never moves. */
+.ae-shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.ae-rail {
+  border-right: 1px solid var(--ae-line);
+  padding: 1.6em 1.4em;
+  font-size: 13px;
+  color: var(--ae-ink-muted);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.ae-rail .ae-h {
+  margin-top: 1.8em;
+}
+
+.ae-rail .ae-h:first-child {
+  margin-top: 0;
+}
+
+.ae-rail a,
+.ae-rail button:not(.ae-mode) {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  text-decoration: none;
+  color: var(--ae-ink-muted);
+  padding: 0.3em 0;
+  margin-block: 0;
+  cursor: pointer;
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+
+.ae-rail a:hover,
+.ae-rail button:hover {
+  color: var(--ae-ink);
+}
+
+.ae-rail [aria-current],
+.ae-rail .is-active {
+  color: var(--ae-ink);
+  font-weight: var(--ae-w-medium);
+}
+
+/* the rail's foot pins to the bottom: version, account, the mode */
+.ae-rail-foot {
+  margin-top: auto;
+  padding-top: 1.6em;
+}
+
+.ae-desk {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2.2em 2.8em;
+}
+
+/* md breakpoint: tokens.layout.breakpoints.md = 48rem. The rail becomes
+   bottom chrome rather than disappearing; places stay visible and the desk
+   keeps the only vertical scroll. */
+@media (max-width: 48rem) {
+  .ae-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .ae-rail {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    border-right: 0;
+    border-top: 1px solid var(--ae-line);
+    padding: 0 1.2rem;
+    overflow: auto hidden;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--ae-space-5);
+  }
+
+  .ae-rail .ae-h {
+    display: none;
+  }
+
+  .ae-rail a,
+  .ae-rail button:not(.ae-mode) {
+    flex: none;
+    width: auto;
+    padding: 0.85em 0;
+    white-space: nowrap;
+  }
+
+  .ae-rail-foot {
+    flex: none;
+    margin-top: 0;
+    margin-left: auto;
+    padding-top: 0;
+  }
+
+  .ae-desk {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    padding: 1.8em 1.6rem;
+  }
+
+  .ae-list-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ae-list-status {
+    justify-self: stretch;
+  }
+
+  .ae-board {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── the document: long-form prose, unclassed inside ──────────────── */
+
+/* the third archetype: rendered markdown drops in bare. Headings are
+   weight, never size; rules are hairlines; quotes are inset. Put the
+   article in a scrolling stage (.ae-stage-scroll) or a desk. */
+.ae-doc h1,
+.ae-doc h2 {
+  font-weight: var(--ae-w-black);
+  margin: 2.2em 0 0.6em;
+}
+
+.ae-doc h3,
+.ae-doc h4 {
+  font-weight: var(--ae-w-medium);
+  margin: 1.8em 0 0.4em;
+}
+
+.ae-doc h5,
+.ae-doc h6 {
+  font-weight: var(--ae-w-medium);
+  color: var(--ae-ink-muted);
+  margin: 1.8em 0 0.4em;
+}
+
+.ae-doc h1:first-child,
+.ae-doc h2:first-child,
+.ae-doc h3:first-child {
+  margin-top: 0;
+}
+
+.ae-doc p,
+.ae-doc ul,
+.ae-doc ol {
+  margin-bottom: 0.9em;
+}
+
+.ae-doc ul,
+.ae-doc ol {
+  padding-left: 1.4em;
+}
+
+.ae-doc li {
+  margin-bottom: 0.2em;
+}
+
+.ae-doc hr {
+  border: 0;
+  border-top: 1px solid var(--ae-line);
+  margin: 2.4em 0;
+}
+
+.ae-doc blockquote {
+  border-left: 1px solid var(--ae-line);
+  padding-left: 1.4em;
+  color: var(--ae-ink-muted);
+  margin: 1.2em 0;
+}
+
+.ae-doc pre {
+  background: var(--ae-wash);
+  font-size: 13px;
+  line-height: 1.75;
+  padding: 1.2em 1.4em;
+  margin: 1.2em 0;
+  overflow-x: auto;
+}
+
+.ae-doc :not(pre) > code {
+  background: var(--ae-wash);
+  padding: 0.1em 0.35em;
+}
+
+.ae-doc img {
+  max-width: 100%;
+}
+
+/* ── report sub-registers: opt-in, for a generated document that is read
+   and shared. Weight + space + hairlines + the 11px mono caption
+   register only — never a new type size, never a serif. The plain
+   .ae-doc above stays the default. ──────────────────────────────────── */
+
+/* numbered figures: a <figure> in a doc auto-numbers and its <figcaption>
+   drops to the mono caption register, prefixed FIG n. Pairs with
+   .ae-plate for the figure body. */
+.ae-doc {
+  counter-reset: ae-fig;
+}
+
+.ae-doc figure {
+  counter-increment: ae-fig;
+  margin: 1.8em 0;
+}
+
+.ae-doc figcaption {
+  margin-bottom: 0.7em;
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ae-ink-muted);
+}
+
+.ae-doc figcaption::before {
+  content: 'FIG ' counter(ae-fig) ' · ';
+  color: var(--ae-ink);
+  font-weight: var(--ae-w-medium);
+}
+
+/* the lede / standfirst: the opening paragraph lifts to medium weight
+   with a hairline rule beneath — a way in, the conclusion up front. */
+.ae-doc .ae-lede {
+  margin-bottom: 1.6em;
+  padding-bottom: 1.4em;
+  border-bottom: 1px solid var(--ae-line);
+  font-weight: var(--ae-w-medium);
+}
+
+/* the findings box: a hairline frame (never a filled card) summarizing
+   the conclusion. The called-out result is weight; the recommendation
+   takes the one accent rule the report spends. */
+.ae-findings {
+  margin: 1.8em 0;
+  padding: 1.4em 1.6em 1.3em;
+  border: 1px solid var(--ae-line);
+}
+
+.ae-findings-title {
+  margin-bottom: var(--ae-space-4);
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ae-ink-muted);
+}
+
+.ae-rec {
+  margin-top: 1.1em;
+  padding-left: 1.1em;
+  border-left: 2px solid var(--ae-accent);
+}
+
+/* the pull-quote: a sentence lifted forward by weight + space + a
+   hairline rule. Never a larger size, never an italic serif — the
+   closest call to the one-size law, held on the right side of it. */
+.ae-pull {
+  margin: 1.8em 0;
+  padding-left: 1.4em;
+  border-left: 1px solid var(--ae-line);
+  font-weight: var(--ae-w-medium);
+  line-height: 1.7;
+}
+
+.ae-pull-by {
+  display: block;
+  margin-top: 0.6em;
+  font-family: var(--ae-font-mono);
+  font-size: 11px;
+  font-weight: var(--ae-w-regular);
+  letter-spacing: 0.14em;
+  color: var(--ae-ink-faint);
+}
+
+/* ── utilities ────────────────────────────────────────────────────── */
+
+/* present to assistive tech, invisible on paper — live regions and
+   labels the layout has no room to speak */
+.ae-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── small screens ────────────────────────────────────────────────── */
+
+/* sm breakpoint: tokens.layout.breakpoints.sm = 40rem. Media queries inline
+   token values because CSS custom properties cannot drive @media. */
+@media (max-width: 40rem) {
+  .ae-bar,
+  .ae-stage {
+    width: calc(100% - 2.4rem);
+  }
+
+  .ae-group {
+    margin-bottom: var(--ae-space-6);
+  }
+
+  /* the shell folds to one column; compose a bar for the places the
+     rail held, then tighten the bottom chrome for phone width */
+  .ae-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .ae-rail {
+    padding-inline: 1.2rem;
+    gap: var(--ae-space-4);
+  }
+
+  .ae-desk {
+    padding: 1.6em 1.2rem;
+  }
+
+  .ae-wall-card {
+    grid-template-columns: 1fr;
+  }
+
+  .ae-wall-figure {
+    text-align: left;
+  }
+
+  .ae-list-row {
+    grid-template-columns: 1fr;
+    gap: var(--ae-space-3);
+  }
+
+  .ae-list-value {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ── reduced motion: everything is instant ────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

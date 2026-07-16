@@ -8,7 +8,8 @@
   A phone-first console for triaging a fleet of
   <a href="https://github.com/can1357/oh-my-pi">omp</a> coding agents running in
   <a href="https://herdr.dev">herdr</a> terminal workspaces.<br>
-  One hand, one thumb, whole fleet.
+  One hand, one thumb, whole fleet.<br>
+  <a href="https://misty-step.github.io/kelpie/">misty-step.github.io/kelpie</a>
 </p>
 
 <p align="center">

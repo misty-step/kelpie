@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>kelpie — triage your coding-agent fleet from your phone</title>
+    <meta
+      name="description"
+      content="kelpie helps one operator triage a fleet of omp coding agents running in herdr terminal workspaces — from a phone, over a tailnet, with no cloud in between."
+    />
+    <meta property="og:title" content="kelpie — phone-first agent fleet triage" />
+    <meta
+      property="og:description"
+      content="Attention-sorted inbox, full agent sessions, raw terminal. One Rust binary, zero build, MIT."
+    />
+    <meta property="og:url" content="https://misty-step.github.io/kelpie/" />
+    <link rel="icon" href="assets/favicon.png" type="image/png" />
+    <script>
+      try {
+        var m = localStorage.getItem('ae-mode');
+        if (m === 'dark' || m === 'light') {
+          document.documentElement.classList.add(m);
+          document.documentElement.style.colorScheme = m;
+        }
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="aesthetic.css" />
+    <link rel="stylesheet" href="marketing.css" />
+  </head>
+  <body>
+    <svg aria-hidden="true" width="0" height="0" style="position: absolute">
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" />
+        <path d="m19.07 4.93-1.41 1.41" />
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+      </symbol>
+      <symbol id="i-circle-check" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="m9 12 2 2 4-4" />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+    </svg>
+
+    <div class="ae-screen ae-wide">
+      <header class="ae-bar msk-bar">
+        <a class="ae-logo" href="./" aria-label="kelpie home">
+          <span class="ae-app-mark" aria-hidden="true">
+            <img class="msk-mark-img" src="assets/kelpie-mark.png" alt="" />
+          </span>
+          <span class="ae-name">kelpie</span>
+        </a>
+        <span class="msk-actions">
+          <nav class="ae-chrome msk-nav" aria-label="Site">
+            <a href="#features">features</a>
+            <a href="#screens">screens</a>
+            <a href="#quickstart">quickstart</a>
+            <a href="https://github.com/misty-step/kelpie">github</a>
+          </nav>
+          <button class="ae-mode" aria-label="toggle color mode">
+            <svg class="ae-icon ae-sun"><use href="#i-sun" /></svg>
+            <svg class="ae-icon ae-moon"><use href="#i-moon" /></svg>
+          </button>
+        </span>
+      </header>
+
+      <main class="ae-stage ae-stage-scroll" id="content">
+        <div class="msk-page">
+          <section class="msk-hero" aria-labelledby="hero-title">
+            <p class="ae-chrome">
+              For operators running a herd of coding agents in terminals.
+            </p>
+            <h1 id="hero-title">
+              Triage your coding-agent fleet from your phone.
+            </h1>
+            <p class="msk-pitch">
+              kelpie puts every <a href="https://github.com/can1357/oh-my-pi">omp</a>
+              agent in your <a href="https://herdr.dev">herdr</a> workspaces on one
+              screen: who is blocked on you, who is working, who is done. Answer
+              asks, steer sessions, drop to the raw terminal — from the couch,
+              over your tailnet.
+            </p>
+            <p class="ae-status">
+              <svg class="ae-icon ae-ok" data-lucide="circle-check">
+                <use href="#i-circle-check" />
+              </svg>
+              <span class="ae-status-label"
+                >MIT-licensed. One Rust binary, a zero-build PWA, no cloud, no
+                accounts.</span
+              >
+            </p>
+            <span class="msk-actions">
+              <a class="ae-button" href="#quickstart">Get started</a>
+              <a class="ae-button ae-button-quiet" href="https://github.com/misty-step/kelpie"
+                >View on GitHub</a
+              >
+            </span>
+          </section>
+
+          <section
+            class="msk-section"
+            id="features"
+            aria-labelledby="features-title"
+          >
+            <h2 class="ae-h" id="features-title">What it does</h2>
+            <div class="ae-list-rows">
+              <div class="ae-list-row">
+                <span class="ae-list-cell">
+                  <span class="ae-list-label">inbox</span>
+                  <span class="ae-list-value"
+                    >Attention-first sort: pending asks float up, working hums,
+                    idle recedes. Recency breaks ties.</span
+                  >
+                </span>
+                <span class="ae-list-cell">
+                  <span class="ae-list-label">asks</span>
+                  <span class="ae-list-value"
+                    >When an agent blocks on a question, the options surface as
+                    buttons. Answer in one tap.</span
+                  >
+                </span>
+              </div>
+              <div class="ae-list-row">
+                <span class="ae-list-cell">
+                  <span class="ae-list-label">sessions</span>
+                  <span class="ae-list-value"
+                    >Full transcript — markdown, tool calls, thinking — plus a
+                    real composer with model and reasoning-effort pickers.</span
+                  >
+                </span>
+                <span class="ae-list-cell">
+                  <span class="ae-list-label">terminal</span>
+                  <span class="ae-list-value"
+                    >When chat is not enough: the raw PTY screen with Enter,
+                    Esc, Ctrl+C, arrows, and Tab.</span
+                  >
+                </span>
+              </div>
+              <div class="ae-list-row">
+                <span class="ae-list-cell">
+                  <span class="ae-list-label">private</span>
+                  <span class="ae-list-value"
+                    >Binds 127.0.0.1 and rides your tailnet. Nothing leaves
+                    your machines.</span
+                  >
+                </span>
+                <span class="ae-list-cell">
+                  <span class="ae-list-label">zero config</span>
+                  <span class="ae-list-value"
+                    >Workspaces get a deterministic icon and hue hashed from
+                    their name. Fleets churn; kelpie keeps up.</span
+                  >
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section
+            class="msk-section"
+            id="screens"
+            aria-labelledby="screens-title"
+          >
+            <div class="msk-section-head">
+              <h2 class="ae-h" id="screens-title">Screens</h2>
+              <p class="ae-dim">
+                390×844, both themes, WCAG AA, 44px touch targets. Tap a frame
+                to inspect.
+              </p>
+            </div>
+            <div class="msk-gallery" aria-label="Product screenshots">
+              <button
+                class="msk-shot"
+                type="button"
+                data-full="assets/screenshots/inbox-light.png"
+                data-title="Inbox — attention-first triage"
+              >
+                <img
+                  src="assets/screenshots/inbox-light.png"
+                  alt="kelpie inbox: workspace cards sorted by attention, light theme"
+                />
+                <span class="ae-chrome">Inbox · light</span>
+              </button>
+              <button
+                class="msk-shot"
+                type="button"
+                data-full="assets/screenshots/session-dark.png"
+                data-title="Agent session — transcript and composer"
+              >
+                <img
+                  src="assets/screenshots/session-dark.png"
+                  alt="kelpie agent session: transcript with tool calls and composer, dark theme"
+                />
+                <span class="ae-chrome">Session · dark</span>
+              </button>
+              <button
+                class="msk-shot"
+                type="button"
+                data-full="assets/screenshots/terminal-dark.png"
+                data-title="Raw terminal — PTY screen and key row"
+              >
+                <img
+                  src="assets/screenshots/terminal-dark.png"
+                  alt="kelpie raw terminal view with key row, dark theme"
+                />
+                <span class="ae-chrome">Terminal · dark</span>
+              </button>
+            </div>
+          </section>
+
+          <section
+            class="msk-section msk-quickstart"
+            id="quickstart"
+            aria-labelledby="quickstart-title"
+          >
+            <h2 class="ae-h" id="quickstart-title">Quickstart</h2>
+            <pre><code>git clone https://github.com/misty-step/kelpie &amp;&amp; cd kelpie
+cargo run --release                  # bridge + PWA on 127.0.0.1:8787
+tailscale serve --bg localhost:8787  # reach it from your phone</code></pre>
+            <p class="ae-dim">
+              Open it on your phone and Add to Home Screen. Requires
+              <a href="https://herdr.dev">herdr</a> running locally and
+              <a href="https://github.com/can1357/oh-my-pi">omp</a> agents in
+              its panes. Full setup in the
+              <a href="https://github.com/misty-step/kelpie#readme">README</a>.
+            </p>
+          </section>
+        </div>
+      </main>
+
+      <footer class="ae-bar msk-footer">
+        <p class="ae-chrome">kelpie is part of the Misty Step fleet.</p>
+        <nav class="ae-foot-links ae-chrome" aria-label="Footer">
+          <a data-footer-link="github" href="https://github.com/misty-step/kelpie"
+            >GitHub</a
+          >
+          <a data-footer-link="misty-step" href="https://mistystep.io"
+            >Misty Step</a
+          >
+        </nav>
+      </footer>
+    </div>
+
+    <dialog class="ae-dialog msk-zoom" aria-labelledby="zoom-title">
+      <div class="msk-zoom-head">
+        <h2 class="ae-dialog-title" id="zoom-title">Screenshot</h2>
+        <button
+          class="ae-button"
+          type="button"
+          data-zoom-close
+          aria-label="Close screenshot"
+        >
+          <svg class="ae-icon" aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+      </div>
+      <img class="msk-zoom-img" alt="" />
+    </dialog>
+
+    <script src="mode.js"></script>
+    <script src="marketing.js"></script>
+  </body>
+</html>

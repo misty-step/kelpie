@@ -1,0 +1,217 @@
+/* Product brand hooks: edit these from DESIGN.md, then leave the rest alone. */
+:root {
+  /* kelpie's app accent — the same teal the PWA uses (static/style.css). */
+  --ae-accent: #0f6e6e;
+  --ae-accent-dark: #2dd4cf;
+}
+
+/* ── kelpie exceptions ─────────────────────────────────────────────── */
+
+/* The mark: kelpie's line-art water horse (deliberate deviation from the
+   kit's Lucide-only rule — see site/DESIGN.md). Dark strokes on
+   transparent; flip light when the page is dark. */
+.msk-mark-img {
+  width: 1.5em;
+  height: 1.5em;
+  display: block;
+}
+.dark .msk-mark-img {
+  filter: invert(1) brightness(0.92);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .msk-mark-img {
+    filter: invert(1) brightness(0.92);
+  }
+}
+
+/* Hero headline: ink and black weight, never larger (the one-size law). */
+.msk-hero h1 {
+  font-weight: var(--ae-w-black);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  max-width: 34ch;
+}
+
+/* Portrait phone screenshots need more height than the kit's 15rem
+   landscape default to stay legible. */
+.msk-shot img {
+  height: 22rem;
+}
+
+/* Quickstart code block, styled like .ae-doc pre. */
+.msk-quickstart pre {
+  background: var(--ae-wash);
+  border: 1px solid var(--ae-line);
+  font-size: 13px;
+  line-height: 1.75;
+  padding: var(--ae-space-4);
+  overflow-x: auto;
+  max-width: 42rem;
+}
+.msk-quickstart .ae-dim {
+  max-width: 42rem;
+}
+
+/* Feature rows carry sentences, not table data: two equal columns,
+   wrapping values instead of the kit's single-line ellipsis. */
+#features .ae-list-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+#features .ae-list-value {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.msk-bar,
+.msk-footer {
+  width: min(var(--ae-measure-wide), 100% - 5rem);
+}
+
+.msk-actions {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ae-space-5);
+}
+
+.msk-nav {
+  display: inline-flex;
+  gap: var(--ae-space-5);
+}
+
+.msk-nav a[aria-current='page'] {
+  color: var(--ae-ink);
+  text-decoration-color: currentColor;
+}
+
+.msk-page {
+  width: min(var(--ae-measure-wide), 100%);
+  display: grid;
+  gap: var(--ae-space-8);
+}
+
+.msk-hero {
+  display: grid;
+  gap: var(--ae-space-4);
+  max-width: 45rem;
+  padding-top: var(--ae-space-6);
+}
+
+.msk-pitch {
+  font-weight: var(--ae-w-medium);
+}
+
+.msk-section {
+  border-top: 1px solid var(--ae-line);
+  padding-top: var(--ae-space-6);
+  display: grid;
+  gap: var(--ae-space-5);
+}
+
+.msk-section-head {
+  display: grid;
+  gap: var(--ae-space-2);
+  max-width: 42rem;
+}
+
+.msk-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ae-space-5);
+}
+
+.msk-shot {
+  appearance: none;
+  border: 1px solid var(--ae-line);
+  background: var(--ae-surface);
+  color: var(--ae-ink);
+  padding: var(--ae-space-3);
+  display: grid;
+  gap: var(--ae-space-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.msk-shot:hover,
+.msk-shot:focus-visible {
+  border-color: var(--ae-ink);
+}
+
+.msk-shot img {
+  width: 100%;
+
+  /* object-fit: contain, not cover — evidence screenshots arrive in every
+     aspect ratio (portrait docs, wide terminal captures, tall dashboards).
+     A fixed 16/10 cover crop hid most of the frame on three separate
+     shipped sites (aesthetic-911); a fixed height keeps the gallery row
+     aligned without cropping any of them. */
+  aspect-ratio: auto;
+  height: 15rem;
+  object-fit: contain;
+  border: 1px solid var(--ae-line);
+  background: var(--ae-wash);
+}
+
+.msk-release-slot {
+  max-width: 42rem;
+}
+
+.msk-footer {
+  align-items: baseline;
+}
+
+.msk-zoom {
+  width: min(76rem, calc(100vw - 3rem));
+}
+
+.msk-zoom-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--ae-space-4);
+  margin-bottom: var(--ae-space-4);
+}
+
+.msk-zoom-img {
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 48rem);
+  object-fit: contain;
+  border: 1px solid var(--ae-line);
+  background: var(--ae-wash);
+}
+
+.msk-release {
+  border-top: 1px solid var(--ae-line);
+  padding-top: var(--ae-space-5);
+  display: grid;
+  gap: var(--ae-space-3);
+}
+
+.msk-release:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (max-width: 780px) {
+  /* qualified with .ae-wide, not just .msk-bar/.msk-footer: aesthetic.css's
+     `.ae-wide .ae-bar` rule (two classes) otherwise outranks the plain
+     one-class selector here and this override never takes effect, leaving
+     80px of dead margin at phone widths — the actual cause of the nav
+     "crowding" bug (aesthetic-910), confirmed by measuring the live
+     bounding box at 390px. */
+  .ae-wide .msk-bar,
+  .ae-wide .msk-footer {
+    width: min(var(--ae-measure), 100% - 2rem);
+  }
+
+  .msk-actions,
+  .msk-nav {
+    flex-wrap: wrap;
+    gap: var(--ae-space-3);
+  }
+
+  .msk-gallery {
+    grid-template-columns: 1fr;
+  }
+}
