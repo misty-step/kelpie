@@ -225,7 +225,7 @@ attach button is a soft overlay-filled square with no border, so the
 textarea is the only outlined box in its row. Send disabled = overlay fill
 + faint text. `/` opens slash-command autocomplete. Send is disabled when
 there is neither text nor an attachment, while an upload is in flight, or
-while a reasoning-effort change is being applied.
+while a reasoning-effort or model change is being applied.
 
 ### Bottom sheets
 
@@ -239,9 +239,26 @@ dismisses).
   model highlighted; provider headers stay sticky while scrolling and every
   model row repeats `provider · id`, so same-named models from Anthropic,
   Cursor, OpenRouter, etc. cannot be confused. Filter field on top; 60-row
-  render cap with a "type to narrow" hint. Selecting sends
-  `/model provider/id` — omp's handler matches that exactly and switches
-  without opening the TUI picker.
+  render cap with a "type to narrow" hint. Selecting calls
+  `POST /api/pane/{id}/model` — omp does not execute arged slash commands
+  submitted as composer text (the palette closes once arguments follow the
+  name and Enter sends the line as a chat prompt, verified live), so the
+  bridge drives omp's own interactive picker: `/model` ⏎ → search the full
+  selector → ⏎ role menu (identity-checked against the footer) → ⏎ assigns
+  `default` → ⏎ confirms the level menu → Esc until closed. Every stage is
+  screen-verified with staged unwind on failure; picker keys pace at 800ms
+  (omp debounces faster input); Nerd Font glyphs are stripped before
+  matching; an already-default target is detected and never re-entered
+  (Enter would toggle the role off); transitions share the per-pane drive
+  lock with reasoning changes; and success requires omp's printed
+  `Default model: <selector>` receipt within the last screen lines (older
+  receipts linger in scrollback). Fresh role assignments reset effort to
+  `auto`, so after a confirmed switch the client re-applies the pane's
+  prior level through the verified reasoning flow. The chip shows the
+  confirmed target as an override until the session file catches up. A
+  model whose provider has no credentials fails cleanly ("not available in
+  this session") — the catalog is the full `omp models` list, a superset
+  of the session's configured providers.
 - **Actions sheet** (tap ⋯): Open terminal, New tab, Jump to latest,
   Send Enter, Send Ctrl+C, Back to inbox. Every action has a Lucide icon.
 

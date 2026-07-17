@@ -71,6 +71,16 @@ const api = {
     if (!r.ok) throw new Error('thinking change failed: ' + r.status);
     return r.json();
   },
+  async setModel(paneId, model) {
+    const r = await fetch('/api/pane/' + encodeURIComponent(paneId) + '/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'model change failed: ' + r.status);
+    return data;
+  },
   async createWorkspace(cwd) {
     const r = await fetch('/api/workspace', {
       method: 'POST',

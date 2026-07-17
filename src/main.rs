@@ -58,7 +58,9 @@ struct Fleet {
 struct AppState {
     fleet: RwLock<Fleet>,
     pokes: Option<broadcast::Sender<String>>,
-    thinking_changes: Mutex<HashSet<String>>,
+    /// Panes with an in-flight TUI drive (reasoning cycle or model picker) —
+    /// both steer the same terminal, so one guard covers both.
+    pane_locks: Mutex<HashSet<String>>,
 }
 
 type Shared = Arc<AppState>;
@@ -395,11 +397,11 @@ async fn post_thinking(
         )
             .into_response();
     }
-    let claimed = state.thinking_changes.lock().await.insert(pane_id.clone());
+    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
     if !claimed {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": "reasoning effort change already in progress"})),
+            Json(json!({"error": "another control change is in progress on this pane"})),
         )
             .into_response();
     }
@@ -416,11 +418,310 @@ async fn post_thinking(
     };
 
     let result = run.await;
-    state.thinking_changes.lock().await.remove(&pane_id);
+    state.pane_locks.lock().await.remove(&pane_id);
     match result {
         Ok(()) => Json(json!({"ok": true})).into_response(),
         Err(err) => err_json(err),
     }
+}
+
+#[derive(Deserialize)]
+struct ModelBody {
+    model: String,
+}
+
+/// Read a pane's visible screen as trimmed plain text (drive verification).
+async fn screen_text(pane_id: &str) -> Result<String> {
+    let res = herdr::rpc(
+        "pane.read",
+        json!({ "pane_id": pane_id, "source": "visible", "lines": 200, "format": "text" }),
+    )
+    .await?;
+    Ok(res
+        .get("read")
+        .and_then(|r| r.get("text"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string())
+}
+
+/// Nerd Font / powerline glyphs live in the Unicode private-use areas; omp's
+/// picker mixes them into label text (sometimes flush against words) and
+/// herdr's plain-text read drops some of them entirely.
+fn is_private_use(c: char) -> bool {
+    matches!(c as u32, 0xE000..=0xF8FF | 0xF0000..=0xFFFFD | 0x100000..=0x10FFFD)
+}
+
+fn strip_glyphs(s: &str) -> String {
+    s.chars().filter(|c| !is_private_use(*c)).collect()
+}
+
+/// `│  All models   N │` row in omp's model picker → N.
+fn all_models_count(screen: &str) -> Option<usize> {
+    let idx = screen.find("All models")?;
+    let line = screen[idx..].lines().next()?;
+    let digits: String = line
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok()
+}
+
+async fn type_chars(pane_id: &str, text: &str) -> Result<()> {
+    let keys: Vec<String> = text
+        .chars()
+        .map(|c| {
+            if c == ' ' {
+                "Space".to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect();
+    herdr::send_keys(pane_id, &keys).await
+}
+
+async fn key(pane_id: &str, name: &str, settle_ms: u64) -> Result<()> {
+    herdr::send_keys(pane_id, &[name.to_string()]).await?;
+    tokio::time::sleep(Duration::from_millis(settle_ms)).await;
+    Ok(())
+}
+
+/// Switch the pane's default model by driving omp's interactive `/model`
+/// picker. Omp does not execute arged slash commands submitted as text —
+/// the command palette closes the moment arguments follow the name, and
+/// Enter submits the whole line as a chat prompt (verified live) — so the
+/// picker is the only runtime lever on a live TUI pane. Every stage is
+/// verified against the plain-text screen before the next key; failures
+/// unwind only overlays this driver opened (never a bare Escape at the
+/// composer, which would interrupt a running agent). The picker chain:
+/// `/model` ⏎ (palette) → search selector → ⏎ (role menu) → ⏎ assigns
+/// `default` → ⏎ keeps the pre-highlighted reasoning level → Esc Esc, then
+/// omp prints `Default model: <selector>` as the receipt.
+async fn post_model(
+    State(state): State<Shared>,
+    Path(pane_id): Path<String>,
+    Json(body): Json<ModelBody>,
+) -> impl IntoResponse {
+    let selector = body.model.trim().to_string();
+    if selector.is_empty()
+        || selector.len() > 120
+        || !selector.contains('/')
+        || selector
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control())
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "model must be a provider/id selector"})),
+        )
+            .into_response();
+    }
+    let is_omp_pane = state
+        .fleet
+        .read()
+        .await
+        .panes
+        .iter()
+        .any(|p| p.pane_id == pane_id && p.agent.is_some());
+    if !is_omp_pane {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "pane is not an agent pane"})),
+        )
+            .into_response();
+    }
+    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
+    if !claimed {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "another control change is in progress on this pane"})),
+        )
+            .into_response();
+    }
+    let result = drive_model_picker(&pane_id, &selector).await;
+    state.pane_locks.lock().await.remove(&pane_id);
+    match result {
+        Ok(()) => Json(json!({"ok": true, "model": selector})).into_response(),
+        Err((status, msg)) => (status, Json(json!({"error": msg}))).into_response(),
+    }
+}
+
+async fn drive_model_picker(
+    pane_id: &str,
+    selector: &str,
+) -> std::result::Result<(), (StatusCode, String)> {
+    let gateway = |e: anyhow::Error| (StatusCode::BAD_GATEWAY, e.to_string());
+    let id_part = selector.split_once('/').map_or(selector, |(_, id)| id);
+
+    // Palette: clear any composer draft, type the command name.
+    key(pane_id, "ctrl+u", 250).await.map_err(gateway)?;
+    type_chars(pane_id, "/model").await.map_err(gateway)?;
+    tokio::time::sleep(Duration::from_millis(550)).await;
+    let s = screen_text(pane_id).await.map_err(gateway)?;
+    if !s.contains("Model: ") {
+        let _ = key(pane_id, "ctrl+u", 100).await;
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "command palette did not open".into(),
+        ));
+    }
+
+    // Picker: Enter runs the highlighted exact-match `model` command.
+    key(pane_id, "Enter", 800).await.map_err(gateway)?;
+    let s = screen_text(pane_id).await.map_err(gateway)?;
+    if !s.contains("All available models") {
+        let _ = key(pane_id, "ctrl+u", 100).await;
+        return Err((StatusCode::BAD_GATEWAY, "model picker did not open".into()));
+    }
+
+    // Search: the full selector; require at least one fuzzy match.
+    type_chars(pane_id, selector).await.map_err(gateway)?;
+    tokio::time::sleep(Duration::from_millis(550)).await;
+    let s = screen_text(pane_id).await.map_err(gateway)?;
+    let match_count = all_models_count(&s).unwrap_or(0);
+    if match_count == 0 {
+        // Esc clears the search text, second Esc closes the picker.
+        let _ = key(pane_id, "Escape", 250).await;
+        let _ = key(pane_id, "Escape", 100).await;
+        return Err((
+            StatusCode::NOT_FOUND,
+            "model not available in this session (provider not configured?)".into(),
+        ));
+    }
+
+    // Already the default? The details panel tags the highlighted model's
+    // assigned roles — but Nerd Font glyphs sit flush against the word
+    // ("\u{f111}default \u{f074} · …") and some glyphs are dropped entirely
+    // by the plain-text read, so strip private-use codepoints before
+    // matching. Enter on an assigned model TOGGLES the role off (verified
+    // live: "Default role cleared — auto-selection applies"), so an
+    // assigned target means close and report success without touching it.
+    // Only trustworthy when the match is unique — the tag describes the
+    // highlighted row, which is the target iff it is the only row.
+    let already_default = match_count == 1
+        && s.lines().any(|l| {
+            strip_glyphs(l)
+                .trim_matches(|c: char| c == '\u{2502}' || c.is_whitespace())
+                .starts_with("default")
+        });
+    if already_default {
+        key(pane_id, "Escape", 250).await.map_err(gateway)?; // clear search
+        key(pane_id, "Escape", 400).await.map_err(gateway)?; // close picker
+        return Ok(());
+    }
+
+    // Role menu: the footer line names the chosen model — the identity check
+    // that catches fuzzy search highlighting a different row. Enter is only
+    // safe on the CLEAN "[ default ]" slot; an assigned slot carries a level
+    // glyph inside the brackets ("[ \u{f111}default \u{f074} ]") or leaves a
+    // double-space artifact where the read dropped the glyph, and Enter
+    // there would CLEAR the role.
+    key(pane_id, "Enter", 800).await.map_err(gateway)?;
+    let s = screen_text(pane_id).await.map_err(gateway)?;
+    let role_line = s
+        .lines()
+        .find(|l| l.contains(&format!("{id_part} \u{2192}")))
+        .unwrap_or("");
+    let unwind_role = || async {
+        let _ = key(pane_id, "Escape", 250).await; // role menu -> picker
+        let _ = key(pane_id, "Escape", 250).await; // clear search
+        let _ = key(pane_id, "Escape", 100).await; // close picker
+    };
+    if role_line.is_empty() {
+        unwind_role().await;
+        return Err((
+            StatusCode::CONFLICT,
+            "picker highlighted a different model".into(),
+        ));
+    }
+    let slot = role_line
+        .split_once('[')
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(inner, _)| inner)
+        .unwrap_or("");
+    let has_glyph = slot.chars().any(is_private_use);
+    let clean_default = !has_glyph && slot.trim() == "default" && !slot.contains("  ");
+    if !clean_default {
+        unwind_role().await;
+        if strip_glyphs(slot).contains("default") {
+            // Already assigned — reported as success, nothing was toggled.
+            return Ok(());
+        }
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "role menu did not offer a default slot".into(),
+        ));
+    }
+
+    // Assign `default`, keep the pre-highlighted reasoning level. All picker
+    // Enters pace at 800ms — omp debounces rapid TUI keys and a coalesced
+    // Enter silently drops a stage (verified live: a 550ms chain lost the
+    // assign step and left the old model active).
+    key(pane_id, "Enter", 800).await.map_err(gateway)?;
+    let s = screen_text(pane_id).await.map_err(gateway)?;
+    if !s.contains("inherit") {
+        let _ = key(pane_id, "Escape", 250).await;
+        let _ = key(pane_id, "Escape", 250).await;
+        let _ = key(pane_id, "Escape", 100).await;
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "reasoning level menu did not open".into(),
+        ));
+    }
+    // Confirm the level; verify the level menu actually closed (its
+    // "inherit" footer is the only marker distinguishing it from the
+    // picker, whose "All available models" header stays visible under
+    // every submenu). One paced retry covers a debounced Enter.
+    key(pane_id, "Enter", 800).await.map_err(gateway)?;
+    let mut s = screen_text(pane_id).await.map_err(gateway)?;
+    if s.contains("inherit") {
+        key(pane_id, "Enter", 800).await.map_err(gateway)?;
+        s = screen_text(pane_id).await.map_err(gateway)?;
+        if s.contains("inherit") {
+            let _ = key(pane_id, "Escape", 250).await;
+            let _ = key(pane_id, "Escape", 250).await;
+            let _ = key(pane_id, "Escape", 100).await;
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "role assignment did not register".into(),
+            ));
+        }
+    }
+
+    // Close: Esc first clears the search text, then closes the picker; a
+    // submenu adds a level. Loop while the picker is verifiably open so a
+    // bare Escape never reaches the composer of a running agent.
+    for _ in 0..4 {
+        if !screen_text(pane_id)
+            .await
+            .map_err(gateway)?
+            .contains("All available models")
+        {
+            break;
+        }
+        key(pane_id, "Escape", 500).await.map_err(gateway)?;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Receipt: omp prints the assignment at the bottom of the transcript,
+    // directly above the composer. Only accept it there — receipts from
+    // earlier switches linger in the visible scrollback.
+    let s = screen_text(pane_id).await.map_err(gateway)?;
+    let receipt_fresh = s
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .rev()
+        .take(5)
+        .any(|l| l.contains(&format!("Default model: {selector}")));
+    if !receipt_fresh {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "switch sent but not confirmed by terminal receipt".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -723,7 +1024,7 @@ async fn main() -> Result<()> {
     let state: Shared = Arc::new(AppState {
         fleet: RwLock::new(Fleet::default()),
         pokes: Some(tx),
-        thinking_changes: Mutex::new(HashSet::new()),
+        pane_locks: Mutex::new(HashSet::new()),
     });
 
     // Prime the fleet once before serving so first paint isn't empty.
@@ -742,6 +1043,7 @@ async fn main() -> Result<()> {
         .route("/api/pane/{pane_id}/text", post(post_text))
         .route("/api/pane/{pane_id}/keys", post(post_keys))
         .route("/api/pane/{pane_id}/thinking", post(post_thinking))
+        .route("/api/pane/{pane_id}/model", post(post_model))
         .route("/api/pane/{pane_id}/ask", post(post_ask))
         .route(
             "/api/pane/{pane_id}/upload",

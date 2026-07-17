@@ -20,6 +20,8 @@ const SessionView = {
   toolExpanded: new Set(),
   thinkingOverride: null,
   thinkingApplying: false,
+  modelOverride: null,
+  modelApplying: false,
 
   mount(paneId) {
     this.paneId = paneId;
@@ -31,6 +33,8 @@ const SessionView = {
     this.toolExpanded = new Set();
     this.thinkingOverride = null;
     this.thinkingApplying = false;
+    this.modelOverride = null;
+    this.modelApplying = false;
     loadModels();
     TabStrip.reset();
     clear(app);
@@ -251,12 +255,20 @@ const SessionView = {
     const tLabel = document.getElementById('thinking-chip-label');
     if (!mLabel) return;
     const model = data && data.model;
-    let name = (model && (model.model || model.provider)) || '';
-    if (name.includes('/')) name = name.split('/').pop();
-    const provider = (model && model.provider) || '';
-    mLabel.textContent = provider && name !== provider
-      ? provider + ' · ' + name
-      : (name || 'model \u2026');
+    if (this.modelOverride && model
+      && (model.provider || '') + '/' + (model.model || '') === this.modelOverride.selector) {
+      this.modelOverride = null;
+    }
+    if (this.modelOverride) {
+      mLabel.textContent = this.modelOverride.label;
+    } else {
+      let name = (model && (model.model || model.provider)) || '';
+      if (name.includes('/')) name = name.split('/').pop();
+      const provider = (model && model.provider) || '';
+      mLabel.textContent = provider && name !== provider
+        ? provider + ' · ' + name
+        : (name || 'model \u2026');
+    }
     const reportedThinking = (data && data.thinking) || '';
     if (this.thinkingOverride && reportedThinking === this.thinkingOverride.value) {
       this.thinkingOverride = null;
@@ -272,11 +284,19 @@ const SessionView = {
     }
   },
 
-  // Tap the model chip -> full catalog picker; selecting sends the exact
-  // `/model provider/id` (verified: omp's handler matches id or
-  // provider/id exactly and switches without opening the TUI picker).
+  // Tap the model chip -> full catalog picker. Selection drives omp's own
+  // interactive `/model` picker through the bridge (omp does not execute
+  // arged slash commands submitted as composer text); the bridge verifies
+  // each picker stage and the printed `Default model:` receipt before
+  // reporting success, so the chip only flips on a confirmed switch.
   openModelSheet() {
-    const current = (this.data && this.data.model) || null;
+    // A confirmed-but-unreconciled switch outranks the (lagging) session file.
+    const current = this.modelOverride
+      ? {
+          provider: this.modelOverride.selector.split('/')[0],
+          model: this.modelOverride.selector.split('/').slice(1).join('/'),
+        }
+      : (this.data && this.data.model) || null;
     const view = this;
     const MAX_ROWS = 60;
     openSheet((sheet, close) => {
@@ -299,13 +319,41 @@ const SessionView = {
           class: 'sheet-row' + (isCur ? ' current' : ''),
           onclick: async () => {
             close();
-            if (isCur) return;
+            if (isCur || view.modelApplying) return;
+            const btn = document.getElementById('model-chip-btn');
+            const label = document.getElementById('model-chip-label');
+            let shortName = m.name || m.id;
+            const chipText = m.provider + ' \u00b7 ' + shortName;
+            view.modelApplying = true;
+            if (btn) {
+              btn.disabled = true;
+              btn.setAttribute('aria-busy', 'true');
+            }
+            if (label) label.textContent = 'switching\u2026';
+            view.updateSendState();
             try {
-              await api.sendText(view.paneId, '/model ' + m.selector);
-              showToast('Switching to ' + (m.name || m.id), 'info');
-              setTimeout(() => view.load(), 900);
-            } catch (_) {
-              showToast('Failed to switch model');
+              // Capture the live effort first: omp resets a freshly
+              // assigned model role to 'auto'.
+              const prevLevel = view.normalizeThinking(
+                await view.readLiveThinking().catch(() => '')
+                || (view.thinkingOverride && view.thinkingOverride.value)
+                || (view.data && view.data.thinking));
+              await api.setModel(view.paneId, m.selector);
+              view.modelOverride = { selector: m.selector, label: chipText };
+              if (label) label.textContent = chipText;
+              showToast('Model: ' + shortName, 'info');
+              await view.restoreThinkingAfterSwitch(m, prevLevel);
+            } catch (err) {
+              view.updateComposerStatus(view.data);
+              showToast(err && err.message ? err.message : 'Failed to switch model');
+            } finally {
+              view.modelApplying = false;
+              if (btn) {
+                btn.disabled = false;
+                btn.removeAttribute('aria-busy');
+              }
+              view.updateSendState();
+              view.load();
             }
           },
         }, [
@@ -508,6 +556,25 @@ const SessionView = {
     }
   },
 
+  // A fresh role assignment resets omp's effort to 'auto' (verified live);
+  // put the pane's prior level back through the verified reasoning flow.
+  // Best-effort: the model switch already succeeded, so failures here only
+  // surface through applyThinking's own toasts, never as a switch failure.
+  async restoreThinkingAfterSwitch(m, prevLevel) {
+    try {
+      if (!prevLevel || prevLevel === 'unknown' || prevLevel === 'auto') return;
+      const available = Array.isArray(m.thinking)
+        ? m.thinking.map((v) => this.normalizeThinking(v))
+        : [];
+      if (!available.length) return;
+      const levels = [...new Set(['off', 'auto', ...available])];
+      if (!levels.includes(prevLevel)) return;
+      const live = await this.readLiveThinking().catch(() => '');
+      if (!live || !levels.includes(live) || live === prevLevel) return;
+      await this.applyThinking(prevLevel, live, levels);
+    } catch (_) { /* best-effort */ }
+  },
+
   openActionSheet() {
     const view = this;
     openSheet((sheet, close) => {
@@ -657,7 +724,7 @@ const SessionView = {
     if (!sendBtn) return;
     const hasText = !!(ta && ta.value.trim().length > 0);
     const hasAttachments = this.attachments.length > 0;
-    sendBtn.disabled = (!hasText && !hasAttachments) || this.uploading > 0 || this.thinkingApplying;
+    sendBtn.disabled = (!hasText && !hasAttachments) || this.uploading > 0 || this.thinkingApplying || this.modelApplying;
   },
 
   async handleAttachFiles(e) {
