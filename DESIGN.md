@@ -173,7 +173,7 @@ status labels read as operational indicators, not prose.
 Single-column phone layout. Fixed header (44px+ touch rows), scrollable
 content region (`.scroll`). When the iOS keyboard opens, `#app` shrinks to
 the visual viewport height (`height: calc(100dvh - var(--kb-offset))`,
-measured via `visualViewport` in app.js) — the transcript, ask box, and
+measured via `visualViewport` in `frontend/src/viewport.rs`) — the transcript, ask box, and
 composer all stay fully visible above the keyboard; nothing is ever
 overlapped. Safe-area insets respected on all edges.
 
@@ -197,9 +197,11 @@ the middle, status chip on the right. A pane with a pending ask shows a
 
 ### Status chip
 
-Pill with leading dot. Uppercase, 10.5px, 600 weight. Color-coded by status.
-Blocked dot pulses; all others static. The dot+text combination is redundant
-(color + shape) for colorblind accessibility.
+Pill with leading dot and a status glyph (question/activity/clock/check).
+Uppercase, 10.5px, 600 weight. Color-coded by status. Blocked dot pulses; all
+others static. The dot+glyph+text combination is redundant (color + shape)
+for colorblind accessibility. Chips appear on inbox cards only — session and
+term headers use the status dot instead.
 
 ### Tab strip
 
@@ -208,24 +210,47 @@ Pill chips; close requires a second confirming tap (tap shows "confirm?",
 "+" button at the end. The strip only renders with 2+ tabs — a lone tab is
 noise; "New tab" lives in the composer's ⋯ sheet, so nothing is lost.
 
+### Session/term header
+
+Single compact row: back chevron (44px), workspace avatar (28px), workspace
+name as the primary text, and a status dot on the right. The pane title lives
+in the composer's meta row, not the header. The dot is 12px inside a 44px
+tappable button (tap toasts the status word; the button carries the
+aria-label): blocked = red attention pulse, working = amber breathing pulse,
+idle = static gray, done = static green with an inset check (non-color cue),
+unknown = hollow ring. Each state adds a faint status-tinted ring. Pulses are
+the sanctioned ambient motion and are disabled under reduced motion. A 1px
+workspace-hue edge underlines the header. When SSE drops, a tappable amber
+"Reconnecting" pill appears beside the dot (nothing is shown while
+connected — calm default; tap explains "data may be stale").
+
 ### Agent composer
 
-Context row: two tappable mono pills — the model chip (`provider · model`,
-opens the model picker) and the thinking chip (opens an exact effort picker
-for the current model). Options come from `/api/models`; the current level is
-checked. Selection updates the chip immediately, then the bridge applies omp's
-`app.thinking.cycle` the required number of times using paced raw CSI Z input.
-Transitions are serialized per pane. Kelpie only confirms success after the
-live terminal footer matches the requested level; an unreadable footer remains
-explicitly unverified. Then a spacer, the ⋯ actions button, Esc, and Send.
-Chips are 32px visual inside a 44px hit area. Button hierarchy: Send is the
-ONE filled (accent) action; Esc is
-a text-only red button (quiet, reads "careful"); ⋯ is a bare icon. The
-attach button is a soft overlay-filled square with no border, so the
-textarea is the only outlined box in its row. Send disabled = overlay fill
-+ faint text. `/` opens slash-command autocomplete. Send is disabled when
-there is neither text nor an attachment, while an upload is in flight, or
-while a reasoning-effort or model change is being applied.
+Three stacked strata, clearly separated from the transcript (surface shift +
+hairline):
+
+1. **Meta row** — horizontally scrollable (edge-fade mask, no scrollbar),
+   hairline underneath: the model chip (cpu icon + full model id — never
+   ellipsized, the whole id is readable at 390px; opens the model picker),
+   the thinking chip (brain icon; opens an exact effort picker), and a
+   non-tappable pane-title chip (max-width 140px) when the title adds info
+   beyond the workspace name.
+2. **Actions row** — tight (4px gaps, 44px targets): attach, back-to-inbox,
+   terminal toggle, Ctrl+C, Esc (text-only red — quiet, reads "careful"),
+   ⋯ (rare actions; currently just New tab), spacer, Send — the ONE filled
+   accent action, anchored right.
+3. **Input row** — the textarea alone, full width; the only outlined box.
+
+Effort options come from `/api/models`; the current level is checked.
+Selection updates the chip immediately, then the bridge applies omp's
+`app.thinking.cycle` the required number of times using paced raw CSI Z
+input. Transitions are serialized per pane. Kelpie only confirms success
+after the live terminal footer matches the requested level; an unreadable
+footer remains explicitly unverified.
+Send disabled = overlay fill + faint text. `/` opens slash-command
+autocomplete. Send is disabled when there is neither text nor an attachment,
+while an upload is in flight, or while a reasoning-effort or model change is
+being applied.
 
 ### Bottom sheets
 
@@ -294,9 +319,11 @@ can open them directly.
 
 ### Terminal composer
 
-Text input + Send, then a key row (Enter, Esc, Ctrl+C, Up, Down, Tab).
-Terminal screen is plain text, `pre-wrap` + `overflow-wrap: anywhere` (pane
-PTYs are ~160 cols; soft wrap beats horizontal scroll on a phone).
+Text input + Send, then a key row with icons (Enter, Esc, Ctrl+C, Up, Down,
+Tab). Terminal screen is plain text, `pre-wrap` + `overflow-wrap: anywhere`
+(pane PTYs are ~160 cols; soft wrap beats horizontal scroll on a phone). For
+agent panes the header carries a chat toggle back to the session view — the
+terminal is never a one-way trap.
 
 ### Kelpie mark
 
@@ -333,15 +360,25 @@ Inventory:
 - Card exit: 180ms ease (fade + translateY)
 - Toast enter: 200ms `--ease-out` fade + 8px rise via `@starting-style`
 - Keyboard pin: 150ms ease
-- Blocked status pulse: 1.4s ease-in-out (the only ambient motion)
+- Status dot pulses (session/term header): blocked = attention pulse,
+  working = 2.4s breathing pulse — opacity-only, compositor-safe, the only
+  ambient motion
 - Skeleton shimmer: 1.4s ease infinite
 
 Under `prefers-reduced-motion: reduce`, movement is removed (press scale,
-toast rise, FLIP, pulse, shimmer); opacity/color feedback stays.
+toast rise, FLIP, pulses, shimmer); opacity/color feedback stays.
 
 Destructive affordances stay quiet until armed: tab-close and
 attachment-remove ×'s are faint grey; red is reserved for the confirm state
 and the Esc interrupt.
+
+Rendering discipline (feel = speed): the transcript renders via keyed
+diff/patch (entries are cached nodes; markdown re-parses only on changed
+text — never a full teardown on poll/SSE ticks), scroll and visualViewport
+handlers are rAF-coalesced, `#app` has no height transition (keyboard resize
+lands instantly), the term screen skips writes when unchanged, and sheet
+group headers are opaque (no backdrop blur). The bridge polls herdr every
+600ms and pushes SSE; all views also refresh on focus and SSE reconnect.
 
 ## Accessibility
 
@@ -362,7 +399,8 @@ Every surface handles 0..N workspaces/panes gracefully:
   a workspace" hint.
 - **Session empty:** "No messages yet." in the transcript area.
 - **Terminal empty:** blank screen (the pane has no content yet).
-- **Tab strip empty:** hidden entirely (`.tabstrip-wrap.empty { display: none }`).
+- **Tab strip:** always visible for sessions — one tab still shows its chip
+  plus the add affordance, so tab management is never hidden.
 
 ## Do's and Don'ts
 
@@ -378,7 +416,10 @@ Every surface handles 0..N workspaces/panes gracefully:
   variants).
 - Touch targets ≥ 44px.
 - No gradient text, glassmorphism, decorative blobs, or side-stripe cards.
-- No build step. Vanilla JS/CSS only.
+- Implementation is Rust end to end: axum bridge + Yew (WASM) frontend in
+  `frontend/`, built via `./build-frontend.sh` into `static/wasm/`. CSS stays
+  a single hand-written `static/style.css` — tokens in `:root`, dark via
+  media query, no preprocessor.
 
 ## What was rejected (lab-001)
 

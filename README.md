@@ -39,27 +39,28 @@ fixed vocabulary. Zero workspaces, one, or fifty all render sensibly.
 
 ```mermaid
 flowchart LR
-    P[iPhone PWA<br>static/ ES modules] -- "HTTP + SSE :8787" --> K[kelpie bridge<br>axum, Rust]
+    P[iPhone PWA<br>Yew/WASM, static/] -- "HTTP + SSE :8787" --> K[kelpie bridge<br>axum, Rust]
     K -- "NDJSON RPC over unix socket" --> H[herdr<br>workspace manager]
     K -- "session JSONL (read-only)" --> O[omp session files]
     H -- PTY --> A[agent panes]
 ```
 
-- Fleet state comes from herdr's `session.snapshot`, polled every 1.2s and
+- Fleet state comes from herdr's `session.snapshot`, polled every 600ms and
   diffed; changes fan out to clients over SSE.
 - Transcripts come straight from omp's session JSONL files (each herdr pane
   record carries the path). No ANSI parsing.
 - Input goes back through herdr `pane.send_text` / `pane.send_keys`.
-- The frontend is vanilla ES modules — no build step, no dependencies. The
-  bridge serves everything with `Cache-Control: no-cache`, so deploys are
-  just "restart the binary".
+- The frontend is Rust too — a Yew (WASM) app in `frontend/`, compiled with
+  `./build-frontend.sh` into `static/wasm/`. The bridge serves everything with
+  `Cache-Control: no-cache`, so deploys are "rebuild, restart the binary".
 
 ## Requirements
 
 - macOS/Linux workstation running [herdr](https://herdr.dev)
   (`~/.config/herdr/herdr.sock`) with [omp](https://github.com/can1357/oh-my-pi)
   agents in its panes
-- Rust toolchain (1.75+)
+- Rust toolchain (1.75+) with the `wasm32-unknown-unknown` target and
+  `wasm-bindgen-cli` 0.2.100 (frontend rebuilds only)
 - [Tailscale](https://tailscale.com) (or any private network) to reach your
   workstation from the phone
 
@@ -68,6 +69,7 @@ flowchart LR
 ```sh
 git clone https://github.com/misty-step/kelpie
 cd kelpie
+./build-frontend.sh   # Yew frontend -> static/wasm/ (committed; only needed after frontend changes)
 cargo run --release
 # kelpie listening on http://127.0.0.1:8787 (static: static)
 ```
@@ -90,7 +92,7 @@ viewport tracking, not scroll hacks).
 |---|---|---|
 | `KELPIE_STATIC` | `static` | Directory of frontend assets, relative to the working directory |
 
-The bind address (`127.0.0.1:8787`) and herdr poll interval (1200ms) are
+The bind address (`127.0.0.1:8787`) and herdr poll interval (600ms) are
 constants at the top of `src/main.rs`.
 
 ## API
@@ -133,12 +135,17 @@ src/
   main.rs        axum bridge: fleet poller, routes, SSE
   herdr.rs       herdr unix-socket NDJSON RPC client
   omp.rs         omp session JSONL -> transcript / summary parsing
+frontend/
+  src/lib.rs     Yew app shell: hash router, SSE context, toasts, viewport
+  src/api.rs     typed bridge client
+  src/types.rs   bridge response types
+  src/icons.rs   fixed icon vocabulary + deterministic workspace identity
+  src/components.rs  Header, MetaBadge, BottomSheet, TabStrip
+  src/views/     inbox, session, term
 static/
-  index.html     shell (PWA meta, icons)
+  index.html     shell (PWA meta, icons, wasm bootstrap)
   style.css      full design system (tokens in :root, dark via media query)
-  app.js         entry point: router + boot
-  js/            dom, icons, markdown, api, state, overlay, sse,
-                 viewport, tabstrip, views/{inbox,session,term}
+  wasm/          built frontend (build-frontend.sh output, committed)
 ```
 
 `DESIGN.md` documents the visual system — tokens, type scale, status colors,

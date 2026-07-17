@@ -26,7 +26,7 @@ use tokio_stream::StreamExt;
 use tower_http::services::ServeDir;
 
 const BIND: &str = "127.0.0.1:8787";
-const POLL_MS: u64 = 1200;
+const POLL_MS: u64 = 600;
 
 // ---------------------------------------------------------------- fleet model
 

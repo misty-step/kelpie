@@ -13,7 +13,7 @@
   --hairline: #d8d5d0;
   --text: #1c1b1a;
   --muted: #6b6862;
-  --faint: #9b9893;
+  --faint: #706c66;
 
   /* ── Accent ── */
   --accent: #0f6e6e;
@@ -58,6 +58,16 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --kb-offset: 0px;
+
+  /* ── Inline icon masks (lucide paths, URL-encoded). Used with
+     -webkit-mask/mask over a currentColor background so the glyphs follow
+     text color in both themes without any JS. ── */
+  --ic-dot: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'black'%20stroke%3D'none'%20stroke-width%3D'2.6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Ccircle%20cx%3D'12'%20cy%3D'12'%20r%3D'7'%20fill%3D'black'%20stroke%3D'none'%2F%3E%3C%2Fsvg%3E");
+  --ic-ask: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2.6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M7.9%2020A9%209%200%201%200%204%2016.1L2%2022Z'%2F%3E%3Cpath%20d%3D'M9.09%209a3%203%200%200%201%205.83%201c0%202-3%203-3%203'%2F%3E%3Cpath%20d%3D'M12%2017h.01'%2F%3E%3C%2Fsvg%3E");
+  --ic-activity: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2.6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpolyline%20points%3D'22%2012%2018%2012%2015%2021%209%203%206%2012%202%2012'%2F%3E%3C%2Fsvg%3E");
+  --ic-clock: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2.6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M12%206v6l4%202'%2F%3E%3Ccircle%20cx%3D'12'%20cy%3D'12'%20r%3D'10'%2F%3E%3C%2Fsvg%3E");
+  --ic-check: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2.6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M20%206%209%2017l-5-5'%2F%3E%3C%2Fsvg%3E");
+  --ic-alert: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2.6'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Ccircle%20cx%3D'12'%20cy%3D'12'%20r%3D'10'%2F%3E%3Cline%20x1%3D'12'%20x2%3D'12'%20y1%3D'8'%20y2%3D'12'%2F%3E%3Cline%20x1%3D'12'%20x2%3D'12.01'%20y1%3D'16'%20y2%3D'16'%2F%3E%3C%2Fsvg%3E");
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,7 +78,7 @@
     --hairline: #383631;
     --text: #e8e6e1;
     --muted: #9a968e;
-    --faint: #6b6862;
+    --faint: #8a8680;
 
     --accent: #2dd4cf;
     --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -76,8 +86,8 @@
 
     --st-working: #f0a030;
     --st-working-bg: color-mix(in srgb, #f0a030 16%, transparent);
-    --st-blocked: #f0625a;
-    --st-blocked-bg: color-mix(in srgb, #f0625a 16%, transparent);
+    --st-blocked: #ff7a72;
+    --st-blocked-bg: color-mix(in srgb, #ff7a72 16%, transparent);
     --st-idle: #9a968e;
     --st-idle-bg: color-mix(in srgb, #9a968e 10%, transparent);
     --st-done: #5eb872;
@@ -113,10 +123,6 @@ body { height: 100dvh; overflow: hidden; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: height 0.15s ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  #app { transition: none; }
 }
 
 a { color: var(--accent); }
@@ -127,24 +133,24 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    release). 160ms strong ease-out; subtle 0.97 per Emil's 0.95–0.98 band.
    Cards use 0.985 — large surfaces need less. Gated off under
    prefers-reduced-motion; the background change still gives feedback. ── */
-.back-btn, .hdr-icon-btn, .tab-chip, .status-esc-btn, .status-send-btn,
-.attach-btn, .term-key-btn, .jump-pill, .ask-option, .cmd-row,
-.ctx-chip, .more-btn, .sheet-row {
+.back-btn, .hdr-icon-btn, .tab-chip, .action-btn, .action-esc, .action-send-btn,
+.term-key-btn, .jump-pill, .ask-option, .cmd-row,
+.meta-chip, .sheet-row, .status-dot-btn, .reconnect-pill {
   transition: transform 160ms var(--ease-out);
 }
 .back-btn:active, .hdr-icon-btn:active, .tab-chip:active,
-.status-esc-btn:active, .status-send-btn:not(:disabled):active,
-.attach-btn:active, .term-key-btn:active, .jump-pill:active,
+.action-btn:active, .action-esc:active, .action-send-btn:not(:disabled):active,
+.term-key-btn:active, .jump-pill:active,
 .ask-option:active, .cmd-row:active,
-.ctx-chip:active, .more-btn:active, .sheet-row:active {
+.meta-chip:active, .sheet-row:active, .status-dot-btn:active, .reconnect-pill:active {
   transform: var(--press);
 }
 @media (prefers-reduced-motion: reduce) {
   .back-btn:active, .hdr-icon-btn:active, .tab-chip:active,
-  .status-esc-btn:active, .status-send-btn:active, .attach-btn:active,
+  .action-btn:active, .action-esc:active, .action-send-btn:active,
   .term-key-btn:active, .jump-pill:active, .ask-option:active,
   .cmd-row:active, .card:active,
-  .ctx-chip:active, .more-btn:active, .sheet-row:active {
+  .meta-chip:active, .sheet-row:active, .status-dot-btn:active, .reconnect-pill:active {
     transform: none;
   }
 }
@@ -159,7 +165,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   padding-top: calc(var(--safe-top) + 2px);
   padding-bottom: 2px;
 }
-.kb-open .hdr .sub { display: none; }
 .kb-open #session-avatar-slot, .kb-open #term-avatar-slot { display: none; }
 .kb-open .hdr h1 { font-size: 14px; }
 
@@ -250,7 +255,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   border-radius: var(--r-sm);
   background: var(--accent-soft);
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--hairline));
+  border: 1px solid var(--hairline);
 }
 .kelpie-mark img { width: 28px; height: 28px; display: block; }
 /* The mark is dark line art on transparent; flip it light in dark mode. */
@@ -258,32 +263,12 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   .kelpie-mark img { filter: invert(1) brightness(0.9); }
 }
 
-.hdr .sub {
-  display: block;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hdr-title-col {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  gap: 1px;
-}
-
 .back-btn {
   border: none;
   background: transparent;
   color: var(--accent);
-  font-size: 20px;
   line-height: 1;
-  padding: 6px 4px;
+  padding: 10px 4px 10px 8px;
   min-width: 44px;
   min-height: 44px;
   display: flex;
@@ -314,15 +299,38 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .hdr-icon-btn:active { background: var(--overlay); }
 .hdr-add-btn { font-family: var(--font); font-size: 20px; font-weight: 600; }
 
-/* ── Connection dot ── */
-.dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--faint);
+/* ── Reconnect pill: calm default when SSE is connected (nothing shown);
+   an amber pill appears only while disconnected/reconnecting, and taps
+   toast an explanation. Never animated — state color only. ── */
+.reconnect-pill {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: var(--st-working-bg);
+  color: var(--st-working);
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 10px;
+  min-height: 44px;
+  cursor: pointer;
   flex-shrink: 0;
 }
-.dot.up { background: var(--accent); }
-.dot.down { background: var(--st-blocked); }
+.reconnect-pill:active { background: color-mix(in srgb, var(--st-working) 22%, transparent); }
+.reconnect-ic { display: flex; flex-shrink: 0; }
+
+/* ── Workspace hue accent: a 1px edge under session/terminal headers in
+   the pane's deterministic hue (matches the avatar). Quiet default until
+   the fleet cache supplies the real hue. ── */
+.session-view .hdr, .term-view .hdr {
+  box-shadow: inset 0 -1px 0 hsl(var(--ws-hue, 210) 60% 65% / 0.45);
+}
+@media (prefers-color-scheme: dark) {
+  .session-view .hdr, .term-view .hdr {
+    box-shadow: inset 0 -1px 0 hsl(var(--ws-hue, 210) 60% 55% / 0.4);
+  }
+}
 
 /* ============================================================
    Inbox
@@ -342,7 +350,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   letter-spacing: 0.06em;
   color: var(--faint);
   margin: 12px 4px 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
+.section-label-ic { display: flex; }
 
 /* ── Fleet card: one row — avatar, workspace name, status chip ── */
 .card {
@@ -375,7 +387,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color: var(--text);
 }
 
-/* ── Status chip ── */
+/* ── Status chip: label + small status glyph (masked lucide icon, so it
+   inherits the chip's status color in both themes). ── */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -384,44 +397,82 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: var(--r-pill);
   flex-shrink: 0;
   white-space: nowrap;
 }
 .chip::before {
   content: "";
-  width: 6px; height: 6px;
-  border-radius: 50%;
+  width: 9px; height: 9px;
   background: currentColor;
   flex-shrink: 0;
+  -webkit-mask: var(--chip-ic, var(--ic-dot)) center / contain no-repeat;
+  mask: var(--chip-ic, var(--ic-dot)) center / contain no-repeat;
 }
-.chip.blocked { color: var(--st-blocked); background: var(--st-blocked-bg); }
+.chip.blocked { color: var(--st-blocked); background: var(--st-blocked-bg); --chip-ic: var(--ic-ask); }
 .chip.blocked::before { animation: pulse 1.4s ease-in-out infinite; }
-.chip.working { color: var(--st-working); background: var(--st-working-bg); }
-.chip.idle { color: var(--st-idle); background: var(--st-idle-bg); }
-.chip.done { color: var(--st-done); background: var(--st-done-bg); }
+.chip.working { color: var(--st-working); background: var(--st-working-bg); --chip-ic: var(--ic-activity); }
+.chip.idle { color: var(--st-idle); background: var(--st-idle-bg); --chip-ic: var(--ic-clock); }
+.chip.done { color: var(--st-done); background: var(--st-done-bg); --chip-ic: var(--ic-check); }
 .chip.unknown { color: var(--muted); background: var(--st-idle-bg); }
 
-/* ── Status dot (composer row) ── */
+/* ── Header status dot: replaces the wordy status chip. Blocked pulses
+   attention (fast, sharp); working breathes (slow, gentle) — the only
+   two ambient motions in the system besides the inbox blocked chip.
+   Idle/done are static; unknown is a hollow ring. Reduced motion drops
+   both animations to a flat color. ── */
+.status-dot-btn {
+  border: none;
+  background: transparent;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+.status-dot-btn:active { background: var(--overlay); }
 .status-dot {
-  width: 8px; height: 8px;
+  width: 12px; height: 12px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--muted);
+  position: relative;
 }
-.status-dot.blocked { background: var(--st-blocked); animation: pulse 1.4s ease-in-out infinite; }
-.status-dot.working { background: var(--st-working); }
-.status-dot.idle { background: var(--st-idle); }
-.status-dot.done { background: var(--st-done); }
-.status-dot.unknown { background: var(--muted); }
+.status-dot.blocked { background: var(--st-blocked); box-shadow: 0 0 0 4px var(--st-blocked-bg); animation: dot-pulse-attention 1.2s ease-in-out infinite; }
+.status-dot.working { background: var(--st-working); box-shadow: 0 0 0 4px var(--st-working-bg); animation: dot-pulse-breathe 2.6s ease-in-out infinite; }
+.status-dot.idle { background: var(--st-idle); box-shadow: 0 0 0 4px var(--st-idle-bg); }
+.status-dot.done { background: var(--st-done); box-shadow: 0 0 0 4px var(--st-done-bg); }
+.status-dot.done::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 8px; height: 8px;
+  background: var(--surface);
+  -webkit-mask: var(--ic-check) center / contain no-repeat;
+  mask: var(--ic-check) center / contain no-repeat;
+}
+.status-dot.unknown { background: transparent; border: 1.5px solid var(--muted); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+@keyframes dot-pulse-attention {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes dot-pulse-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .chip.blocked::before, .status-dot.blocked { animation: none; }
+  .chip.blocked::before, .status-dot.blocked, .status-dot.working { animation: none; }
 }
 
 /* ── Empty / error / skeleton ── */
@@ -445,6 +496,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color: var(--faint);
   margin-top: 8px;
 }
+.error-state .error-icon { color: var(--st-blocked); }
 
 .error-state button, .retry-btn {
   margin-top: 14px;
@@ -505,7 +557,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   gap: 12px;
   box-shadow: 0 12px 40px rgba(0,0,0,0.35);
 }
-.dialog-panel h2 { margin: 0; font-size: 16px; }
+.dialog-panel h2 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.dialog-title-ic { display: flex; color: var(--accent); }
 .dialog-panel input[type=text] {
   border: 1.5px solid var(--hairline);
   border-radius: var(--r-sm);
@@ -545,7 +598,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   background: var(--surface);
   border-bottom: 1px solid var(--hairline);
 }
-.tabstrip-wrap.empty { display: none; }
+/* Tab strips stay visible for one-tab workspaces. */
 .tabstrip {
   display: flex;
   gap: 6px;
@@ -743,7 +796,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   border: none;
   color: var(--accent);
   font-size: 12px;
-  padding: 4px 0;
+  padding: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
   align-self: flex-start;
   text-decoration: underline;
@@ -753,7 +809,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   border: 1px solid var(--hairline);
   border-radius: var(--r-sm);
   background: var(--surface);
-  padding: 8px 11px;
+  padding: 8px 12px;
   font-size: 13px;
   max-width: 100%;
 }
@@ -763,7 +819,19 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   gap: 6px;
   cursor: pointer;
   min-height: 28px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
 }
+.tool-card .tool-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tool-ic { display: flex; color: var(--faint); flex-shrink: 0; }
 .tool-card .tool-name {
   font-family: var(--mono);
   font-weight: 600;
@@ -824,7 +892,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   cursor: pointer;
   z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
+.jump-pill-ic { display: flex; }
 @media (prefers-color-scheme: dark) {
   .jump-pill { color: #14130f; }
 }
@@ -842,7 +914,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .ask-question {
   font-size: 14px;
   font-weight: 600;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
 }
+.ask-ic { display: flex; flex-shrink: 0; color: var(--st-blocked); margin-top: 1px; }
 .ask-options {
   display: flex;
   flex-direction: column;
@@ -893,7 +969,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 9px calc(var(--safe-right) + 14px) 9px calc(var(--safe-left) + 14px);
+  padding: 8px calc(var(--safe-right) + 14px) 8px calc(var(--safe-left) + 14px);
   border: none;
   background: transparent;
   font-size: 13px;
@@ -902,6 +978,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   min-height: 40px;
 }
 .cmd-row:active { background: var(--overlay); }
+.cmd-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .cmd-name {
   font-family: var(--mono);
   font-weight: 600;
@@ -917,48 +997,68 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-size: 12px;
 }
 
-/* ── Composer status row: dot · model line · Esc · Send.
-   The model line is plain muted mono text that ellipsizes — it can never
-   push the buttons off-screen. ── */
-.composer-status-row {
+/* ── Composer meta row (row 1) ── quiet mono chips: model, reasoning,
+   pane title. Horizontally scrollable so the full model id is always
+   readable without truncation; no visible scrollbar; edges fade. ── */
+.composer-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px calc(var(--safe-right) + 12px) 2px calc(var(--safe-left) + 12px);
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 calc(var(--safe-right) + 6px) 0 calc(var(--safe-left) + 6px);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+  border-bottom: 1px solid var(--hairline);
 }
-/* ── Context chips: tappable model + thinking state. Mono to read as
-   machine state; bordered pill to read as tappable. ── */
-.ctx-chip {
+.composer-meta-row::-webkit-scrollbar { display: none; }
+/* Chip = 44px tappable button around a ~32px visual pill (padding does
+   the hit-area work, so the row itself never grows past its quiet height). */
+.meta-chip {
+  flex-shrink: 0;
   border: none;
   background: transparent;
-  padding: 0;
+  padding: 6px 2px;
   min-height: 44px;
   display: flex;
   align-items: center;
-  max-width: 40vw;
+  gap: 5px;
   cursor: pointer;
+  color: var(--muted);
 }
-.ctx-chip-pill {
+.meta-chip-ic { display: flex; flex-shrink: 0; color: var(--faint); }
+.meta-chip-text {
   border: 1px solid var(--hairline);
   background: var(--bg);
   color: var(--muted);
   border-radius: var(--r-pill);
   font-family: var(--mono);
   font-size: 11px;
-  padding: 7px 10px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  padding: 8px 10px;
   white-space: nowrap;
 }
-.ctx-chip:disabled { cursor: wait; }
-.ctx-chip:disabled .ctx-chip-pill {
+.meta-chip:disabled { cursor: wait; }
+.meta-chip:disabled .meta-chip-text {
   color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.ctx-spacer { flex: 1; }
-.more-btn {
+/* Pane-title chip is informational only — dashed border reads "not a button". */
+.meta-chip-static { cursor: default; }
+.meta-chip-static .meta-chip-text { color: var(--faint); border-style: dashed; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Composer actions row (row 2) ── bare-icon buttons; Send is the one
+   filled action, anchored right by the spacer. Everything that used to
+   live in the ⋯ sheet lives here now. ── */
+.composer-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px calc(var(--safe-right) + 8px) 2px calc(var(--safe-left) + 8px);
+}
+.action-btn {
   border: none;
   background: transparent;
   color: var(--muted);
@@ -967,64 +1067,47 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--r-sm);
   cursor: pointer;
-  border-radius: var(--r-sm);
   padding: 0;
+  flex-shrink: 0;
 }
-.more-btn:active { background: var(--overlay); }
-
-.status-esc-btn, .status-send-btn {
-  border: none;
-  border-radius: var(--r-sm);
-  min-height: 44px;
+.action-btn:active { background: var(--overlay); }
+/* Esc stays the quiet sibling: text-only, red reads "careful", no fill
+   competing with the one primary action (Send). */
+.action-esc {
+  color: var(--st-blocked);
   font-weight: 600;
   font-size: 13px;
-  cursor: pointer;
+  padding: 0 10px;
+  min-width: 44px;
 }
-.status-esc-btn { padding: 0 14px; }
-/* Send is the one filled action: a square icon button so it never
-   crowds the row's right edge. The paper-plane glyph is optically
-   centered by nudging it 1px left/down. */
-.status-send-btn {
+.action-esc:active { background: var(--st-blocked-bg); }
+.action-spacer { flex: 1; }
+.action-send-btn {
+  border: none;
+  border-radius: var(--r-sm);
+  min-width: 44px;
+  min-height: 44px;
   background: var(--accent);
   color: #fff;
-  min-width: 44px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.status-send-btn svg { transform: translate(-1px, 1px); }
-@media (prefers-color-scheme: dark) {
-  .status-send-btn { color: #14130f; }
-}
-.status-send-btn:disabled { background: var(--overlay); color: var(--faint); cursor: default; }
-/* Esc is the quiet sibling: text-only, red reads as "careful", no fill
-   competing with the one primary action (Send). */
-.status-esc-btn { background: transparent; color: var(--st-blocked); }
-.status-esc-btn:active { background: var(--st-blocked-bg); }
-
-.composer-textarea-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 6px calc(var(--safe-right) + 12px) calc(var(--safe-bottom) + 10px) calc(var(--safe-left) + 12px);
-}
-/* Quiet secondary: filled soft square, no border — one outlined box per
-   row (the textarea), not two competing ones. */
-.attach-btn {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border: none;
-  border-radius: var(--r-md);
-  background: var(--overlay);
-  color: var(--muted);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
+}
+.action-send-btn svg { transform: translate(-1px, 1px); }
+@media (prefers-color-scheme: dark) {
+  .action-send-btn { color: #14130f; }
+}
+.action-send-btn:disabled { background: var(--overlay); color: var(--faint); cursor: default; }
+
+/* ── Composer input row (row 3) ── the textarea alone, full width. ── */
+.composer-textarea-row {
+  display: flex;
+  padding: 4px calc(var(--safe-right) + 12px) calc(var(--safe-bottom) + 10px) calc(var(--safe-left) + 12px);
 }
 
 /* ── Pending attachments ── */
@@ -1164,7 +1247,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-family: var(--mono);
   min-height: 44px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+.term-key-ic { display: flex; color: var(--faint); }
 .term-key-btn:active { background: var(--overlay); }
 
 /* ── Bottom sheet ── */
@@ -1232,9 +1319,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-size: 11px;
   font-weight: 800;
   color: var(--accent-text);
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--surface);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 10px 16px 7px;
@@ -1332,13 +1417,29 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   z-index: 100;
   box-shadow: 0 4px 14px rgba(0,0,0,0.3);
   max-width: 90vw;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
   opacity: 1;
   transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
   @starting-style {
     opacity: 0;
     transform: translate(-50%, 8px);
   }
+}
+.toast::before {
+  content: "";
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: var(--ic-alert) center / contain no-repeat;
+  mask: var(--ic-alert) center / contain no-repeat;
+}
+.toast.info::before {
+  -webkit-mask-image: var(--ic-check);
+  mask-image: var(--ic-check);
 }
 @media (prefers-reduced-motion: reduce) {
   .toast {
@@ -1360,4 +1461,245 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
     border-right: 1px solid var(--hairline);
   }
   body { background: var(--overlay); }
+}
+
+
+/* ============================================================
+   Rust/Yew shared components
+   ============================================================ */
+.hdr-leading {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.hdr-identity {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hdr-avatar {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+}
+.hdr-avatar .avatar {
+  width: 28px;
+  height: 28px;
+}
+.hdr-avatar-empty {
+  visibility: hidden;
+}
+.hdr-identity h1 {
+  flex: 1;
+  min-width: 0;
+}
+.hdr-status-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 44px;
+}
+.hdr-status-btn {
+  position: relative;
+  z-index: 1;
+}
+.hdr-status-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 148px;
+  max-width: min(220px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 5px 16px rgba(0,0,0,.18);
+  font-size: 12px;
+  line-height: 1.25;
+}
+.hdr-status-popover span { color: var(--muted); }
+.hdr-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.status-dot.pending {
+  background: var(--st-working);
+  box-shadow: 0 0 0 4px var(--st-working-bg);
+}
+
+/* Shared metadata badges: the tinted visual carries its own icon and text
+   contrast, while the outer button supplies the complete 44px hit target. */
+.meta-badge {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.meta-badge-visual {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 28px;
+  border-radius: 7px;
+}
+.meta-badge-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.meta-badge-model .meta-badge-visual {
+  background: #d5f1ec;
+  color: #075e5c;
+}
+.meta-badge-model .meta-badge-label { color: #075e5c; }
+.meta-badge-reasoning .meta-badge-visual {
+  background: #fff0d5;
+  color: #7a4a00;
+}
+.meta-badge-reasoning .meta-badge-label { color: #7a4a00; }
+.meta-badge-context .meta-badge-visual {
+  background: #e6e7eb;
+  color: #41464f;
+}
+.meta-badge-context .meta-badge-label { color: #41464f; }
+.meta-badge:disabled { cursor: wait; opacity: .68; }
+.meta-badge:focus-visible, .sheet-close:focus-visible, .tab-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-color-scheme: dark) {
+  .meta-badge-model .meta-badge-visual { background: #16413e; color: #8de3da; }
+  .meta-badge-model .meta-badge-label { color: #8de3da; }
+  .meta-badge-reasoning .meta-badge-visual { background: #4a3318; color: #ffd38a; }
+  .meta-badge-reasoning .meta-badge-label { color: #ffd38a; }
+  .meta-badge-context .meta-badge-visual { background: #34363c; color: #e4e6eb; }
+  .meta-badge-context .meta-badge-label { color: #e4e6eb; }
+}
+
+/* One obvious add affordance and 44px tab targets, including close. */
+.tabstrip-wrap { display: block; }
+.tabstrip { min-height: 54px; align-items: center; }
+.tab-chip { min-height: 44px; }
+.tab-chip-add { min-width: 44px; justify-content: center; gap: 3px; }
+.tab-chip-x {
+  min-width: 36px;
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  cursor: pointer;
+}
+.tab-chip-close-wrap { display: inline-flex; align-items: center; }
+
+/* Bottom-sheet close row and dialog focus affordance. */
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 4px 8px 0 16px;
+}
+.sheet-head .sheet-title {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0 6px;
+}
+.sheet-close {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sheet-close:active { background: var(--overlay); }
+.sheet-focus-sentinel { position: fixed; width: 1px; height: 1px; overflow: hidden; }
+
+/* Composer actions are explicitly labeled; Send remains the only filled
+   primary action. */
+.composer-actions-row .action-btn.action-labeled {
+  width: auto;
+  padding: 0 10px;
+  gap: 6px;
+}
+.action-label { font-size: 12px; font-weight: 600; }
+.sheet-action-row .sheet-row-label { display: inline-block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hdr-status-popover, .sheet-overlay, .sheet { transition: none; }
+  .status-dot.pending { animation: none; }
+}
+
+/* ── Rust port utilities ── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.meta-control { display: inline-flex; min-width: 0; flex-shrink: 0; }
+.composer-actions-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.composer-actions-btn:active { background: var(--overlay); }
+.composer-actions-btn:disabled { color: var(--faint); cursor: wait; }
+
+/* Send carries a label in the Rust port; keep it the one filled action. */
+.action-send-btn {
+  gap: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
 }

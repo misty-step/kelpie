@@ -12,6 +12,13 @@
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="app.js"></script>
+<script type="module">
+import init from "./wasm/kelpie_frontend.js";
+
+init().catch((error) => {
+  console.error("kelpie frontend failed to start", error);
+  document.getElementById("app").textContent = "Kelpie failed to start. Reload to retry.";
+});
+</script>
 </body>
 </html>
