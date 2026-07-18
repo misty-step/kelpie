@@ -523,6 +523,33 @@ fn toast(ctx: &AppContext, text: impl Into<String>, kind: ToastKind) {
     });
 }
 
+#[derive(Default)]
+struct SessionRefreshGate {
+    in_flight: bool,
+    queued: bool,
+    wake_epoch: u64,
+}
+
+impl SessionRefreshGate {
+    fn begin(&mut self) -> bool {
+        if self.in_flight {
+            self.queued = true;
+            return false;
+        }
+        self.in_flight = true;
+        true
+    }
+
+    fn finish(&mut self) -> Option<u64> {
+        self.in_flight = false;
+        if !std::mem::take(&mut self.queued) {
+            return None;
+        }
+        self.wake_epoch = self.wake_epoch.wrapping_add(1);
+        Some(self.wake_epoch)
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub struct SessionViewProps {
     pub pane_id: String,
@@ -536,6 +563,8 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let retry = use_state(|| 0_u64);
     let session_generation = use_mut_ref(|| 0_u64);
     let session_applied_generation = use_state(|| 0_u64);
+    let session_refresh_gate = use_mut_ref(SessionRefreshGate::default);
+    let session_refresh_wake = use_state(|| 0_u64);
     let optimistic_working = use_state(|| false);
     let ask_action = use_state(|| None::<AskAction>);
     let ask_action_current = use_mut_ref(|| None::<AskAction>);
@@ -592,16 +621,20 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let live_thinking = live_thinking.clone();
         let session_generation = session_generation.clone();
         let session_applied_generation = session_applied_generation.clone();
+        let session_refresh_gate = session_refresh_gate.clone();
         let pane_id = pane_id.clone();
         let retry_value = *retry;
         let session_event = ctx.session_events.get(&pane_id).copied().unwrap_or(0);
         let session_refresh_epoch = ctx.session_refresh_epoch;
+        let session_refresh_wake_value = *session_refresh_wake;
+        let session_refresh_wake = session_refresh_wake.clone();
         use_effect_with(
             (
                 pane_id.clone(),
                 retry_value,
                 session_event,
                 session_refresh_epoch,
+                session_refresh_wake_value,
             ),
             move |_| {
                 let generation = {
@@ -609,44 +642,55 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                     *current = current.wrapping_add(1);
                     *current
                 };
-                let have_data = matches!(
-                    &*state,
-                    SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
-                );
-                if !have_data {
-                    state.set(SessionState::Loading);
-                }
-                let state = state.clone();
-                let live_thinking = live_thinking.clone();
-                let session_applied_generation = session_applied_generation.clone();
-                let pane_id = pane_id.clone();
-                let session_generation = session_generation.clone();
-                spawn_local(async move {
-                    let result = api::session(&pane_id).await;
-                    if *session_generation.borrow() != generation {
-                        return;
+                let should_fetch = session_refresh_gate.borrow_mut().begin();
+                if should_fetch {
+                    let have_data = matches!(
+                        &*state,
+                        SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
+                    );
+                    if !have_data {
+                        state.set(SessionState::Loading);
                     }
-                    match result {
-                        Ok(value) => {
-                            let fresh_thinking = value
-                                .thinking
-                                .as_deref()
-                                .map(normalize_thinking)
-                                .filter(|value| value != "unknown");
-                            live_thinking.set(fresh_thinking);
-                            session_applied_generation.set(generation);
-                            state.set(SessionState::Ready {
-                                pane_id: pane_id.clone(),
-                                transcript: value,
-                            });
-                        }
-                        Err(error) => {
-                            if matches!(&*state, SessionState::Loading | SessionState::Error(_)) {
-                                state.set(SessionState::Error(error.message));
+                    let state = state.clone();
+                    let live_thinking = live_thinking.clone();
+                    let session_applied_generation = session_applied_generation.clone();
+                    let pane_id = pane_id.clone();
+                    let session_generation = session_generation.clone();
+                    let session_refresh_gate = session_refresh_gate.clone();
+                    let session_refresh_wake = session_refresh_wake.clone();
+                    spawn_local(async move {
+                        let result = api::session(&pane_id).await;
+                        if *session_generation.borrow() == generation {
+                            match result {
+                                Ok(value) => {
+                                    let fresh_thinking = value
+                                        .thinking
+                                        .as_deref()
+                                        .map(normalize_thinking)
+                                        .filter(|value| value != "unknown");
+                                    live_thinking.set(fresh_thinking);
+                                    session_applied_generation.set(generation);
+                                    state.set(SessionState::Ready {
+                                        pane_id: pane_id.clone(),
+                                        transcript: value,
+                                    });
+                                }
+                                Err(error) => {
+                                    if matches!(
+                                        &*state,
+                                        SessionState::Loading | SessionState::Error(_)
+                                    ) {
+                                        state.set(SessionState::Error(error.message));
+                                    }
+                                }
                             }
                         }
-                    }
-                });
+                        let wake_epoch = session_refresh_gate.borrow_mut().finish();
+                        if let Some(wake_epoch) = wake_epoch {
+                            session_refresh_wake.set(wake_epoch);
+                        }
+                    });
+                }
                 || ()
             },
         );
@@ -2139,4 +2183,35 @@ async fn async_session_thinking(pane_id: &str) -> Option<String> {
         .and_then(|value| value.thinking)
         .map(|value| normalize_thinking(&value))
         .filter(|value| value != "unknown")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionRefreshGate;
+
+    #[test]
+    fn refresh_gate_coalesces_bursts_into_one_follow_up() {
+        let mut gate = SessionRefreshGate::default();
+
+        assert!(gate.begin());
+        assert!(!gate.begin());
+        assert!(!gate.begin());
+        assert_eq!(gate.finish(), Some(1));
+
+        assert!(gate.begin());
+        assert_eq!(gate.finish(), None);
+    }
+
+    #[test]
+    fn refresh_gate_wake_epoch_never_reuses_a_stale_value() {
+        let mut gate = SessionRefreshGate::default();
+
+        assert!(gate.begin());
+        assert!(!gate.begin());
+        assert_eq!(gate.finish(), Some(1));
+
+        assert!(gate.begin());
+        assert!(!gate.begin());
+        assert_eq!(gate.finish(), Some(2));
+    }
 }
