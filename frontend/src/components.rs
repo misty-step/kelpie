@@ -37,7 +37,11 @@ pub fn header(props: &HeaderProps) -> Html {
     } else {
         status_value.to_owned()
     };
-    let connectivity = if props.connected { "Connected" } else { "Reconnecting" };
+    let connectivity = if props.connected {
+        "Connected"
+    } else {
+        "Reconnecting"
+    };
     let back = props.on_back.as_ref().map(|callback| {
         html! {
             <button type="button" class="back-btn" aria-label="Back" onclick={callback.clone()}>
@@ -127,7 +131,8 @@ pub struct BottomSheetProps {
 
 fn focusables(panel: &Element) -> Vec<HtmlElement> {
     let query = "button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex=\"-1\"])";
-    let Ok(query_selector) = Reflect::get(panel.as_ref(), &JsValue::from_str("querySelectorAll")) else {
+    let Ok(query_selector) = Reflect::get(panel.as_ref(), &JsValue::from_str("querySelectorAll"))
+    else {
         return Vec::new();
     };
     let Ok(query_selector) = query_selector.dyn_into::<Function>() else {
@@ -167,24 +172,36 @@ pub fn bottom_sheet(props: &BottomSheetProps) -> Html {
                 let _ = close.focus();
             }
             let listener = EventListener::new(&crate::document(), "keydown", move |event| {
-                let Some(keyboard) = event.dyn_ref::<KeyboardEvent>() else { return; };
+                let Some(keyboard) = event.dyn_ref::<KeyboardEvent>() else {
+                    return;
+                };
                 if keyboard.key() == "Escape" {
                     if let Some(close) = close_ref.cast::<HtmlElement>() {
                         close.click();
                     }
                     return;
                 }
-                if keyboard.key() != "Tab" { return; }
-                let Some(panel) = panel_ref.cast::<Element>() else { return; };
-                let Some(active) = crate::document().active_element() else { return; };
-                if !panel.contains(Some(active.unchecked_ref())) { return; }
+                if keyboard.key() != "Tab" {
+                    return;
+                }
+                let Some(panel) = panel_ref.cast::<Element>() else {
+                    return;
+                };
+                let Some(active) = crate::document().active_element() else {
+                    return;
+                };
+                if !panel.contains(Some(active.unchecked_ref())) {
+                    return;
+                }
                 let elements = focusables(&panel);
                 let Some(first) = elements.first() else {
                     keyboard.prevent_default();
                     let _ = panel.unchecked_ref::<HtmlElement>().focus();
                     return;
                 };
-                let Some(last) = elements.last() else { return; };
+                let Some(last) = elements.last() else {
+                    return;
+                };
                 if keyboard.shift_key() && active.is_same_node(Some(first.unchecked_ref())) {
                     keyboard.prevent_default();
                     let _ = last.focus();
@@ -234,20 +251,39 @@ pub struct TabStripProps {
 }
 
 fn tab_label(tab: &crate::types::Tab, fleet: &crate::types::Fleet) -> String {
-    tab.label.clone().or_else(|| {
-        tab.pane_ids.iter().find_map(|pane_id| {
-            fleet.panes.iter().find(|pane| &pane.pane_id == pane_id).map(|pane| {
-                pane.title.clone().filter(|title| !title.is_empty()).unwrap_or_else(|| {
-                    pane.cwd.rsplit('/').next().filter(|part| !part.is_empty()).unwrap_or(pane.pane_id.as_str()).to_owned()
-                })
+    tab.label
+        .clone()
+        .or_else(|| {
+            tab.pane_ids.iter().find_map(|pane_id| {
+                fleet
+                    .panes
+                    .iter()
+                    .find(|pane| &pane.pane_id == pane_id)
+                    .map(|pane| {
+                        pane.title
+                            .clone()
+                            .filter(|title| !title.is_empty())
+                            .unwrap_or_else(|| {
+                                pane.cwd
+                                    .rsplit('/')
+                                    .next()
+                                    .filter(|part| !part.is_empty())
+                                    .unwrap_or(pane.pane_id.as_str())
+                                    .to_owned()
+                            })
+                    })
             })
         })
-    }).unwrap_or_else(|| tab.tab_id.clone())
+        .unwrap_or_else(|| tab.tab_id.clone())
 }
 
 fn pane_route(pane_id: String) -> Route {
     let hash = crate::window().location().hash().unwrap_or_default();
-    if hash.strip_prefix('#').unwrap_or(&hash).starts_with("/term/") {
+    if hash
+        .strip_prefix('#')
+        .unwrap_or(&hash)
+        .starts_with("/term/")
+    {
         Route::Terminal(pane_id)
     } else {
         Route::Session(pane_id)
@@ -259,25 +295,50 @@ pub fn tab_strip(props: &TabStripProps) -> Html {
     let context = use_context::<AppContext>();
     let pending_close = use_state(|| None::<String>);
     let fleet = context.as_ref().and_then(|context| context.fleet.clone());
-    let pane = fleet.as_ref().and_then(|fleet| fleet.panes.iter().find(|pane| pane.pane_id == props.pane_id));
-    let workspace_id = pane.map(|pane| pane.workspace_id.clone()).filter(|id| !id.is_empty());
-    let tabs: Vec<crate::types::Tab> = fleet.as_ref().zip(workspace_id.as_ref()).map(|(fleet, workspace_id)| {
-        fleet.tabs.iter().filter(|tab| tab.workspace_id == *workspace_id).cloned().collect()
-    }).unwrap_or_default();
+    let pane = fleet.as_ref().and_then(|fleet| {
+        fleet
+            .panes
+            .iter()
+            .find(|pane| pane.pane_id == props.pane_id)
+    });
+    let workspace_id = pane
+        .map(|pane| pane.workspace_id.clone())
+        .filter(|id| !id.is_empty());
+    let tabs: Vec<crate::types::Tab> = fleet
+        .as_ref()
+        .zip(workspace_id.as_ref())
+        .map(|(fleet, workspace_id)| {
+            fleet
+                .tabs
+                .iter()
+                .filter(|tab| tab.workspace_id == *workspace_id)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
     let current_tab = pane.map(|pane| pane.tab_id.clone());
     let new_tab = {
         let context = context.clone();
         let workspace_id = workspace_id.clone();
         Callback::from(move |_| {
-            let Some(workspace_id) = workspace_id.clone() else { return; };
-            let Some(context) = context.clone() else { return; };
+            let Some(workspace_id) = workspace_id.clone() else {
+                return;
+            };
+            let Some(context) = context.clone() else {
+                return;
+            };
             spawn_local(async move {
                 match api::create_tab(&workspace_id).await {
                     Ok(response) => {
                         context.fleet_refresh.emit(());
-                        if let Some(pane_id) = response.pane_id { navigate(&pane_route(pane_id)); }
+                        if let Some(pane_id) = response.pane_id {
+                            navigate(&pane_route(pane_id));
+                        }
                     }
-                    Err(error) => context.toast.emit(ToastMessage { text: error.message, kind: ToastKind::Error }),
+                    Err(error) => context.toast.emit(ToastMessage {
+                        text: error.message,
+                        kind: ToastKind::Error,
+                    }),
                 }
             });
         })

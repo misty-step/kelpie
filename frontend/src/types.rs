@@ -72,9 +72,18 @@ pub struct Transcript {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Entry {
-    User { text: String, ts: Option<String> },
-    Assistant { text: String, ts: Option<String> },
-    Thinking { text: String, ts: Option<String> },
+    User {
+        text: String,
+        ts: Option<String>,
+    },
+    Assistant {
+        text: String,
+        ts: Option<String>,
+    },
+    Thinking {
+        text: String,
+        ts: Option<String>,
+    },
     Tool {
         name: String,
         intent: Option<String>,
@@ -140,6 +149,8 @@ pub struct Model {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
+    pub reasoning: bool,
+    #[serde(default)]
     pub thinking: Option<Vec<String>>,
 }
 
@@ -168,9 +179,17 @@ pub struct UploadResponse {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct ModelResponse {
     pub model: Option<String>,
+    pub thinking: Option<String>,
     #[serde(default)]
     pub ok: bool,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct ThinkingResponse {
+    pub thinking: Option<String>,
+    #[serde(default)]
+    pub ok: bool,
 }
 
 #[derive(Serialize)]
@@ -189,13 +208,14 @@ pub struct AskBody {
 }
 
 #[derive(Serialize)]
-pub struct ThinkingBody {
-    pub steps: usize,
+pub struct ThinkingBody<'a> {
+    pub thinking: &'a str,
 }
 
 #[derive(Serialize)]
 pub struct ModelBody<'a> {
     pub model: &'a str,
+    pub thinking: Option<&'a str>,
 }
 
 #[derive(Serialize)]

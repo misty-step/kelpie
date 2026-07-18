@@ -17,7 +17,9 @@ impl fmt::Display for ApiError {
 }
 
 fn enc(value: &str) -> String {
-    js_sys::encode_uri_component(value).as_string().unwrap_or_default()
+    js_sys::encode_uri_component(value)
+        .as_string()
+        .unwrap_or_default()
 }
 
 async fn decode<T: DeserializeOwned>(response: Response, fallback: &str) -> Result<T, ApiError> {
@@ -28,7 +30,12 @@ async fn decode<T: DeserializeOwned>(response: Response, fallback: &str) -> Resu
             .await
             .ok()
             .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
-            .and_then(|value| value.get("error").and_then(|v| v.as_str()).map(str::to_owned))
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
             .unwrap_or_else(|| format!("{fallback}: {status}"));
         return Err(ApiError { status, message });
     }
@@ -45,24 +52,40 @@ pub async fn fleet() -> Result<Fleet, ApiError> {
 
 pub async fn session(pane_id: &str) -> Result<Transcript, ApiError> {
     let response = Request::get(&format!("/api/session/{}", enc(pane_id)))
-        .send().await.map_err(net_error)?;
+        .send()
+        .await
+        .map_err(net_error)?;
     decode(response, "session fetch failed").await
 }
 
 pub async fn screen(pane_id: &str) -> Result<ScreenResponse, ApiError> {
     let response = Request::get(&format!("/api/pane/{}/screen", enc(pane_id)))
-        .send().await.map_err(net_error)?;
+        .send()
+        .await
+        .map_err(net_error)?;
     decode(response, "screen fetch failed").await
 }
 
 pub async fn commands() -> Result<Vec<Command>, ApiError> {
-    let response = Request::get("/api/commands").send().await.map_err(net_error)?;
-    Ok(decode::<CommandsResponse>(response, "commands fetch failed").await?.commands)
+    let response = Request::get("/api/commands")
+        .send()
+        .await
+        .map_err(net_error)?;
+    Ok(
+        decode::<CommandsResponse>(response, "commands fetch failed")
+            .await?
+            .commands,
+    )
 }
 
 pub async fn models() -> Result<Vec<Model>, ApiError> {
-    let response = Request::get("/api/models").send().await.map_err(net_error)?;
-    Ok(decode::<ModelsResponse>(response, "models fetch failed").await?.models)
+    let response = Request::get("/api/models")
+        .send()
+        .await
+        .map_err(net_error)?;
+    Ok(decode::<ModelsResponse>(response, "models fetch failed")
+        .await?
+        .models)
 }
 
 pub async fn send_text(pane_id: &str, text: &str) -> Result<serde_json::Value, ApiError> {
@@ -70,7 +93,8 @@ pub async fn send_text(pane_id: &str, text: &str) -> Result<serde_json::Value, A
         &format!("/api/pane/{}/text", enc(pane_id)),
         &TextBody { text },
         "send failed",
-    ).await
+    )
+    .await
 }
 
 pub async fn send_keys(pane_id: &str, keys: &[String]) -> Result<serde_json::Value, ApiError> {
@@ -78,7 +102,8 @@ pub async fn send_keys(pane_id: &str, keys: &[String]) -> Result<serde_json::Val
         &format!("/api/pane/{}/keys", enc(pane_id)),
         &KeysBody { keys },
         "keys failed",
-    ).await
+    )
+    .await
 }
 
 pub async fn send_ask(pane_id: &str, index: usize) -> Result<serde_json::Value, ApiError> {
@@ -86,40 +111,60 @@ pub async fn send_ask(pane_id: &str, index: usize) -> Result<serde_json::Value, 
         &format!("/api/pane/{}/ask", enc(pane_id)),
         &AskBody { index },
         "ask failed",
-    ).await
+    )
+    .await
 }
 
-pub async fn set_thinking(pane_id: &str, steps: usize) -> Result<serde_json::Value, ApiError> {
+pub async fn set_thinking(pane_id: &str, thinking: &str) -> Result<ThinkingResponse, ApiError> {
     post_json(
         &format!("/api/pane/{}/thinking", enc(pane_id)),
-        &ThinkingBody { steps },
+        &ThinkingBody { thinking },
         "thinking change failed",
-    ).await
+    )
+    .await
 }
 
-pub async fn set_model(pane_id: &str, model: &str) -> Result<ModelResponse, ApiError> {
+pub async fn set_model(
+    pane_id: &str,
+    model: &str,
+    thinking: Option<&str>,
+) -> Result<ModelResponse, ApiError> {
     post_json(
         &format!("/api/pane/{}/model", enc(pane_id)),
-        &ModelBody { model },
+        &ModelBody { model, thinking },
         "model change failed",
-    ).await
+    )
+    .await
 }
 
 pub async fn upload(pane_id: &str, file: &web_sys::File) -> Result<UploadResponse, ApiError> {
     let bytes = wasm_bindgen_futures::JsFuture::from(file.array_buffer())
         .await
-        .map_err(|_| ApiError { status: 0, message: "upload read failed".into() })?;
+        .map_err(|_| ApiError {
+            status: 0,
+            message: "upload read failed".into(),
+        })?;
     let array = js_sys::Uint8Array::new(&bytes);
     let response = Request::post(&format!("/api/pane/{}/upload", enc(pane_id)))
         .header("Content-Type", &file.type_())
         .body(array.to_vec())
-        .map_err(|err| ApiError { status: 0, message: err.to_string() })?
-        .send().await.map_err(net_error)?;
+        .map_err(|err| ApiError {
+            status: 0,
+            message: err.to_string(),
+        })?
+        .send()
+        .await
+        .map_err(net_error)?;
     decode(response, "upload failed").await
 }
 
 pub async fn create_workspace(cwd: &str) -> Result<CreateResponse, ApiError> {
-    post_json("/api/workspace", &WorkspaceBody { cwd }, "workspace create failed").await
+    post_json(
+        "/api/workspace",
+        &WorkspaceBody { cwd },
+        "workspace create failed",
+    )
+    .await
 }
 
 pub async fn create_tab(workspace_id: &str) -> Result<CreateResponse, ApiError> {
@@ -127,7 +172,11 @@ pub async fn create_tab(workspace_id: &str) -> Result<CreateResponse, ApiError> 
 }
 
 pub async fn close_tab(tab_id: &str) -> Result<serde_json::Value, ApiError> {
-    post_empty(&format!("/api/tab/{}/close", enc(tab_id)), "tab close failed").await
+    post_empty(
+        &format!("/api/tab/{}/close", enc(tab_id)),
+        "tab close failed",
+    )
+    .await
 }
 
 async fn post_json<B: serde::Serialize, T: DeserializeOwned>(
@@ -149,5 +198,8 @@ async fn post_empty<T: DeserializeOwned>(url: &str, fallback: &str) -> Result<T,
 }
 
 fn net_error(error: gloo_net::Error) -> ApiError {
-    ApiError { status: 0, message: error.to_string() }
+    ApiError {
+        status: 0,
+        message: error.to_string(),
+    }
 }

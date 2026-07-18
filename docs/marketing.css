@@ -8,20 +8,13 @@
 /* ── kelpie exceptions ─────────────────────────────────────────────── */
 
 /* The mark: kelpie's line-art water horse (deliberate deviation from the
-   kit's Lucide-only rule — see site/DESIGN.md). Dark strokes on
-   transparent; flip light when the page is dark. */
+   kit's Lucide-only rule — see site/DESIGN.md). Inlined SVG using
+   fill="currentColor", so it inherits .ae-app-mark's `color: var(--ae-ink)`
+   and themes for free — no filter hack needed. */
 .msk-mark-img {
   width: 1.5em;
   height: 1.5em;
   display: block;
-}
-.dark .msk-mark-img {
-  filter: invert(1) brightness(0.92);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) .msk-mark-img {
-    filter: invert(1) brightness(0.92);
-  }
 }
 
 /* Hero headline: ink and black weight, never larger (the one-size law). */

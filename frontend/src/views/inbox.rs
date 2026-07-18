@@ -18,11 +18,11 @@ enum LoadState {
 }
 
 const STATUS_TIERS: [(&str, u8); 5] = [
-    ("blocked", 0),
-    ("working", 1),
-    ("idle", 2),
-    ("done", 3),
-    ("unknown", 4),
+    ("blocked", 1),
+    ("working", 2),
+    ("idle", 3),
+    ("done", 4),
+    ("unknown", 5),
 ];
 
 fn normalized_status(pane: &Pane) -> String {
@@ -68,7 +68,12 @@ fn basename(path: &str) -> Option<String> {
     if trimmed.is_empty() {
         return Some(path.to_owned());
     }
-    trimmed.rsplit('/').next().map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned)
+    trimmed
+        .rsplit('/')
+        .next()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 fn sort_panes<'a>(fleet: &'a Fleet) -> (Vec<&'a Pane>, Vec<&'a Pane>) {
@@ -86,6 +91,7 @@ fn sort_panes<'a>(fleet: &'a Fleet) -> (Vec<&'a Pane>, Vec<&'a Pane>) {
     agents.sort_by(|left, right| {
         status_tier(left)
             .cmp(&status_tier(right))
+            .then_with(|| right.last_activity.cmp(&left.last_activity))
             .then_with(|| {
                 workspace_label(fleet, left)
                     .to_ascii_lowercase()
@@ -94,9 +100,14 @@ fn sort_panes<'a>(fleet: &'a Fleet) -> (Vec<&'a Pane>, Vec<&'a Pane>) {
             .then_with(|| left.pane_id.cmp(&right.pane_id))
     });
     shells.sort_by(|left, right| {
-        workspace_label(fleet, left)
-            .to_ascii_lowercase()
-            .cmp(&workspace_label(fleet, right).to_ascii_lowercase())
+        right
+            .last_activity
+            .cmp(&left.last_activity)
+            .then_with(|| {
+                workspace_label(fleet, left)
+                    .to_ascii_lowercase()
+                    .cmp(&workspace_label(fleet, right).to_ascii_lowercase())
+            })
             .then_with(|| left.pane_id.cmp(&right.pane_id))
     });
     (agents, shells)

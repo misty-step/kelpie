@@ -45,6 +45,7 @@ pub struct AskOption {
 
 #[derive(Serialize, Clone)]
 pub struct Ask {
+    pub call_id: String,
     pub question: String,
     pub options: Vec<AskOption>,
     pub multi: bool,
@@ -97,7 +98,7 @@ fn clip(s: &str, max: usize) -> String {
     format!("{clipped}…")
 }
 
-fn parse_ask(args: &Value) -> Option<Ask> {
+fn parse_ask(args: &Value, call_id: &str) -> Option<Ask> {
     let q = args.get("questions")?.as_array()?.first()?;
     let options = q
         .get("options")?
@@ -117,6 +118,7 @@ fn parse_ask(args: &Value) -> Option<Ask> {
         return None;
     }
     Some(Ask {
+        call_id: call_id.to_string(),
         question: q
             .get("question")
             .and_then(Value::as_str)
@@ -217,7 +219,10 @@ pub fn parse_session(path: &str) -> Transcript {
                                         .or_else(|| args.get("intent"))
                                         .and_then(Value::as_str)
                                         .map(String::from);
-                                    let ask = (name == "ask").then(|| parse_ask(&args)).flatten();
+                                    let call_id = item.get("id").and_then(Value::as_str);
+                                    let ask = (name == "ask")
+                                        .then(|| parse_ask(&args, call_id.unwrap_or("")))
+                                        .flatten();
                                     t.entries.push(Entry::Tool {
                                         name,
                                         intent,
@@ -225,7 +230,7 @@ pub fn parse_session(path: &str) -> Transcript {
                                         result: None,
                                         ts: ts.clone(),
                                     });
-                                    if let Some(id) = item.get("id").and_then(Value::as_str) {
+                                    if let Some(id) = call_id {
                                         open_tools
                                             .insert(id.to_string(), (t.entries.len() - 1, ask));
                                     }
@@ -254,9 +259,23 @@ pub fn parse_session(path: &str) -> Transcript {
                     _ => {}
                 }
             }
+            Some("model_change") => {
+                if let Some(selector) = e.get("model").and_then(Value::as_str) {
+                    if let Some((provider, model)) = selector.split_once('/') {
+                        t.model = Some(ModelInfo {
+                            provider: provider.to_string(),
+                            model: model.to_string(),
+                        });
+                    }
+                }
+            }
             Some("thinking_level_change") => {
-                if let Some(level) = e.get("thinkingLevel").and_then(Value::as_str) {
+                let configured = e.get("configured").and_then(Value::as_str);
+                let effective = e.get("thinkingLevel").and_then(Value::as_str);
+                if let Some(level) = configured.or(effective) {
                     t.thinking = Some(level.to_string());
+                } else if e.get("configured").is_some() || e.get("thinkingLevel").is_some() {
+                    t.thinking = Some("off".to_string());
                 }
             }
             _ => {}

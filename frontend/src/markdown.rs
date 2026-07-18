@@ -9,9 +9,19 @@ pub fn render(source: &str) -> Html {
 
     let parser = Parser::new_ext(source, options).filter_map(|event| match event {
         Event::Html(raw) | Event::InlineHtml(raw) => Some(Event::Text(raw)),
-        Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
+        Event::Start(Tag::Link {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => {
             if dest_url.starts_with("https://") {
-                Some(Event::Start(Tag::Link { link_type, dest_url, title, id }))
+                Some(Event::Start(Tag::Link {
+                    link_type,
+                    dest_url,
+                    title,
+                    id,
+                }))
             } else {
                 Some(Event::Start(Tag::Link {
                     link_type,

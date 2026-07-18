@@ -8,18 +8,30 @@ use yew::prelude::*;
 use crate::{document, window};
 
 fn update() {
-    let Some(root) = document().document_element() else { return; };
-    let Ok(root) = root.dyn_into::<HtmlElement>() else { return; };
+    let Some(root) = document().document_element() else {
+        return;
+    };
+    let Ok(root) = root.dyn_into::<HtmlElement>() else {
+        return;
+    };
     let Some(viewport) = window().visual_viewport() else {
         let _ = root.style().set_property("--kb-offset", "0px");
         let _ = root.style().set_property("--vv-top", "0px");
         root.class_list().remove_1("kb-open").ok();
         return;
     };
-    let layout_height = window().inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(viewport.height());
+    let layout_height = window()
+        .inner_height()
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(viewport.height());
     let offset = (layout_height - viewport.height() - viewport.offset_top()).max(0.0);
-    let _ = root.style().set_property("--kb-offset", &format!("{offset}px"));
-    let _ = root.style().set_property("--vv-top", &format!("{}px", viewport.offset_top()));
+    let _ = root
+        .style()
+        .set_property("--kb-offset", &format!("{offset}px"));
+    let _ = root
+        .style()
+        .set_property("--vv-top", &format!("{}px", viewport.offset_top()));
     if offset > 80.0 {
         root.class_list().add_1("kb-open").ok();
     } else {

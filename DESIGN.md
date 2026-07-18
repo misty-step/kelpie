@@ -128,14 +128,11 @@ name alone.
 
 ### Solution
 
-**Icon:** Each workspace name hashes into a fixed vocabulary of 35 Lucide
-icons. 17 known workspaces have hand-assigned semantic icons (mint→leaf,
-overmind→brain, canary→bird, etc.). Unknown names hash into an 18-icon pool
-of generic-but-distinct shapes (rocket, anchor, compass, box, cpu, ghost,
-globe, key, map, moon, mountain, origami, palette, puzzle, radar, sailboat,
-telescope, turtle). The hash is a simple DJB2-style multiply-and-add
-(`h = h*31 + charCode`), chosen for speed and even distribution over a small
-modulus.
+**Icon:** Each workspace name hashes directly into a fixed vocabulary of 35
+Lucide icons. There are no name-specific assignments: every current and future
+workspace follows the same function. The hash is a DJB2-style multiply-and-add
+over UTF-16 code units (`h = h*31 + unit`), chosen for speed, deterministic
+cross-language behavior, and even distribution over the small vocabulary.
 
 **Color:** Each workspace name also hashes into an 18-step hue vocabulary:
 `[210, 25, 340, 160, 45, 280, 190, 0, 130, 320, 75, 245, 15, 195, 55, 295,
@@ -241,16 +238,25 @@ hairline):
    accent action, anchored right.
 3. **Input row** — the textarea alone, full width; the only outlined box.
 
-Effort options come from `/api/models`; the current level is checked.
-Selection updates the chip immediately, then the bridge applies omp's
-`app.thinking.cycle` the required number of times using paced raw CSI Z
-input. Transitions are serialized per pane. Kelpie only confirms success
-after the live terminal footer matches the requested level; an unreadable
-footer remains explicitly unverified.
+Effort options come from the exact active selector's `/api/models` entry. The
+sheet shows a loading state until capabilities arrive; it never falls back to
+an unrelated catalog model. Selection sends the requested level, while the
+bridge advances omp's `app.thinking.cycle` one rendered state at a time using
+paced raw CSI Z input. Transitions are serialized per pane. Kelpie only
+confirms success after the live terminal footer matches the requested level;
+an unreadable footer remains explicitly unverified.
 Send disabled = overlay fill + faint text. `/` opens slash-command
 autocomplete. Send is disabled when there is neither text nor an attachment,
 while an upload is in flight, or while a reasoning-effort or model change is
 being applied.
+
+Composer drafts are pane-local browser state, keyed by pane id and written on
+every input event. A keyed session component hydrates the correct draft before
+first paint when routing between panes. Route changes, reloads, and background
+SSE refreshes therefore cannot replace or clear text. Send captures the exact
+submitted value, disables conflicting actions, and clears storage only when
+the confirmed response returns and the current textarea still equals that
+submitted value; edits made while a request is in flight win.
 
 ### Bottom sheets
 
@@ -265,25 +271,17 @@ dismisses).
   model row repeats `provider · id`, so same-named models from Anthropic,
   Cursor, OpenRouter, etc. cannot be confused. Filter field on top; 60-row
   render cap with a "type to narrow" hint. Selecting calls
-  `POST /api/pane/{id}/model` — omp does not execute arged slash commands
-  submitted as composer text (the palette closes once arguments follow the
-  name and Enter sends the line as a chat prompt, verified live), so the
-  bridge drives omp's own interactive picker: `/model` ⏎ → search the full
-  selector → ⏎ role menu (identity-checked against the footer) → ⏎ assigns
-  `default` → ⏎ confirms the level menu → Esc until closed. Every stage is
-  screen-verified with staged unwind on failure; picker keys pace at 800ms
-  (omp debounces faster input); Nerd Font glyphs are stripped before
-  matching; an already-default target is detected and never re-entered
-  (Enter would toggle the role off); transitions share the per-pane drive
-  lock with reasoning changes; and success requires omp's printed
-  `Default model: <selector>` receipt within the last screen lines (older
-  receipts linger in scrollback). Fresh role assignments reset effort to
-  `auto`, so after a confirmed switch the client re-applies the pane's
-  prior level through the verified reasoning flow. The chip shows the
-  confirmed target as an override until the session file catches up. A
-  model whose provider has no credentials fails cleanly ("not available in
-  this session") — the catalog is the full `omp models` list, a superset
-  of the session's configured providers.
+  `POST /api/pane/{id}/model`. The bridge drives omp's session-only `/switch`
+  picker rather than `/model`, because `/model` mutates role assignments.
+  It opens `/switch`, searches by the complete `provider/model` selector,
+  confirms the selected row, and waits for omp's printed
+  `Session-only model: <selector>` receipt. Picker input is paced to respect
+  omp's debounce, Nerd Font glyphs are stripped before screen matching, and
+  failures unwind the picker with Escape. Model and effort changes share the
+  same per-pane lock. The chip shows the confirmed selector as an override
+  until the session file catches up. A provider without credentials fails
+  cleanly; the catalog remains a superset of the providers configured in the
+  current session.
 - **Actions sheet** (tap ⋯): Open terminal, New tab, Jump to latest,
   Send Enter, Send Ctrl+C, Back to inbox. Every action has a Lucide icon.
 
@@ -405,9 +403,8 @@ Every surface handles 0..N workspaces/panes gracefully:
 ## Do's and Don'ts
 
 - Sort the inbox attention-first: pending ask > working > idle > done. Within
-  a tier, order is ALPHABETICAL by workspace name — stable, so cards do not
-  churn position as agents emit activity. A card only moves when its
-  attention tier changes.
+  a tier, newest activity comes first; workspace label and pane id are stable
+  tie-breakers.
 - Workspace identity is deterministic (hash into fixed icon+hue vocabulary),
   never hardcoded, never an emoji, never bare initials.
 - Motion only on interaction (FLIP resort, keyboard pin, card enter/exit);

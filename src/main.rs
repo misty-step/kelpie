@@ -287,12 +287,67 @@ struct TextBody {
     text: String,
 }
 
-async fn post_text(Path(pane_id): Path<String>, Json(body): Json<TextBody>) -> impl IntoResponse {
+fn input_marker(text: &str) -> String {
+    let line = text
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(text);
+    let mut chars = line.chars().rev().take(18).collect::<Vec<_>>();
+    chars.reverse();
+    chars.into_iter().collect()
+}
+
+async fn post_text(
+    State(state): State<Shared>,
+    Path(pane_id): Path<String>,
+    Json(body): Json<TextBody>,
+) -> impl IntoResponse {
+    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
+    if !claimed {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "another pane write is in progress"})),
+        )
+            .into_response();
+    }
     let run = async {
+        let before = screen_text(&pane_id).await?;
+        let marker = input_marker(&body.text);
         herdr::send_text(&pane_id, &body.text).await?;
-        herdr::send_keys(&pane_id, &["Enter".to_string()]).await
+        let mut ready = false;
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let screen = screen_text(&pane_id).await?;
+            let marker_visible = marker.is_empty()
+                || screen
+                    .lines()
+                    .rev()
+                    .take(24)
+                    .any(|line| line.contains(&marker));
+            if screen != before && marker_visible {
+                ready = true;
+                break;
+            }
+        }
+        if !ready {
+            return Err(anyhow::anyhow!("composer did not accept text"));
+        }
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let before_submit = screen_text(&pane_id).await?;
+        herdr::send_keys(&pane_id, &["Enter".to_string()]).await?;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if screen_text(&pane_id).await? != before_submit {
+                return Ok(());
+            }
+        }
+        Err(anyhow::anyhow!("composer did not submit text"))
     };
-    match run.await {
+    let result = run.await;
+    state.pane_locks.lock().await.remove(&pane_id);
+    match result {
         Ok(()) => Json(json!({"ok": true})).into_response(),
         Err(err) => (
             StatusCode::BAD_GATEWAY,
@@ -354,7 +409,19 @@ struct KeysBody {
 /// but its encoding never reaches omp's `app.thinking.cycle` binding
 /// (verified live: named key = no-op, raw CSI Z cycles). Send the standard
 /// back-tab sequence as literal text instead.
-async fn post_keys(Path(pane_id): Path<String>, Json(body): Json<KeysBody>) -> impl IntoResponse {
+async fn post_keys(
+    State(state): State<Shared>,
+    Path(pane_id): Path<String>,
+    Json(body): Json<KeysBody>,
+) -> impl IntoResponse {
+    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
+    if !claimed {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "another pane write is in progress"})),
+        )
+            .into_response();
+    }
     let run = async {
         for key in &body.keys {
             if key.eq_ignore_ascii_case("shift+tab") {
@@ -365,7 +432,9 @@ async fn post_keys(Path(pane_id): Path<String>, Json(body): Json<KeysBody>) -> i
         }
         Ok::<(), anyhow::Error>(())
     };
-    match run.await {
+    let result = run.await;
+    state.pane_locks.lock().await.remove(&pane_id);
+    match result {
         Ok(()) => Json(json!({"ok": true})).into_response(),
         Err(err) => (
             StatusCode::BAD_GATEWAY,
@@ -377,57 +446,187 @@ async fn post_keys(Path(pane_id): Path<String>, Json(body): Json<KeysBody>) -> i
 
 #[derive(Deserialize)]
 struct ThinkingBody {
-    steps: usize,
+    thinking: String,
 }
 
-/// Apply an exact reasoning choice selected in the phone UI. Omp's TUI has
-/// no runtime setter command; its only control is back-tab cycling. The
-/// client computes the distance using omp's advertised effort order and this
-/// endpoint owns the paced delivery so navigation/backgrounding cannot leave
-/// a change half-applied.
+fn canonical_thinking_level(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "off" => Some("off"),
+        "auto" => Some("auto"),
+        "minimal" | "min" => Some("minimal"),
+        "low" => Some("low"),
+        "medium" | "med" => Some("medium"),
+        "high" => Some("high"),
+        "xhigh" | "extra high" => Some("xhigh"),
+        "max" => Some("max"),
+        _ => None,
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct ThinkingReceipt {
+    id: String,
+    level: &'static str,
+}
+
+async fn latest_thinking_receipt(path: &str) -> Option<ThinkingReceipt> {
+    let path = path.to_string();
+    tokio::task::spawn_blocking(move || {
+        let raw = std::fs::read_to_string(path).ok()?;
+        raw.lines().rev().find_map(|line| {
+            let event: Value = serde_json::from_str(line).ok()?;
+            if event.get("type").and_then(Value::as_str) != Some("thinking_level_change") {
+                return None;
+            }
+            let level = event
+                .get("configured")
+                .and_then(Value::as_str)
+                .or_else(|| event.get("thinkingLevel").and_then(Value::as_str))
+                .and_then(canonical_thinking_level)
+                .or_else(|| {
+                    (event.get("configured").is_some() || event.get("thinkingLevel").is_some())
+                        .then_some("off")
+                })?;
+            let id = event
+                .get("id")
+                .and_then(Value::as_str)
+                .or_else(|| event.get("timestamp").and_then(Value::as_str))?
+                .to_string();
+            Some(ThinkingReceipt { id, level })
+        })
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+fn screen_thinking_level(screen: &str) -> Option<&'static str> {
+    screen.lines().rev().take(8).find_map(|line| {
+        if line.matches('·').count() < 3 {
+            return None;
+        }
+        line.split('·')
+            .nth(1)?
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .find_map(canonical_thinking_level)
+    })
+}
+
+fn has_new_auto_status(before: &str, after: &str) -> bool {
+    screen_thinking_level(before) != Some("auto") && screen_thinking_level(after) == Some("auto")
+}
+
+/// Select an exact reasoning effort through omp's cycle key, confirming each
+/// concrete transition from the session log. Auto may be logged directly; on
+/// older sessions the newly rendered status line is the fallback receipt.
+async fn drive_thinking(
+    pane_id: &str,
+    path: &str,
+    target: &'static str,
+) -> std::result::Result<&'static str, (StatusCode, String)> {
+    let screen = screen_text(pane_id)
+        .await
+        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+    let live = screen_thinking_level(&screen);
+    let mut previous = latest_thinking_receipt(path).await;
+    let configured_auto = live == Some("auto")
+        || previous
+            .as_ref()
+            .is_some_and(|receipt| receipt.level == "auto");
+    if configured_auto && target == "auto" {
+        return Ok(target);
+    }
+    if !configured_auto
+        && live == Some(target)
+        && previous
+            .as_ref()
+            .is_some_and(|receipt| receipt.level == target)
+    {
+        return Ok(target);
+    }
+
+    for _ in 0..16 {
+        herdr::send_text(pane_id, "\x1b[Z")
+            .await
+            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let next = latest_thinking_receipt(path).await;
+        if next == previous {
+            continue;
+        }
+        let Some(receipt) = next else {
+            continue;
+        };
+        previous = Some(receipt.clone());
+        if receipt.level == target {
+            return Ok(target);
+        }
+        if target == "auto" && receipt.level == "off" {
+            let before = screen_text(pane_id)
+                .await
+                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+            herdr::send_text(pane_id, "\x1b[Z")
+                .await
+                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+            let confirmed = wait_screen(pane_id, 20, |screen| has_new_auto_status(&before, screen))
+                .await
+                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+            let after = latest_thinking_receipt(path).await;
+            if confirmed.is_some() || after.as_ref().is_some_and(|value| value.level == target) {
+                return Ok(target);
+            }
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "auto was selected but the terminal did not expose a confirmation".to_string(),
+            ));
+        }
+    }
+    Err((
+        StatusCode::UNPROCESSABLE_ENTITY,
+        format!("reasoning effort {target} is unavailable for this model"),
+    ))
+}
+
+/// Select an exact reasoning effort through omp's runtime cycle key.
 async fn post_thinking(
     State(state): State<Shared>,
     Path(pane_id): Path<String>,
     Json(body): Json<ThinkingBody>,
 ) -> impl IntoResponse {
-    if body.steps == 0 || body.steps > 8 {
+    let Some(target) = canonical_thinking_level(&body.thinking) else {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "steps must be between 1 and 8"})),
+            Json(json!({"error": "unknown reasoning effort"})),
         )
             .into_response();
-    }
+    };
     let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
     if !claimed {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": "another control change is in progress on this pane"})),
+            Json(json!({"error": "another pane write is in progress"})),
         )
             .into_response();
     }
 
-    let run = async {
-        for _ in 0..body.steps {
-            herdr::send_text(&pane_id, "\x1b[Z").await?;
-            // Omp debounces rapid TUI key changes. Delivery acknowledgements
-            // only mean bytes reached the PTY; leave one render turn between
-            // steps and after the final step before the client verifies.
-            tokio::time::sleep(Duration::from_millis(800)).await;
-        }
-        Ok::<(), anyhow::Error>(())
-    };
-
-    let result = run.await;
+    let result = async {
+        let path = session_path_for(&state, &pane_id)
+            .await
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
+        drive_thinking(&pane_id, &path, target).await
+    }
+    .await;
     state.pane_locks.lock().await.remove(&pane_id);
     match result {
-        Ok(()) => Json(json!({"ok": true})).into_response(),
-        Err(err) => err_json(err),
+        Ok(thinking) => Json(json!({"ok": true, "thinking": thinking})).into_response(),
+        Err((status, message)) => (status, Json(json!({"error": message}))).into_response(),
     }
 }
 
 #[derive(Deserialize)]
 struct ModelBody {
     model: String,
+    thinking: Option<String>,
 }
 
 /// Read a pane's visible screen as trimmed plain text (drive verification).
@@ -443,29 +642,6 @@ async fn screen_text(pane_id: &str) -> Result<String> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string())
-}
-
-/// Nerd Font / powerline glyphs live in the Unicode private-use areas; omp's
-/// picker mixes them into label text (sometimes flush against words) and
-/// herdr's plain-text read drops some of them entirely.
-fn is_private_use(c: char) -> bool {
-    matches!(c as u32, 0xE000..=0xF8FF | 0xF0000..=0xFFFFD | 0x100000..=0x10FFFD)
-}
-
-fn strip_glyphs(s: &str) -> String {
-    s.chars().filter(|c| !is_private_use(*c)).collect()
-}
-
-/// `│  All models   N │` row in omp's model picker → N.
-fn all_models_count(screen: &str) -> Option<usize> {
-    let idx = screen.find("All models")?;
-    let line = screen[idx..].lines().next()?;
-    let digits: String = line
-        .chars()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(char::is_ascii_digit)
-        .collect();
-    digits.parse().ok()
 }
 
 async fn type_chars(pane_id: &str, text: &str) -> Result<()> {
@@ -487,18 +663,68 @@ async fn key(pane_id: &str, name: &str, settle_ms: u64) -> Result<()> {
     tokio::time::sleep(Duration::from_millis(settle_ms)).await;
     Ok(())
 }
+async fn wait_screen<F>(pane_id: &str, attempts: usize, predicate: F) -> Result<Option<String>>
+where
+    F: Fn(&str) -> bool,
+{
+    for _ in 0..attempts {
+        let screen = screen_text(pane_id).await?;
+        if predicate(&screen) {
+            return Ok(Some(screen));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Ok(None)
+}
 
-/// Switch the pane's default model by driving omp's interactive `/model`
-/// picker. Omp does not execute arged slash commands submitted as text —
-/// the command palette closes the moment arguments follow the name, and
-/// Enter submits the whole line as a chat prompt (verified live) — so the
-/// picker is the only runtime lever on a live TUI pane. Every stage is
-/// verified against the plain-text screen before the next key; failures
-/// unwind only overlays this driver opened (never a bare Escape at the
-/// composer, which would interrupt a running agent). The picker chain:
-/// `/model` ⏎ (palette) → search selector → ⏎ (role menu) → ⏎ assigns
-/// `default` → ⏎ keeps the pre-highlighted reasoning level → Esc Esc, then
-/// omp prints `Default model: <selector>` as the receipt.
+#[derive(Clone, PartialEq)]
+struct ModelReceipt {
+    id: String,
+    selector: String,
+}
+
+async fn latest_model_receipt(path: &str) -> Option<ModelReceipt> {
+    let path = path.to_string();
+    tokio::task::spawn_blocking(move || {
+        let raw = std::fs::read_to_string(path).ok()?;
+        raw.lines().rev().find_map(|line| {
+            let event: Value = serde_json::from_str(line).ok()?;
+            if event.get("type").and_then(Value::as_str) != Some("model_change") {
+                return None;
+            }
+            let selector = event.get("model").and_then(Value::as_str)?.to_string();
+            let id = event
+                .get("id")
+                .and_then(Value::as_str)
+                .or_else(|| event.get("timestamp").and_then(Value::as_str))?
+                .to_string();
+            Some(ModelReceipt { id, selector })
+        })
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn wait_model_receipt(
+    path: &str,
+    previous: Option<&ModelReceipt>,
+    selector: &str,
+) -> Option<ModelReceipt> {
+    for _ in 0..50 {
+        if let Some(receipt) = latest_model_receipt(path).await {
+            if previous.is_none_or(|old| old.id != receipt.id) && receipt.selector == selector {
+                return Some(receipt);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    None
+}
+
+/// Switch the active session model through omp's temporary `/switch` picker.
+/// Role-model settings stay unchanged; picker focus and the resulting
+/// `model_change` session receipt are both verified.
 async fn post_model(
     State(state): State<Shared>,
     Path(pane_id): Path<String>,
@@ -518,6 +744,19 @@ async fn post_model(
         )
             .into_response();
     }
+    let requested_thinking = match body.thinking.as_deref() {
+        Some(raw) => match canonical_thinking_level(raw) {
+            Some(level) => Some(level),
+            None => {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"error": "unknown reasoning effort"})),
+                )
+                    .into_response();
+            }
+        },
+        None => None,
+    };
     let is_omp_pane = state
         .fleet
         .read()
@@ -540,188 +779,217 @@ async fn post_model(
         )
             .into_response();
     }
-    let result = drive_model_picker(&pane_id, &selector).await;
+    let result = async {
+        let path = session_path_for(&state, &pane_id)
+            .await
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
+        let previous_model = latest_model_receipt(&path).await;
+        let previous_thinking = latest_thinking_receipt(&path).await;
+        let screen = screen_text(&pane_id)
+            .await
+            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+        let preserved_thinking = requested_thinking.or_else(|| {
+            if screen_thinking_level(&screen) == Some("auto") {
+                Some("auto")
+            } else {
+                previous_thinking.as_ref().map(|receipt| receipt.level)
+            }
+        });
+        drive_model_picker(&pane_id, &selector).await?;
+        wait_model_receipt(&path, previous_model.as_ref(), &selector)
+            .await
+            .ok_or_else(|| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    "switch sent but no matching session receipt was recorded".to_string(),
+                )
+            })?;
+        // Omp re-applies a model-specific thinking setting immediately after
+        // `model_change`. Wait for that receipt before restoring the caller's
+        // prior configured level, or a late reapply can overwrite our restore.
+        if preserved_thinking.is_some() {
+            for _ in 0..15 {
+                if latest_thinking_receipt(&path).await != previous_thinking {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        if let Some(thinking) = preserved_thinking {
+            drive_thinking(&pane_id, &path, thinking).await?;
+        }
+        Ok(preserved_thinking)
+    }
+    .await;
     state.pane_locks.lock().await.remove(&pane_id);
     match result {
-        Ok(()) => Json(json!({"ok": true, "model": selector})).into_response(),
+        Ok(thinking) => {
+            Json(json!({"ok": true, "model": selector, "thinking": thinking})).into_response()
+        }
         Err((status, msg)) => (status, Json(json!({"error": msg}))).into_response(),
     }
+}
+
+fn unframed_row(line: &str) -> &str {
+    let row = line.trim();
+    let row = row
+        .strip_prefix('│')
+        .or_else(|| row.strip_prefix('|'))
+        .unwrap_or(row)
+        .trim_start();
+    row.strip_suffix('│')
+        .or_else(|| row.strip_suffix('|'))
+        .unwrap_or(row)
+        .trim_end()
+}
+
+fn selected_model_row(screen: &str, selector: &str) -> bool {
+    screen.lines().any(|line| {
+        let row = unframed_row(line);
+        let Some(row) = row
+            .strip_prefix('❯')
+            .or_else(|| row.strip_prefix('>'))
+            .or_else(|| row.strip_prefix('\u{f054}'))
+        else {
+            return false;
+        };
+        let row = row.trim_start();
+        row.strip_prefix(selector).is_some_and(|tail| {
+            tail.is_empty() || tail.chars().next().is_some_and(char::is_whitespace)
+        })
+    })
 }
 
 async fn drive_model_picker(
     pane_id: &str,
     selector: &str,
 ) -> std::result::Result<(), (StatusCode, String)> {
-    let gateway = |e: anyhow::Error| (StatusCode::BAD_GATEWAY, e.to_string());
-    let id_part = selector.split_once('/').map_or(selector, |(_, id)| id);
+    let gateway = |error: anyhow::Error| (StatusCode::BAD_GATEWAY, error.to_string());
 
-    // Palette: clear any composer draft, type the command name.
     key(pane_id, "ctrl+u", 250).await.map_err(gateway)?;
-    type_chars(pane_id, "/model").await.map_err(gateway)?;
-    tokio::time::sleep(Duration::from_millis(550)).await;
-    let s = screen_text(pane_id).await.map_err(gateway)?;
-    if !s.contains("Model: ") {
+    type_chars(pane_id, "/switch").await.map_err(gateway)?;
+    let palette = wait_screen(pane_id, 30, |screen| {
+        screen.contains("❯ /switch") && screen.contains("switch") && screen.contains("Model: ")
+    })
+    .await
+    .map_err(gateway)?;
+    if palette.is_none() {
         let _ = key(pane_id, "ctrl+u", 100).await;
         return Err((
             StatusCode::BAD_GATEWAY,
-            "command palette did not open".into(),
+            "switch command palette did not open".into(),
         ));
     }
 
-    // Picker: Enter runs the highlighted exact-match `model` command.
     key(pane_id, "Enter", 800).await.map_err(gateway)?;
-    let s = screen_text(pane_id).await.map_err(gateway)?;
-    if !s.contains("All available models") {
-        let _ = key(pane_id, "ctrl+u", 100).await;
-        return Err((StatusCode::BAD_GATEWAY, "model picker did not open".into()));
+    let picker = wait_screen(pane_id, 30, |screen| {
+        screen.contains("Switch Model") && screen.contains("Session-only switch")
+    })
+    .await
+    .map_err(gateway)?;
+    if picker.is_none() {
+        let _ = key(pane_id, "Escape", 100).await;
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "temporary model picker did not open".into(),
+        ));
     }
 
-    // Search: the full selector; require at least one fuzzy match.
     type_chars(pane_id, selector).await.map_err(gateway)?;
-    tokio::time::sleep(Duration::from_millis(550)).await;
-    let s = screen_text(pane_id).await.map_err(gateway)?;
-    let match_count = all_models_count(&s).unwrap_or(0);
-    if match_count == 0 {
-        // Esc clears the search text, second Esc closes the picker.
-        let _ = key(pane_id, "Escape", 250).await;
-        let _ = key(pane_id, "Escape", 100).await;
+    let matched = wait_screen(pane_id, 30, |screen| selected_model_row(screen, selector))
+        .await
+        .map_err(gateway)?;
+    if matched.is_none() {
+        for _ in 0..2 {
+            let open = screen_text(pane_id)
+                .await
+                .map(|screen| screen.contains("Switch Model"))
+                .unwrap_or(false);
+            if !open {
+                break;
+            }
+            let _ = key(pane_id, "Escape", 250).await;
+        }
         return Err((
             StatusCode::NOT_FOUND,
             "model not available in this session (provider not configured?)".into(),
         ));
     }
 
-    // Already the default? The details panel tags the highlighted model's
-    // assigned roles — but Nerd Font glyphs sit flush against the word
-    // ("\u{f111}default \u{f074} · …") and some glyphs are dropped entirely
-    // by the plain-text read, so strip private-use codepoints before
-    // matching. Enter on an assigned model TOGGLES the role off (verified
-    // live: "Default role cleared — auto-selection applies"), so an
-    // assigned target means close and report success without touching it.
-    // Only trustworthy when the match is unique — the tag describes the
-    // highlighted row, which is the target iff it is the only row.
-    let already_default = match_count == 1
-        && s.lines().any(|l| {
-            strip_glyphs(l)
-                .trim_matches(|c: char| c == '\u{2502}' || c.is_whitespace())
-                .starts_with("default")
-        });
-    if already_default {
-        key(pane_id, "Escape", 250).await.map_err(gateway)?; // clear search
-        key(pane_id, "Escape", 400).await.map_err(gateway)?; // close picker
-        return Ok(());
-    }
-
-    // Role menu: the footer line names the chosen model — the identity check
-    // that catches fuzzy search highlighting a different row. Enter is only
-    // safe on the CLEAN "[ default ]" slot; an assigned slot carries a level
-    // glyph inside the brackets ("[ \u{f111}default \u{f074} ]") or leaves a
-    // double-space artifact where the read dropped the glyph, and Enter
-    // there would CLEAR the role.
-    key(pane_id, "Enter", 800).await.map_err(gateway)?;
-    let s = screen_text(pane_id).await.map_err(gateway)?;
-    let role_line = s
-        .lines()
-        .find(|l| l.contains(&format!("{id_part} \u{2192}")))
-        .unwrap_or("");
-    let unwind_role = || async {
-        let _ = key(pane_id, "Escape", 250).await; // role menu -> picker
-        let _ = key(pane_id, "Escape", 250).await; // clear search
-        let _ = key(pane_id, "Escape", 100).await; // close picker
-    };
-    if role_line.is_empty() {
-        unwind_role().await;
-        return Err((
-            StatusCode::CONFLICT,
-            "picker highlighted a different model".into(),
-        ));
-    }
-    let slot = role_line
-        .split_once('[')
-        .and_then(|(_, rest)| rest.split_once(']'))
-        .map(|(inner, _)| inner)
-        .unwrap_or("");
-    let has_glyph = slot.chars().any(is_private_use);
-    let clean_default = !has_glyph && slot.trim() == "default" && !slot.contains("  ");
-    if !clean_default {
-        unwind_role().await;
-        if strip_glyphs(slot).contains("default") {
-            // Already assigned — reported as success, nothing was toggled.
-            return Ok(());
-        }
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            "role menu did not offer a default slot".into(),
-        ));
-    }
-
-    // Assign `default`, keep the pre-highlighted reasoning level. All picker
-    // Enters pace at 800ms — omp debounces rapid TUI keys and a coalesced
-    // Enter silently drops a stage (verified live: a 550ms chain lost the
-    // assign step and left the old model active).
-    key(pane_id, "Enter", 800).await.map_err(gateway)?;
-    let s = screen_text(pane_id).await.map_err(gateway)?;
-    if !s.contains("inherit") {
-        let _ = key(pane_id, "Escape", 250).await;
-        let _ = key(pane_id, "Escape", 250).await;
-        let _ = key(pane_id, "Escape", 100).await;
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            "reasoning level menu did not open".into(),
-        ));
-    }
-    // Confirm the level; verify the level menu actually closed (its
-    // "inherit" footer is the only marker distinguishing it from the
-    // picker, whose "All available models" header stays visible under
-    // every submenu). One paced retry covers a debounced Enter.
-    key(pane_id, "Enter", 800).await.map_err(gateway)?;
-    let mut s = screen_text(pane_id).await.map_err(gateway)?;
-    if s.contains("inherit") {
-        key(pane_id, "Enter", 800).await.map_err(gateway)?;
-        s = screen_text(pane_id).await.map_err(gateway)?;
-        if s.contains("inherit") {
-            let _ = key(pane_id, "Escape", 250).await;
-            let _ = key(pane_id, "Escape", 250).await;
-            let _ = key(pane_id, "Escape", 100).await;
-            return Err((
-                StatusCode::BAD_GATEWAY,
-                "role assignment did not register".into(),
-            ));
-        }
-    }
-
-    // Close: Esc first clears the search text, then closes the picker; a
-    // submenu adds a level. Loop while the picker is verifiably open so a
-    // bare Escape never reaches the composer of a running agent.
-    for _ in 0..4 {
-        if !screen_text(pane_id)
-            .await
-            .map_err(gateway)?
-            .contains("All available models")
-        {
-            break;
-        }
-        key(pane_id, "Escape", 500).await.map_err(gateway)?;
-    }
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    // Receipt: omp prints the assignment at the bottom of the transcript,
-    // directly above the composer. Only accept it there — receipts from
-    // earlier switches linger in the visible scrollback.
-    let s = screen_text(pane_id).await.map_err(gateway)?;
-    let receipt_fresh = s
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .rev()
-        .take(5)
-        .any(|l| l.contains(&format!("Default model: {selector}")));
-    if !receipt_fresh {
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            "switch sent but not confirmed by terminal receipt".into(),
-        ));
-    }
+    key(pane_id, "Enter", 1000).await.map_err(gateway)?;
     Ok(())
+}
+
+fn focused_ask_index(screen: &str, ask: &omp::Ask) -> Option<usize> {
+    let ask_visible = screen.lines().any(|line| {
+        let line = line.trim();
+        (line.starts_with('╭') || line.starts_with('+')) && line.contains(" Ask")
+    });
+    if !ask_visible {
+        return None;
+    }
+    screen.lines().find_map(|line| {
+        let row = unframed_row(line);
+        let cursor = row.chars().next()?;
+        if !matches!(cursor, '❯' | '>' | '\u{f054}') {
+            return None;
+        }
+        let row = row[cursor.len_utf8()..].trim_start();
+        let mut chars = row.chars();
+        chars.next()?;
+        let label = chars.as_str().trim();
+        let label = label.strip_suffix(" (Recommended)").unwrap_or(label);
+        ask.options.iter().position(|option| option.label == label)
+    })
+}
+
+async fn wait_ask_selection(
+    path: &str,
+    call_id: &str,
+) -> Option<std::result::Result<Vec<String>, String>> {
+    for _ in 0..50 {
+        let path = path.to_string();
+        let call_id = call_id.to_string();
+        let receipt = tokio::task::spawn_blocking(move || {
+            let raw = std::fs::read_to_string(path).ok()?;
+            raw.lines().rev().find_map(|line| {
+                let event: Value = serde_json::from_str(line).ok()?;
+                if event.get("type").and_then(Value::as_str) != Some("message") {
+                    return None;
+                }
+                let message = event.get("message")?;
+                if message.get("role").and_then(Value::as_str) != Some("toolResult")
+                    || message.get("toolCallId").and_then(Value::as_str) != Some(call_id.as_str())
+                {
+                    return None;
+                }
+                if message
+                    .get("isError")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    return Some(Err("ask tool returned an error".to_string()));
+                }
+                let selected = message
+                    .get("details")
+                    .and_then(|details| details.get("selectedOptions"))
+                    .and_then(Value::as_array)?
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect::<Vec<_>>();
+                Some(Ok(selected))
+            })
+        })
+        .await
+        .ok()
+        .flatten();
+        if receipt.is_some() {
+            return receipt;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    None
 }
 
 #[derive(Deserialize)]
@@ -729,66 +997,109 @@ struct AskBody {
     index: usize,
 }
 
-/// Answer a pending single-select ask. Pointer plan is computed from disk
-/// state only: re-verify the ask is still pending, then move relative to the
-/// picker's initial position (index 0; adjusted if omp preselects
-/// `recommended` — verified live during smoke testing).
+/// Answer a pending single-select ask from the currently rendered focus row,
+/// then confirm the exact option against the correlated ask tool result.
 async fn post_ask(
     State(state): State<Shared>,
     Path(pane_id): Path<String>,
     Json(body): Json<AskBody>,
 ) -> impl IntoResponse {
-    let Some(path) = session_path_for(&state, &pane_id).await else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "no transcript for pane"})),
-        )
-            .into_response();
-    };
-    let transcript = {
-        let path = path.clone();
-        tokio::task::spawn_blocking(move || omp::parse_session(&path))
-            .await
-            .unwrap_or_default()
-    };
-    let Some(ask) = transcript.pending_ask else {
+    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
+    if !claimed {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": "ask no longer pending"})),
-        )
-            .into_response();
-    };
-    if ask.multi {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "multi-select not supported yet; use keys"})),
+            Json(json!({"error": "another pane write is in progress"})),
         )
             .into_response();
     }
-    if body.index >= ask.options.len() {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "option index out of range"})),
-        )
-            .into_response();
+
+    let run = async {
+        let path = session_path_for(&state, &pane_id)
+            .await
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
+        let parse_path = path.clone();
+        let transcript = tokio::task::spawn_blocking(move || omp::parse_session(&parse_path))
+            .await
+            .unwrap_or_default();
+        let ask = transcript
+            .pending_ask
+            .ok_or_else(|| (StatusCode::CONFLICT, "ask no longer pending".to_string()))?;
+        if ask.multi {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "multi-select not supported yet; use keys".to_string(),
+            ));
+        }
+        let Some(option) = ask.options.get(body.index) else {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "option index out of range".to_string(),
+            ));
+        };
+        if ask.call_id.is_empty() {
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "pending ask has no tool-call identity".to_string(),
+            ));
+        }
+
+        let screen = screen_text(&pane_id)
+            .await
+            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+        let start = focused_ask_index(&screen, &ask).ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "ask picker focus could not be verified".to_string(),
+            )
+        })?;
+        let (direction, count) = if body.index >= start {
+            ("Down", body.index - start)
+        } else {
+            ("Up", start - body.index)
+        };
+        for _ in 0..count {
+            herdr::send_keys(&pane_id, &[direction.to_string()])
+                .await
+                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+        }
+        let focused = wait_screen(&pane_id, 30, |screen| {
+            focused_ask_index(screen, &ask) == Some(body.index)
+        })
+        .await
+        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+        if focused.is_none() {
+            return Err((
+                StatusCode::CONFLICT,
+                "ask picker did not focus the requested option".to_string(),
+            ));
+        }
+        herdr::send_keys(&pane_id, &["Enter".to_string()])
+            .await
+            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+
+        let selected = wait_ask_selection(&path, &ask.call_id)
+            .await
+            .ok_or_else(|| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    "ask selection was not recorded".to_string(),
+                )
+            })?
+            .map_err(|message| (StatusCode::BAD_GATEWAY, message))?;
+        if selected.as_slice() != [option.label.as_str()] {
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "ask selection receipt did not match the requested option".to_string(),
+            ));
+        }
+        Ok(())
     }
-    // Smoke-verified: omp preselects `recommended` when set, else the top.
-    let start = ask.recommended.unwrap_or(0).min(ask.options.len() - 1);
-    let mut keys: Vec<String> = Vec::new();
-    let (dir, n) = if body.index >= start {
-        ("Down", body.index - start)
-    } else {
-        ("Up", start - body.index)
-    };
-    keys.extend(std::iter::repeat_n(dir.to_string(), n));
-    keys.push("Enter".to_string());
-    match herdr::send_keys(&pane_id, &keys).await {
+    .await;
+
+    state.pane_locks.lock().await.remove(&pane_id);
+    match run {
         Ok(()) => Json(json!({"ok": true})).into_response(),
-        Err(err) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({"error": err.to_string()})),
-        )
-            .into_response(),
+        Err((status, message)) => (status, Json(json!({"error": message}))).into_response(),
     }
 }
 
@@ -1006,10 +1317,9 @@ async fn post_tab_rename(
 
 // ------------------------------------------------------------------------ main
 
-/// Force revalidation on every request. The frontend is served as plain ES
-/// modules with no build step; without this, mobile Safari's heuristic cache
-/// keeps stale modules across deploys (the classic "why is my fix not live"
-/// PWA trap). Everything is same-host and tiny, so 304 round-trips are cheap.
+/// Force revalidation on every request. Kelpie is installed as a PWA, and
+/// mobile Safari otherwise keeps stale shell or WASM assets across bridge
+/// restarts. Everything is same-host, so 304 round-trips are cheap.
 async fn no_cache(mut res: axum::response::Response) -> axum::response::Response {
     res.headers_mut().insert(
         axum::http::header::CACHE_CONTROL,

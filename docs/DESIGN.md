@@ -18,8 +18,12 @@ without babysitting terminals.`
 
 ## Mark
 
-- Image: `docs/assets/kelpie-mark.png` — kelpie's line-art water horse,
-  dark strokes on transparent, inverted via CSS in dark mode.
+- Image: `docs/assets/kelpie-mark.svg` — kelpie's line-art water horse,
+  inlined in the header markup with `fill="currentColor"` so it inherits
+  `.ae-app-mark`'s `color: var(--ae-ink)` and themes for free (no filter
+  hack, no raster asset). Traced from the original PNG via potrace;
+  `assets/kelpie-mark.svg` at the repo root is the canonical source, copied
+  into both `docs/assets/` and `static/`.
 - **Deliberate deviation** from the site-kit's Lucide-only mark contract:
   kelpie has a real product mark (it is also the app's PWA icon and favicon),
   and the operator asked for it on the site. The image sits inside the

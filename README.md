@@ -21,7 +21,7 @@
 
 You run a herd of coding agents in terminal panes on your desk. You leave the
 desk. kelpie is the pocket view: a tiny Rust bridge on the workstation plus a
-zero-build web app you install to your phone's home screen.
+self-contained Yew/WASM PWA you install to your phone's home screen.
 
 - **Inbox** — every workspace, sorted by what needs you: pending asks first,
   then working, then idle/done, recency within each tier.
@@ -69,7 +69,7 @@ flowchart LR
 ```sh
 git clone https://github.com/misty-step/kelpie
 cd kelpie
-./build-frontend.sh   # Yew frontend -> static/wasm/ (committed; only needed after frontend changes)
+./build-frontend.sh   # Yew frontend -> static/wasm/; required after frontend changes
 cargo run --release
 # kelpie listening on http://127.0.0.1:8787 (static: static)
 ```
@@ -85,6 +85,40 @@ Then on the iPhone, open the tailnet URL in Safari and **Share → Add to Home
 Screen**. You get a standalone app with the kelpie icon, dark/light theme
 following the system, and the on-screen keyboard handled correctly (visual
 viewport tracking, not scroll hacks).
+
+## Using kelpie
+
+1. **Triage from the inbox.** Pending asks sort first, then working panes,
+   then idle/done. Tap a row to open its agent transcript.
+2. **Reply from the composer.** Text is saved in browser storage on every
+   keystroke, separately for each pane. It survives inbox navigation, pane
+   switches, full reloads, and background SSE refreshes. Send clears that
+   pane's saved draft only after the bridge confirms submission; a failed or
+   still-running send keeps the text.
+3. **Change session controls deliberately.** Tap the model chip for a
+   searchable catalog, or the effort chip for the active model's supported
+   levels. Both controls are serialized per pane and disable conflicting
+   composer actions until terminal readback confirms the change. Model changes
+   are session-only; omp role defaults remain unchanged.
+4. **Drop to Terminal when needed.** The terminal view exposes the raw screen,
+   text submission, and common keys without abandoning the phone workflow.
+
+The live transcript may refresh many times while an agent works. Kelpie keeps
+rendered transcript data in place during those refreshes, so it does not
+replace useful content with a transient loading screen.
+
+### Updating a checkout
+
+```sh
+git pull
+./build-frontend.sh   # only when frontend/ changed
+cargo build --release
+# restart the running kelpie process
+```
+
+The bridge sends `Cache-Control: no-cache` for application assets. A normal
+page reload picks up a rebuilt frontend; the service-worker kill switch
+removes legacy registrations and never forces an open client to reload.
 
 ### Configuration
 
@@ -110,7 +144,8 @@ Everything the frontend uses, usable from scripts too:
 | `POST /api/pane/{pane_id}/text` | Send a line of text (Enter appended) |
 | `POST /api/pane/{pane_id}/keys` | Send named keys (`Enter`, `Escape`, `ctrl+c`, …) |
 | `POST /api/pane/{pane_id}/ask` | Answer a pending single-select ask by index |
-| `POST /api/pane/{pane_id}/thinking` | Step the reasoning-effort cycle N times (serialized per pane) |
+| `POST /api/pane/{pane_id}/thinking` | Select an exact supported reasoning level; success includes the confirmed level |
+| `POST /api/pane/{pane_id}/model` | Select an exact model for this session; success includes the confirmed selector |
 | `POST /api/pane/{pane_id}/upload` | Upload an image; returns a path omp can read |
 | `POST /api/workspace`, `/api/tab`, … | Create/close workspaces and tabs |
 
@@ -119,14 +154,18 @@ Everything the frontend uses, usable from scripts too:
 omp's interactive TUI has no runtime *set thinking level* command — no slash
 command, and its RPC/ACP setters only exist for sessions launched in those
 modes. The only lever on a live pane is the `app.thinking.cycle` keybinding
-(Shift+Tab). kelpie's picker is exact anyway: it computes the number of steps
-from the model's advertised level order, sends paced raw back-tab (`CSI Z`)
-sequences (herdr's named `shift+tab` chord is accepted but ignored by omp),
-serializes transitions per pane, and confirms against the live terminal footer
-before claiming success. You will see the TUI walk through intermediate levels
-— that is the mechanism, not a bug. If omp grows a runtime setter for
-interactive sessions, `post_thinking` in `src/main.rs` is the one place to
-swap.
+(Shift+Tab). Kelpie still presents an exact picker: the bridge advances one
+rendered state at a time with paced raw back-tab (`CSI Z`), reads the terminal
+footer after every step, and stops only when it sees the requested level.
+Controls are serialized per pane. Intermediate levels remain visible in the
+desktop TUI because cycling is the underlying mechanism, but one phone tap is
+enough. The picker only offers levels declared by the active model's catalog
+entry.
+
+Model selection uses omp's session-only `/switch` picker rather than `/model`
+role assignment. The bridge searches by the full `provider/model` selector,
+confirms omp's printed `Session-only model:` receipt, and leaves configured
+role models untouched.
 
 ## Code map
 
