@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
 use gloo_events::EventListener;
-use gloo_timers::callback::Timeout;
+use gloo_timers::callback::{Interval, Timeout};
+use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{
     Event, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, MouseEvent,
@@ -13,14 +15,281 @@ use crate::api;
 use crate::components::{BottomSheet, Header, MetaBadge, TabStrip};
 use crate::icons::icon;
 use crate::markdown;
-use crate::types::{Ask, Command, Entry, Model, Pane, SessionModel, Transcript};
+use crate::types::{
+    Ask, AskActionKey, AskActionPhase, AskActionReceipt, Command, Entry, Model, Pane, SessionModel,
+    Transcript,
+};
 use crate::{navigate, AppContext, Route, ToastKind, ToastMessage};
 
 #[derive(Clone, Debug, PartialEq)]
 enum SessionState {
     Loading,
-    Ready(Transcript),
+    Ready {
+        pane_id: String,
+        transcript: Transcript,
+    },
     Error(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct AskAction {
+    key: AskActionKey,
+    snapshot: Ask,
+    phase: AskActionPhase,
+    receipt: Option<AskActionReceipt>,
+    paused: bool,
+    elapsed_seconds: u64,
+    started_at_ms: f64,
+}
+
+fn ask_matches(left: &Ask, right: &Ask) -> bool {
+    left.call_id == right.call_id
+        && left.question == right.question
+        && left.options == right.options
+        && left.multi == right.multi
+}
+
+fn action_for_ask(ask: &Ask, pane_id: &str, index: usize) -> AskActionKey {
+    AskActionKey::new(pane_id, ask.call_id.clone(), index)
+}
+
+fn ask_write_blocked(ask: Option<&Ask>) -> bool {
+    // The rendered ask is authoritative for write blocking: it may come from
+    // the transcript before a local action exists, or from the retained
+    // snapshot while an action is being reconciled.
+    ask.is_some()
+}
+
+fn action_is_active(action: &AskAction) -> bool {
+    !action.paused
+        && !matches!(
+            action.phase,
+            AskActionPhase::Confirmed
+                | AskActionPhase::FailedBeforeSubmit
+                | AskActionPhase::StaleAfterSubmit
+        )
+}
+
+fn elapsed_seconds(started_at_ms: f64) -> u64 {
+    ((js_sys::Date::now() - started_at_ms).max(0.0) / 1000.0).floor() as u64
+}
+
+fn ask_status_text(action: Option<&AskAction>) -> Option<&'static str> {
+    let action = action?;
+    if action.paused {
+        return Some("Waiting paused");
+    }
+    match action.phase {
+        AskActionPhase::Confirmed => Some("Delivered"),
+        AskActionPhase::FailedBeforeSubmit => Some("Not sent"),
+        AskActionPhase::StaleAfterSubmit | AskActionPhase::Unknown => Some("Taking longer"),
+        AskActionPhase::PreSubmit | AskActionPhase::SubmittedAwaitingReceipt => {
+            if action.elapsed_seconds >= 4 {
+                Some("Taking longer")
+            } else {
+                Some("Working")
+            }
+        }
+    }
+}
+
+fn synthetic_receipt(
+    key: &AskActionKey,
+    phase: AskActionPhase,
+    retryable: bool,
+    error: Option<String>,
+) -> AskActionReceipt {
+    AskActionReceipt {
+        action_id: key.action_id(),
+        pane_id: key.pane_id.clone(),
+        call_id: key.call_id.clone(),
+        index: key.option_index,
+        phase,
+        retryable,
+        error,
+        ..AskActionReceipt::default()
+    }
+}
+
+fn set_ask_action(
+    action: &UseStateHandle<Option<AskAction>>,
+    current_ref: &Rc<RefCell<Option<AskAction>>>,
+    value: Option<AskAction>,
+) {
+    *current_ref.borrow_mut() = value.clone();
+    action.set(value);
+}
+
+fn current_ask(current_ref: &Rc<RefCell<Option<AskAction>>>) -> Option<AskAction> {
+    current_ref.borrow().clone()
+}
+
+fn set_action_receipt(
+    action: &UseStateHandle<Option<AskAction>>,
+    current_ref: &Rc<RefCell<Option<AskAction>>>,
+    key: &AskActionKey,
+    receipt: AskActionReceipt,
+) {
+    let Some(mut current) = current_ask(current_ref) else {
+        return;
+    };
+    if current.key != *key {
+        return;
+    }
+    if (!receipt.pane_id.is_empty() && receipt.pane_id != key.pane_id)
+        || (!receipt.call_id.is_empty() && receipt.call_id != key.call_id)
+        || receipt.index != key.option_index
+    {
+        return;
+    }
+    current.phase = receipt.phase.clone();
+    current.receipt = Some(receipt);
+    set_ask_action(action, current_ref, Some(current));
+}
+
+fn release_writer(writer_busy: &UseStateHandle<bool>, writer_lock: &Rc<RefCell<bool>>) {
+    writer_busy.set(false);
+    *writer_lock.borrow_mut() = false;
+}
+
+fn adopt_action_receipt(
+    action: &UseStateHandle<Option<AskAction>>,
+    current_ref: &Rc<RefCell<Option<AskAction>>>,
+    requested_key: &AskActionKey,
+    receipt: AskActionReceipt,
+) -> Option<AskActionKey> {
+    let pane_id = if receipt.pane_id.is_empty() {
+        requested_key.pane_id.clone()
+    } else {
+        receipt.pane_id.clone()
+    };
+    let call_id = if receipt.call_id.is_empty() {
+        requested_key.call_id.clone()
+    } else {
+        receipt.call_id.clone()
+    };
+    if pane_id != requested_key.pane_id || call_id != requested_key.call_id {
+        return None;
+    }
+    let authoritative_key = AskActionKey::new(pane_id, call_id, receipt.index);
+    let Some(mut current) = current_ask(current_ref) else {
+        return None;
+    };
+    if current.key != *requested_key {
+        return None;
+    }
+    current.key = authoritative_key.clone();
+    current.phase = receipt.phase.clone();
+    current.receipt = Some(receipt);
+    set_ask_action(action, current_ref, Some(current));
+    Some(authoritative_key)
+}
+
+async fn poll_ask_action(
+    pane_id: String,
+    key: AskActionKey,
+    action: UseStateHandle<Option<AskAction>>,
+    action_current: Rc<RefCell<Option<AskAction>>>,
+    poll_generation: Rc<RefCell<u64>>,
+    generation: u64,
+    writer_busy: UseStateHandle<bool>,
+    writer_lock: Rc<RefCell<bool>>,
+    optimistic_working: UseStateHandle<bool>,
+    retry: UseStateHandle<u64>,
+) {
+    let deadline = js_sys::Date::now() + 30_000.0;
+    let mut pane_id = pane_id;
+    let mut key = key;
+    loop {
+        if *poll_generation.borrow() != generation {
+            return;
+        }
+        let result = api::ask_status(&pane_id, &key.call_id, key.option_index).await;
+        if *poll_generation.borrow() != generation {
+            return;
+        }
+        match result {
+            Ok(receipt) => {
+                if *poll_generation.borrow() != generation {
+                    return;
+                }
+                let phase = receipt.phase.clone();
+                set_action_receipt(&action, &action_current, &key, receipt);
+                match phase {
+                    AskActionPhase::Confirmed | AskActionPhase::FailedBeforeSubmit => {
+                        if matches!(&phase, AskActionPhase::Confirmed) {
+                            retry.set((*retry).wrapping_add(1));
+                        }
+                        optimistic_working.set(false);
+                        release_writer(&writer_busy, &writer_lock);
+                        return;
+                    }
+                    AskActionPhase::StaleAfterSubmit | AskActionPhase::Unknown => {
+                        optimistic_working.set(false);
+                        release_writer(&writer_busy, &writer_lock);
+                        return;
+                    }
+                    AskActionPhase::PreSubmit | AskActionPhase::SubmittedAwaitingReceipt => {}
+                }
+            }
+            Err(error) if error.status == 404 => {}
+            Err(error) if error.timed_out || error.status == 0 => {
+                // A status timeout is as ambiguous as a lost POST. Keep the
+                // keyed readback loop alive; never turn it into a resend.
+                set_action_receipt(
+                    &action,
+                    &action_current,
+                    &key,
+                    synthetic_receipt(
+                        &key,
+                        AskActionPhase::SubmittedAwaitingReceipt,
+                        false,
+                        Some(error.message),
+                    ),
+                );
+            }
+            Err(error) => {
+                if *poll_generation.borrow() != generation {
+                    return;
+                }
+                if let Some(receipt) = error.action {
+                    if let Some(authoritative_key) =
+                        adopt_action_receipt(&action, &action_current, &key, receipt)
+                    {
+                        // A status conflict can reveal the authoritative
+                        // action after an ambiguous POST. Follow it by GET
+                        // only; this path never submits again.
+                        key = authoritative_key;
+                        pane_id = key.pane_id.clone();
+                        continue;
+                    }
+                }
+                let receipt = synthetic_receipt(
+                    &key,
+                    AskActionPhase::StaleAfterSubmit,
+                    false,
+                    Some(error.message),
+                );
+                set_action_receipt(&action, &action_current, &key, receipt);
+                optimistic_working.set(false);
+                release_writer(&writer_busy, &writer_lock);
+                return;
+            }
+        }
+        if js_sys::Date::now() >= deadline {
+            let receipt = synthetic_receipt(
+                &key,
+                AskActionPhase::StaleAfterSubmit,
+                false,
+                Some("status readback window elapsed".into()),
+            );
+            set_action_receipt(&action, &action_current, &key, receipt);
+            optimistic_working.set(false);
+            release_writer(&writer_busy, &writer_lock);
+            return;
+        }
+        TimeoutFuture::new(500).await;
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -268,7 +537,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let session_generation = use_mut_ref(|| 0_u64);
     let session_applied_generation = use_state(|| 0_u64);
     let optimistic_working = use_state(|| false);
-    let answering = use_state(|| false);
+    let ask_action = use_state(|| None::<AskAction>);
+    let ask_action_current = use_mut_ref(|| None::<AskAction>);
+    let ask_poll_generation = use_mut_ref(|| 0_u64);
+    let ask_last_connected = use_mut_ref(|| ctx.connected);
     let sending = use_state(|| false);
     let draft = use_state(|| load_draft(&pane_id));
     let draft_current = use_mut_ref(|| load_draft(&pane_id));
@@ -297,10 +569,21 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let file_ref = use_node_ref();
     {
         let session_generation = session_generation.clone();
+        let ask_poll_generation = ask_poll_generation.clone();
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let optimistic_working = optimistic_working.clone();
+        let writer_busy = writer_busy.clone();
+        let writer_lock = writer_lock.clone();
         use_effect_with(pane_id.clone(), move |_| {
             move || {
                 let mut current = session_generation.borrow_mut();
                 *current = current.wrapping_add(1);
+                let mut poll_generation = ask_poll_generation.borrow_mut();
+                *poll_generation = poll_generation.wrapping_add(1);
+                set_ask_action(&ask_action, &ask_action_current, None);
+                optimistic_working.set(false);
+                release_writer(&writer_busy, &writer_lock);
             }
         });
     }
@@ -326,7 +609,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                     *current = current.wrapping_add(1);
                     *current
                 };
-                let have_data = matches!(&*state, SessionState::Ready(_));
+                let have_data = matches!(
+                    &*state,
+                    SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
+                );
                 if !have_data {
                     state.set(SessionState::Loading);
                 }
@@ -349,7 +635,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                                 .filter(|value| value != "unknown");
                             live_thinking.set(fresh_thinking);
                             session_applied_generation.set(generation);
-                            state.set(SessionState::Ready(value));
+                            state.set(SessionState::Ready {
+                                pane_id: pane_id.clone(),
+                                transcript: value,
+                            });
                         }
                         Err(error) => {
                             if matches!(&*state, SessionState::Loading | SessionState::Error(_)) {
@@ -385,7 +674,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let near_bottom = near_bottom.clone();
         let state = state.clone();
         let entry_count = match &*state {
-            SessionState::Ready(data) => data.entries.len(),
+            SessionState::Ready {
+                pane_id: loaded,
+                transcript,
+            } if loaded == &pane_id => transcript.entries.len(),
             _ => 0,
         };
         use_effect_with(entry_count, move |_| {
@@ -403,7 +695,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     }
 
     let ready = match &*state {
-        SessionState::Ready(data) => Some(data.clone()),
+        SessionState::Ready {
+            pane_id: loaded,
+            transcript,
+        } if loaded == &pane_id => Some(transcript.clone()),
         _ => None,
     };
     {
@@ -438,9 +733,140 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             },
         );
     }
+    {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let dependency = ask_action
+            .as_ref()
+            .map(|value| (value.key.clone(), value.phase.clone(), value.paused));
+        use_effect_with(dependency, move |_| {
+            let timer = if ask_action.as_ref().is_some_and(action_is_active) {
+                let ask_action = ask_action.clone();
+                let ask_action_current = ask_action_current.clone();
+                Some(Interval::new(1_000, move || {
+                    if let Some(mut current) = current_ask(&ask_action_current) {
+                        current.elapsed_seconds = elapsed_seconds(current.started_at_ms);
+                        set_ask_action(&ask_action, &ask_action_current, Some(current));
+                    }
+                }))
+            } else {
+                None
+            };
+            move || drop(timer)
+        });
+    }
+    {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let ask_dependency = ask_action
+            .as_ref()
+            .map(|value| (value.key.clone(), value.phase.clone()));
+        use_effect_with((ready.clone(), ask_dependency), move |dependency| {
+            let transcript = &dependency.0;
+            if let Some(transcript) = transcript {
+                if let Some(current) = current_ask(&ask_action_current) {
+                    let transcript_has_newer_ask = transcript
+                        .pending_ask
+                        .as_ref()
+                        .is_some_and(|fresh| !ask_matches(fresh, &current.snapshot));
+                    let transcript_completed = transcript.pending_ask.is_none();
+                    if transcript_has_newer_ask
+                        || (transcript_completed
+                            && matches!(current.phase, AskActionPhase::Confirmed))
+                    {
+                        // A newer ask or a completed transcript proves this
+                        // retained snapshot is no longer actionable.
+                        set_ask_action(&ask_action, &ask_action_current, None);
+                    }
+                }
+            }
+            || ()
+        });
+    }
+
+    {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let poll_generation = ask_poll_generation.clone();
+        let writer_busy = writer_busy.clone();
+        let writer_lock = writer_lock.clone();
+        let optimistic_working = optimistic_working.clone();
+        let retry = retry.clone();
+        let ask_last_connected = ask_last_connected.clone();
+        let reconnect_dependency = (
+            ctx.connected,
+            ask_action
+                .as_ref()
+                .map(|value| (value.key.clone(), value.phase.clone(), value.paused)),
+        );
+        use_effect_with(reconnect_dependency, move |(connected, metadata)| {
+            let was_connected = *ask_last_connected.borrow();
+            *ask_last_connected.borrow_mut() = *connected;
+            if *connected && !was_connected {
+                if let Some((key, phase, paused)) = metadata {
+                    if !*paused
+                        && matches!(
+                            phase,
+                            AskActionPhase::SubmittedAwaitingReceipt
+                                | AskActionPhase::StaleAfterSubmit
+                                | AskActionPhase::Unknown
+                        )
+                    {
+                        *writer_lock.borrow_mut() = true;
+                        writer_busy.set(true);
+                        optimistic_working.set(true);
+                        let generation = {
+                            let mut current = poll_generation.borrow_mut();
+                            *current = current.wrapping_add(1);
+                            *current
+                        };
+                        let ask_action = ask_action.clone();
+                        let ask_action_current = ask_action_current.clone();
+                        let poll_generation = poll_generation.clone();
+                        let writer_busy = writer_busy.clone();
+                        let writer_lock = writer_lock.clone();
+                        let optimistic_working = optimistic_working.clone();
+                        let retry = retry.clone();
+                        let key = key.clone();
+                        spawn_local(async move {
+                            poll_ask_action(
+                                key.pane_id.clone(),
+                                key,
+                                ask_action,
+                                ask_action_current,
+                                poll_generation,
+                                generation,
+                                writer_busy,
+                                writer_lock,
+                                optimistic_working,
+                                retry,
+                            )
+                            .await;
+                        });
+                    }
+                }
+            }
+            || ()
+        });
+    }
+
     let pane = pane_for(ctx.fleet.as_ref(), &pane_id);
     let workspace = workspace_label(&ctx, pane.as_ref());
-    let ask = ready.as_ref().and_then(|data| data.pending_ask.clone());
+    let transcript_ask = ready.as_ref().and_then(|data| data.pending_ask.clone());
+    let pane_action = ask_action
+        .as_ref()
+        .filter(|value| value.key.pane_id == pane_id);
+    let ask = transcript_ask
+        .clone()
+        .or_else(|| pane_action.map(|value| value.snapshot.clone()));
+    let action_for_render = pane_action.filter(|value| {
+        ask.as_ref()
+            .is_some_and(|current| ask_matches(current, &value.snapshot))
+    });
+    let ask_write_blocked = ask_write_blocked(ask.as_ref());
+    let can_abandon_ask = ready.is_some()
+        && transcript_ask.is_none()
+        && pane_action.is_some_and(|value| matches!(value.phase, AskActionPhase::StaleAfterSubmit));
     let pending = ask.is_some() || pane.as_ref().is_some_and(|value| value.pending_ask);
     let status = if *optimistic_working {
         "working"
@@ -460,7 +886,8 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         && !*thinking_busy
         && !*model_busy
         && !*sending
-        && !*writer_busy;
+        && !*writer_busy
+        && !ask_write_blocked;
 
     let on_back = Callback::from(|_: MouseEvent| navigate(&Route::Inbox));
     let open_model = {
@@ -470,8 +897,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let ctx = ctx.clone();
         let model_busy = model_busy.clone();
         let thinking_busy = thinking_busy.clone();
+        let ask_write_blocked = ask_write_blocked;
         Callback::from(move |_: MouseEvent| {
-            if *model_busy || *thinking_busy {
+            if ask_write_blocked || *model_busy || *thinking_busy {
                 return;
             }
             model_filter.set(String::new());
@@ -494,8 +922,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let models = models.clone();
         let model_busy = model_busy.clone();
         let thinking_busy = thinking_busy.clone();
+        let ask_write_blocked = ask_write_blocked;
         Callback::from(move |_: MouseEvent| {
-            if *model_busy || *thinking_busy {
+            if ask_write_blocked || *model_busy || *thinking_busy {
                 return;
             }
             sheet.set(Some(Sheet::Thinking));
@@ -587,8 +1016,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let writer_lock = writer_lock.clone();
         let retry = retry.clone();
         let ctx = ctx.clone();
+        let ask_write_blocked = ask_write_blocked;
         Callback::from(move |_| {
-            if *sending || *writer_busy || *writer_lock.borrow() {
+            if ask_write_blocked || *sending || *writer_busy || *writer_lock.borrow() {
                 return;
             }
             let submitted_draft = draft_current.borrow().clone();
@@ -663,39 +1093,298 @@ pub fn session_view(props: &SessionViewProps) -> Html {
 
     let answer = {
         let pane_id = pane_id.clone();
-        let answering = answering.clone();
+        let ask_for_action = ask.clone();
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let poll_generation = ask_poll_generation.clone();
         let optimistic_working = optimistic_working.clone();
         let writer_busy = writer_busy.clone();
         let writer_lock = writer_lock.clone();
-        let retry = retry.clone();
         let ctx = ctx.clone();
+        let retry = retry.clone();
         Callback::from(move |index: usize| {
-            if *answering || *writer_busy || *writer_lock.borrow() {
+            if *writer_busy || *writer_lock.borrow() {
                 return;
             }
+            let Some(snapshot) = ask_for_action.clone() else {
+                return;
+            };
+            if snapshot.call_id.is_empty() || snapshot.options.get(index).is_none() {
+                return;
+            }
+            let key = action_for_ask(&snapshot, &pane_id, index);
+            if ask_action_current
+                .borrow()
+                .as_ref()
+                .is_some_and(|current| current.key == key)
+            {
+                return;
+            }
+            let action = AskAction {
+                key: key.clone(),
+                snapshot,
+                phase: AskActionPhase::PreSubmit,
+                receipt: None,
+                paused: false,
+                elapsed_seconds: 0,
+                started_at_ms: js_sys::Date::now(),
+            };
+            set_ask_action(&ask_action, &ask_action_current, Some(action));
             *writer_lock.borrow_mut() = true;
             writer_busy.set(true);
-            answering.set(true);
+            optimistic_working.set(true);
+            let generation = {
+                let mut current = poll_generation.borrow_mut();
+                *current = current.wrapping_add(1);
+                *current
+            };
             let pane_id = pane_id.clone();
-            let answering = answering.clone();
-            let optimistic_working = optimistic_working.clone();
+            let ask_action = ask_action.clone();
+            let ask_action_current = ask_action_current.clone();
+            let poll_generation = poll_generation.clone();
             let writer_busy = writer_busy.clone();
             let writer_lock = writer_lock.clone();
+            let optimistic_working = optimistic_working.clone();
             let retry = retry.clone();
-            let ctx = ctx.clone();
+            let fleet_refresh = ctx.fleet_refresh.clone();
             spawn_local(async move {
-                match api::send_ask(&pane_id, index).await {
-                    Ok(_) => {
-                        optimistic_working.set(true);
-                        retry.set((*retry).wrapping_add(1));
-                        ctx.fleet_refresh.emit(());
-                    }
-                    Err(_) => toast(&ctx, "Failed to send answer", ToastKind::Error),
+                let result = api::send_ask(&key.pane_id, &key.call_id, key.option_index).await;
+                if *poll_generation.borrow() != generation {
+                    return;
                 }
-                answering.set(false);
-                writer_busy.set(false);
-                *writer_lock.borrow_mut() = false;
+                match result {
+                    Ok(receipt) => {
+                        let phase = receipt.phase.clone();
+                        set_action_receipt(&ask_action, &ask_action_current, &key, receipt);
+                        fleet_refresh.emit(());
+                        match phase {
+                            AskActionPhase::Confirmed | AskActionPhase::FailedBeforeSubmit => {
+                                if matches!(&phase, AskActionPhase::Confirmed) {
+                                    retry.set((*retry).wrapping_add(1));
+                                }
+                                optimistic_working.set(false);
+                                release_writer(&writer_busy, &writer_lock);
+                            }
+                            AskActionPhase::StaleAfterSubmit | AskActionPhase::Unknown => {
+                                optimistic_working.set(false);
+                                release_writer(&writer_busy, &writer_lock);
+                            }
+                            AskActionPhase::PreSubmit
+                            | AskActionPhase::SubmittedAwaitingReceipt => {
+                                poll_ask_action(
+                                    pane_id,
+                                    key,
+                                    ask_action,
+                                    ask_action_current,
+                                    poll_generation,
+                                    generation,
+                                    writer_busy,
+                                    writer_lock,
+                                    optimistic_working,
+                                    retry,
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    Err(error) if error.timed_out || error.status == 0 => {
+                        // POST may have reached the backend. Only the keyed GET
+                        // is safe now; never submit the answer again.
+                        set_action_receipt(
+                            &ask_action,
+                            &ask_action_current,
+                            &key,
+                            synthetic_receipt(
+                                &key,
+                                AskActionPhase::SubmittedAwaitingReceipt,
+                                false,
+                                Some(error.message),
+                            ),
+                        );
+                        poll_ask_action(
+                            pane_id,
+                            key,
+                            ask_action,
+                            ask_action_current,
+                            poll_generation,
+                            generation,
+                            writer_busy,
+                            writer_lock,
+                            optimistic_working,
+                            retry,
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        if let Some(receipt) = error.action {
+                            if let Some(authoritative_key) = adopt_action_receipt(
+                                &ask_action,
+                                &ask_action_current,
+                                &key,
+                                receipt,
+                            ) {
+                                // The POST was rejected because another option
+                                // already owns this call_id. Follow that
+                                // authoritative action by keyed GET only; never
+                                // submit the requested option again.
+                                poll_ask_action(
+                                    authoritative_key.pane_id.clone(),
+                                    authoritative_key,
+                                    ask_action,
+                                    ask_action_current,
+                                    poll_generation,
+                                    generation,
+                                    writer_busy,
+                                    writer_lock,
+                                    optimistic_working,
+                                    retry,
+                                )
+                                .await;
+                                return;
+                            }
+                        }
+                        optimistic_working.set(false);
+                        set_action_receipt(
+                            &ask_action,
+                            &ask_action_current,
+                            &key,
+                            synthetic_receipt(
+                                &key,
+                                AskActionPhase::FailedBeforeSubmit,
+                                false,
+                                Some(error.message),
+                            ),
+                        );
+                        release_writer(&writer_busy, &writer_lock);
+                    }
+                }
             });
+        })
+    };
+
+    let abandon_action: Callback<()> = {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let poll_generation = ask_poll_generation.clone();
+        let writer_busy = writer_busy.clone();
+        let writer_lock = writer_lock.clone();
+        let optimistic_working = optimistic_working.clone();
+        Callback::from(move |_| {
+            let Some(current) = current_ask(&ask_action_current) else {
+                return;
+            };
+            if !matches!(current.phase, AskActionPhase::StaleAfterSubmit) {
+                return;
+            }
+            let mut generation = poll_generation.borrow_mut();
+            *generation = generation.wrapping_add(1);
+            drop(generation);
+            set_ask_action(&ask_action, &ask_action_current, None);
+            optimistic_working.set(false);
+            release_writer(&writer_busy, &writer_lock);
+        })
+    };
+
+    let cancel_action: Callback<()> = {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let poll_generation = ask_poll_generation.clone();
+        let writer_busy = writer_busy.clone();
+        let writer_lock = writer_lock.clone();
+        let optimistic_working = optimistic_working.clone();
+        Callback::from(move |_| {
+            let Some(mut current) = current_ask(&ask_action_current) else {
+                return;
+            };
+            if !action_is_active(&current) {
+                return;
+            }
+            {
+                let mut generation = poll_generation.borrow_mut();
+                *generation = generation.wrapping_add(1);
+            }
+            current.paused = true;
+            set_ask_action(&ask_action, &ask_action_current, Some(current));
+            optimistic_working.set(false);
+            release_writer(&writer_busy, &writer_lock);
+        })
+    };
+    let resume_action: Callback<()> = {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let poll_generation = ask_poll_generation.clone();
+        let writer_busy = writer_busy.clone();
+        let writer_lock = writer_lock.clone();
+        let optimistic_working = optimistic_working.clone();
+        let retry = retry.clone();
+        Callback::from(move |_| {
+            let Some(mut current) = current_ask(&ask_action_current) else {
+                return;
+            };
+            if !current.paused
+                && !matches!(
+                    current.phase,
+                    AskActionPhase::StaleAfterSubmit | AskActionPhase::Unknown
+                )
+            {
+                return;
+            }
+            current.paused = false;
+            current.phase = AskActionPhase::SubmittedAwaitingReceipt;
+            let key = current.key.clone();
+            set_ask_action(&ask_action, &ask_action_current, Some(current));
+            *writer_lock.borrow_mut() = true;
+            writer_busy.set(true);
+            optimistic_working.set(true);
+            let generation = {
+                let mut value = poll_generation.borrow_mut();
+                *value = value.wrapping_add(1);
+                *value
+            };
+            let ask_action = ask_action.clone();
+            let ask_action_current = ask_action_current.clone();
+            let poll_generation = poll_generation.clone();
+            let writer_busy = writer_busy.clone();
+            let writer_lock = writer_lock.clone();
+            let optimistic_working = optimistic_working.clone();
+            let retry = retry.clone();
+            spawn_local(async move {
+                poll_ask_action(
+                    key.pane_id.clone(),
+                    key,
+                    ask_action,
+                    ask_action_current,
+                    poll_generation,
+                    generation,
+                    writer_busy,
+                    writer_lock,
+                    optimistic_working,
+                    retry,
+                )
+                .await;
+            });
+        })
+    };
+    let retry_action: Callback<()> = {
+        let ask_action = ask_action.clone();
+        let ask_action_current = ask_action_current.clone();
+        let answer = answer.clone();
+        Callback::from(move |_| {
+            let Some(current) = current_ask(&ask_action_current) else {
+                return;
+            };
+            let retryable = current
+                .receipt
+                .as_ref()
+                .is_some_and(|receipt| receipt.retryable)
+                && matches!(current.phase, AskActionPhase::FailedBeforeSubmit);
+            if !retryable {
+                return;
+            }
+            let index = current.key.option_index;
+            set_ask_action(&ask_action, &ask_action_current, None);
+            let answer = answer.clone();
+            Timeout::new(0, move || answer.emit(index)).forget();
         })
     };
 
@@ -857,8 +1546,14 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let sheet = sheet.clone();
         let pane_id = pane_id.clone();
         let ctx = ctx.clone();
+        let ask_write_blocked = ask_write_blocked;
         Callback::from(move |candidate: Model| {
-            if *model_busy || *thinking_busy || *writer_busy || *writer_lock.borrow() {
+            if ask_write_blocked
+                || *model_busy
+                || *thinking_busy
+                || *writer_busy
+                || *writer_lock.borrow()
+            {
                 return;
             }
             let current = selector(
@@ -968,8 +1663,14 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let pane_id = pane_id.clone();
         let ctx = ctx.clone();
         let ready = ready.clone();
+        let ask_write_blocked = ask_write_blocked;
         Callback::from(move |target: String| {
-            if *thinking_busy || *model_busy || *writer_busy || *writer_lock.borrow() {
+            if ask_write_blocked
+                || *thinking_busy
+                || *model_busy
+                || *writer_busy
+                || *writer_lock.borrow()
+            {
                 return;
             }
             let current = (*thinking_override)
@@ -1052,6 +1753,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let writer_busy = writer_busy.clone();
         let writer_lock = writer_lock.clone();
         let ctx = ctx.clone();
+        let ask_write_blocked = ask_write_blocked;
         let send_ctrl_c = {
             let action_busy = action_busy.clone();
             let writer_busy = writer_busy.clone();
@@ -1060,7 +1762,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             let sheet = sheet.clone();
             let ctx = ctx.clone();
             Callback::from(move |_| {
-                if *action_busy || *writer_busy || *writer_lock.borrow() {
+                if ask_write_blocked || *action_busy || *writer_busy || *writer_lock.borrow() {
                     return;
                 }
                 *writer_lock.borrow_mut() = true;
@@ -1091,7 +1793,8 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             let sheet = sheet.clone();
             let ctx = ctx.clone();
             Callback::from(move |_| {
-                if *action_busy
+                if ask_write_blocked
+                    || *action_busy
                     || *writer_busy
                     || *writer_lock.borrow()
                     || !crate::window()
@@ -1134,10 +1837,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                         <button class="sheet-row sheet-action-row" onclick={Callback::from({ let pane_id = pane_id.clone(); let sheet = sheet.clone(); move |_| { navigate(&Route::Terminal(pane_id.clone())); sheet.set(None); } })}>
                             <span class="sheet-row-icon">{icon("terminal", 18)}</span><span class="sheet-row-label">{"Open terminal"}</span>
                         </button>
-                        <button class="sheet-row sheet-action-row" onclick={send_ctrl_c} disabled={*action_busy || *writer_busy}>
+                        <button class="sheet-row sheet-action-row" onclick={send_ctrl_c} disabled={ask_write_blocked || *action_busy || *writer_busy}>
                             <span class="sheet-row-icon">{icon("square", 18)}</span><span class="sheet-row-label">{"Send Ctrl+C"}</span>
                         </button>
-                        <button class="sheet-row sheet-action-row" onclick={interrupt} disabled={*action_busy}>
+                        <button class="sheet-row sheet-action-row" onclick={interrupt} disabled={ask_write_blocked || *action_busy}>
                             <span class="sheet-row-icon">{"Esc"}</span><span class="sheet-row-label">{"Interrupt agent"}</span>
                         </button>
                     </BottomSheet>
@@ -1149,12 +1852,12 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let meta = html! {
         <div id="composer-meta-row" class="composer-meta-row">
             <span id="model-chip-btn" class="meta-control">
-                <MetaBadge icon={"cpu"} label={model_text.clone()} tone={"model"} onclick={open_model.clone()} disabled={*model_busy || *thinking_busy} />
+                <MetaBadge icon={"cpu"} label={model_text.clone()} tone={"model"} onclick={open_model.clone()} disabled={*model_busy || *thinking_busy || ask_write_blocked} />
                 <span id="model-chip-label" class="sr-only">{model_text}</span>
             </span>
             if let Some(level) = thinking.clone() {
                 <span id="thinking-chip-btn" class="meta-control">
-                    <MetaBadge icon={"brain"} label={thinking_label(&level)} tone={"thinking"} onclick={open_thinking.clone()} disabled={*thinking_busy || *model_busy} />
+                    <MetaBadge icon={"brain"} label={thinking_label(&level)} tone={"thinking"} onclick={open_thinking.clone()} disabled={*thinking_busy || *model_busy || ask_write_blocked} />
                     <span id="thinking-chip-label" class="sr-only">{thinking_label(&level)}</span>
                 </span>
             }
@@ -1178,18 +1881,42 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                 <button class="retry-btn" onclick={Callback::from({ let retry = retry.clone(); move |_| retry.set((*retry).wrapping_add(1)) })}>{"Retry"}</button>
             </div>
         },
-        SessionState::Ready(data) if data.entries.is_empty() => html! {
+        SessionState::Ready {
+            pane_id: loaded, ..
+        } if loaded != &pane_id => {
+            html! { <div class="loading-state" role="status">{"Loading session…"}</div> }
+        }
+        SessionState::Ready {
+            pane_id: loaded,
+            transcript: data,
+        } if loaded == &pane_id && data.entries.is_empty() => html! {
             <div class="empty-state"><span class="empty-icon">{icon("message-circle-question", 40)}</span><div>{"No messages yet."}</div><div class="empty-hint">{"Send a message to start the agent working."}</div></div>
         },
-        SessionState::Ready(data) => html! {
+        SessionState::Ready {
+            pane_id: loaded,
+            transcript: data,
+        } if loaded == &pane_id => html! {
             for data.entries.iter().enumerate().map(|(index, entry)| render_entry(entry, index, &thinking_expanded, &tool_expanded, &toggle_thinking, &toggle_tool))
         },
+        SessionState::Ready { .. } => {
+            html! { <div class="loading-state" role="status">{"Loading session…"}</div> }
+        }
     };
 
     let ask_html = ask
         .as_ref()
-        .filter(|_| !*answering)
-        .map(|ask| render_ask(ask, &answer, *answering))
+        .map(|ask| {
+            render_ask(
+                ask,
+                &answer,
+                action_for_render.cloned(),
+                &cancel_action,
+                &resume_action,
+                &retry_action,
+                &abandon_action,
+                can_abandon_ask,
+            )
+        })
         .unwrap_or_default();
     let attachments_html = html! {
         <div id="attach-row" class="attach-row" style={if attachments.is_empty() { "display:none" } else { "display:flex" }}>
@@ -1224,7 +1951,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                             let candidate = item.clone();
                             html! { <>
                                 if show_header { <div class="sheet-group">{provider.clone()}</div> }
-                                <button class={classes!("sheet-row", is_current.then_some("current"))} onclick={Callback::from(move |_| click.emit(candidate.clone()))} disabled={*model_busy || *thinking_busy || *writer_busy}><span class="sheet-row-copy"><span class="sheet-row-label">{if item.name.is_empty() { item.id.clone() } else { item.name.clone() }}</span><span class="sheet-row-sub">{format!("{} · {}", item.provider, item.id)}</span></span>{if is_current { icon("check", 18) } else { Html::default() }}</button>
+                                <button class={classes!("sheet-row", is_current.then_some("current"))} onclick={Callback::from(move |_| click.emit(candidate.clone()))} disabled={*model_busy || *thinking_busy || *writer_busy || ask_write_blocked}><span class="sheet-row-copy"><span class="sheet-row-label">{if item.name.is_empty() { item.id.clone() } else { item.name.clone() }}</span><span class="sheet-row-sub">{format!("{} · {}", item.provider, item.id)}</span></span>{if is_current { icon("check", 18) } else { Html::default() }}</button>
                             </> }
                         }).collect::<Html>()
                     }}</div>
@@ -1252,7 +1979,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                 if !catalog_loaded { <div class="sheet-hint">{"Loading model capabilities…"}</div> }
                 else if model_entry.is_none() { <div class="sheet-hint">{"Current model is not in the model catalog."}</div> }
                 else if levels.is_empty() { <div class="sheet-hint">{"This model does not expose reasoning effort controls."}</div> }
-                {for levels.into_iter().map(|level| { let is_current = level == current; let click = thinking_click.clone(); let target_level = level.clone(); html! { <button class="sheet-row thinking-level-row" aria-pressed={is_current.to_string()} onclick={Callback::from(move |_| click.emit(target_level.clone()))} disabled={*thinking_busy || *model_busy || *writer_busy}><span class="sheet-row-copy"><span class="sheet-row-label">{thinking_label(&level)}</span><span class="sheet-row-sub">{thinking_description(&level)}</span></span>{if is_current { icon("check",18) } else { Html::default() }}</button> } })}
+                {for levels.into_iter().map(|level| { let is_current = level == current; let click = thinking_click.clone(); let target_level = level.clone(); html! { <button class="sheet-row thinking-level-row" aria-pressed={is_current.to_string()} onclick={Callback::from(move |_| click.emit(target_level.clone()))} disabled={*thinking_busy || *model_busy || *writer_busy || ask_write_blocked}><span class="sheet-row-copy"><span class="sheet-row-label">{thinking_label(&level)}</span><span class="sheet-row-sub">{thinking_description(&level)}</span></span>{if is_current { icon("check",18) } else { Html::default() }}</button> } })}
             </BottomSheet>
         }
     } else {
@@ -1272,7 +1999,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                 {attachments_html}
                 {meta}
                 <div class="composer-actions-row">{actions}<span class="action-spacer"></span><button id="send-btn" class="action-send-btn" aria-label="Send" onclick={Callback::from({ let send_message = send_message.clone(); move |_| send_message.emit(()) })} disabled={!can_send}>{icon("send", 18)}<span>{"Send"}</span></button></div>
-                <div class="composer-textarea-row"><textarea id="composer-input" ref={textarea_ref} rows="1" placeholder="Message the agent…" value={(*draft).clone()} oninput={on_input} onkeydown={on_keydown} onfocus={on_focus} /></div>
+                <div class="composer-textarea-row"><textarea id="composer-input" ref={textarea_ref} rows="1" placeholder="Message the agent…" value={(*draft).clone()} oninput={on_input} onkeydown={on_keydown} onfocus={on_focus} disabled={ask_write_blocked} /></div>
             </div>
             {model_sheet}
             {thinking_sheet}
@@ -1320,9 +2047,53 @@ fn thinking_description(level: &str) -> &'static str {
     }
 }
 
-fn render_ask(ask: &Ask, answer: &Callback<usize>, _answering: bool) -> Html {
+fn render_ask(
+    ask: &Ask,
+    answer: &Callback<usize>,
+    action: Option<AskAction>,
+    cancel: &Callback<()>,
+    resume: &Callback<()>,
+    retry: &Callback<()>,
+    abandon: &Callback<()>,
+    can_abandon: bool,
+) -> Html {
+    let elapsed = action
+        .as_ref()
+        .map(|value| value.elapsed_seconds)
+        .unwrap_or(0);
+    let disabled = action.is_some();
+    let controls = action.as_ref().map(|value| {
+        let status = ask_status_text(Some(value)).unwrap_or("Working");
+        let error = value.receipt.as_ref().and_then(|receipt| receipt.error.clone());
+        html! {
+            <div class="ask-lifecycle" role="status" aria-live="polite">
+                <span class="ask-lifecycle-state">{status}</span>
+                <span class="ask-elapsed">{format!("{elapsed}s")}</span>
+                if let Some(error) = error { <span class="ask-lifecycle-error">{error}</span> }
+                if value.paused || matches!(value.phase, AskActionPhase::StaleAfterSubmit | AskActionPhase::Unknown) {
+                    <button class="ask-action-control" onclick={Callback::from({ let resume = resume.clone(); move |_| resume.emit(()) })}>{"Resume"}</button>
+                    if can_abandon && matches!(value.phase, AskActionPhase::StaleAfterSubmit) {
+                        <button class="ask-action-control secondary" onclick={Callback::from({ let abandon = abandon.clone(); move |_| abandon.emit(()) })}>{"Clear pending action"}</button>
+                    }
+                } else if matches!(value.phase, AskActionPhase::FailedBeforeSubmit)
+                    && value.receipt.as_ref().is_some_and(|receipt| receipt.retryable)
+                {
+                    <button class="ask-action-control" onclick={Callback::from({ let retry = retry.clone(); move |_| retry.emit(()) })}>{"Retry"}</button>
+                } else if action_is_active(value) {
+                    <button class="ask-action-control secondary" onclick={Callback::from({ let cancel = cancel.clone(); move |_| cancel.emit(()) })}>{"Cancel"}</button>
+                }
+            </div>
+        }
+    });
     html! {
-        <><div class="ask-question"><span class="ask-ic">{icon("message-circle-question", 16)}</span><span>{ask.question.clone()}</span></div><div class="ask-options">{for ask.options.iter().enumerate().map(|(index, option)| { let answer = answer.clone(); html! { <button class={classes!("ask-option", (ask.recommended == Some(index)).then_some("recommended"))} onclick={Callback::from(move |_| answer.emit(index))}><span>{if option.label.is_empty() { format!("Option {}", index + 1) } else { option.label.clone() }}</span>{option.description.as_ref().map(|description| html! { <span class="opt-desc">{description}</span> })}</button> } })}</div></>
+        <>
+            <div class="ask-question"><span class="ask-ic">{icon("message-circle-question", 16)}</span><span>{ask.question.clone()}</span></div>
+            {controls}
+            <div class="ask-options">{for ask.options.iter().enumerate().map(|(index, option)| {
+                let answer = answer.clone();
+                html! { <button class={classes!("ask-option", (ask.recommended == Some(index)).then_some("recommended"))} disabled={disabled} onclick={Callback::from(move |_| answer.emit(index))}><span>{if option.label.is_empty() { format!("Option {}", index + 1) } else { option.label.clone() }}</span>{option.description.as_ref().map(|description| html! { <span class="opt-desc">{description}</span> })}</button> }
+            })}</div>
+        </>
     }
 }
 

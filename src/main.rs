@@ -27,6 +27,10 @@ use tower_http::services::ServeDir;
 
 const BIND: &str = "127.0.0.1:8787";
 const POLL_MS: u64 = 600;
+const ASK_RECEIPT_TIMEOUT: Duration = Duration::from_secs(5);
+const ASK_DRIVER_TIMEOUT: Duration = Duration::from_secs(12);
+const DUPLICATE_ASK_LABEL_ERROR: &str =
+    "ask option labels are not unique; use the raw terminal to recover";
 
 // ---------------------------------------------------------------- fleet model
 
@@ -61,9 +65,164 @@ struct AppState {
     /// Panes with an in-flight TUI drive (reasoning cycle or model picker) —
     /// both steer the same terminal, so one guard covers both.
     pane_locks: Mutex<HashSet<String>>,
+    /// Stable pending-ask actions keyed by pane + OMP call + option index.
+    ask_actions: Mutex<HashMap<AskIdentity, Arc<Mutex<AskAction>>>>,
 }
 
 type Shared = Arc<AppState>;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct AskIdentity {
+    pane_id: String,
+    call_id: String,
+    index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AskPhase {
+    PreSubmit,
+    SubmittedAwaitingReceipt,
+    Confirmed,
+    FailedBeforeSubmit,
+    StaleAfterSubmit,
+}
+
+#[derive(Clone, Debug)]
+struct AskAction {
+    identity: AskIdentity,
+    phase: AskPhase,
+    entered: bool,
+    retryable: bool,
+    accepted: bool,
+    option_label: Option<String>,
+    error: Option<String>,
+    created_at_ms: u128,
+    updated_at_ms: u128,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActionRegistration {
+    New,
+    Existing,
+    RetryFailedBeforeSubmit,
+    Conflict,
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default()
+}
+
+fn action_id(identity: &AskIdentity) -> String {
+    format!(
+        "{}:{}:{}",
+        identity.pane_id, identity.call_id, identity.index
+    )
+}
+
+fn action_json(action: &AskAction) -> Value {
+    json!({
+        "action_id": action_id(&action.identity),
+        "pane_id": action.identity.pane_id,
+        "call_id": action.identity.call_id,
+        "index": action.identity.index,
+        "phase": action.phase,
+        "entered": action.entered,
+        "retryable": action.retryable,
+        "accepted": action.accepted,
+        "option_label": action.option_label,
+        "error": action.error,
+        "created_at_ms": action.created_at_ms,
+        "updated_at_ms": action.updated_at_ms,
+    })
+}
+
+async fn action_json_for(action: &Arc<Mutex<AskAction>>) -> Value {
+    let current = action.lock().await;
+    action_json(&current)
+}
+
+async fn register_ask_action(
+    state: &Shared,
+    identity: AskIdentity,
+) -> (Arc<Mutex<AskAction>>, ActionRegistration) {
+    let mut actions = state.ask_actions.lock().await;
+    if let Some((other_identity, action)) = actions
+        .iter()
+        .find(|(other, _)| {
+            other.pane_id == identity.pane_id
+                && other.call_id == identity.call_id
+                && other.index != identity.index
+        })
+        .map(|(other, action)| (other.clone(), action.clone()))
+    {
+        let _ = other_identity;
+        return (action, ActionRegistration::Conflict);
+    }
+    if let Some(action) = actions.get(&identity).cloned() {
+        let retry = {
+            let mut current = action.lock().await;
+            if current.phase == AskPhase::FailedBeforeSubmit && current.retryable {
+                current.phase = AskPhase::PreSubmit;
+                current.retryable = false;
+                current.accepted = true;
+                current.error = None;
+                current.updated_at_ms = now_ms();
+                true
+            } else {
+                false
+            }
+        };
+        return (
+            action,
+            if retry {
+                ActionRegistration::RetryFailedBeforeSubmit
+            } else {
+                ActionRegistration::Existing
+            },
+        );
+    }
+    let now = now_ms();
+    let action = Arc::new(Mutex::new(AskAction {
+        identity: identity.clone(),
+        phase: AskPhase::PreSubmit,
+        entered: false,
+        retryable: false,
+        accepted: true,
+        option_label: None,
+        error: None,
+        created_at_ms: now,
+        updated_at_ms: now,
+    }));
+    actions.insert(identity, action.clone());
+    (action, ActionRegistration::New)
+}
+
+fn classify_driver_failure(entered: bool, message: String) -> (AskPhase, bool, String) {
+    if entered {
+        (AskPhase::StaleAfterSubmit, false, message)
+    } else {
+        (AskPhase::FailedBeforeSubmit, true, message)
+    }
+}
+
+async fn update_action(
+    action: &Arc<Mutex<AskAction>>,
+    phase: AskPhase,
+    entered: bool,
+    retryable: bool,
+    error: Option<String>,
+) {
+    let mut current = action.lock().await;
+    current.phase = phase;
+    current.entered = entered;
+    current.retryable = retryable;
+    current.error = error;
+    current.updated_at_ms = now_ms();
+}
 
 fn s(v: &Value, keys: &[&str]) -> Option<String> {
     keys.iter()
@@ -920,6 +1079,16 @@ async fn drive_model_picker(
     Ok(())
 }
 
+fn duplicate_ask_option_label<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let mut seen = HashSet::new();
+    for label in labels {
+        if !seen.insert(label) {
+            return Some(label);
+        }
+    }
+    None
+}
+
 fn focused_ask_index(screen: &str, ask: &omp::Ask) -> Option<usize> {
     let ask_visible = screen.lines().any(|line| {
         let line = line.trim();
@@ -943,164 +1112,509 @@ fn focused_ask_index(screen: &str, ask: &omp::Ask) -> Option<usize> {
     })
 }
 
-async fn wait_ask_selection(
-    path: &str,
-    call_id: &str,
-) -> Option<std::result::Result<Vec<String>, String>> {
-    for _ in 0..50 {
-        let path = path.to_string();
-        let call_id = call_id.to_string();
-        let receipt = tokio::task::spawn_blocking(move || {
-            let raw = std::fs::read_to_string(path).ok()?;
-            raw.lines().rev().find_map(|line| {
-                let event: Value = serde_json::from_str(line).ok()?;
-                if event.get("type").and_then(Value::as_str) != Some("message") {
-                    return None;
-                }
-                let message = event.get("message")?;
-                if message.get("role").and_then(Value::as_str) != Some("toolResult")
-                    || message.get("toolCallId").and_then(Value::as_str) != Some(call_id.as_str())
-                {
-                    return None;
-                }
-                if message
-                    .get("isError")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                {
-                    return Some(Err("ask tool returned an error".to_string()));
-                }
-                let selected = message
-                    .get("details")
-                    .and_then(|details| details.get("selectedOptions"))
-                    .and_then(Value::as_array)?
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(String::from)
-                    .collect::<Vec<_>>();
-                Some(Ok(selected))
-            })
-        })
+async fn scan_ask_receipt(path: &str, call_id: &str) -> omp::AskReceipt {
+    let path = path.to_string();
+    let call_id = call_id.to_string();
+    tokio::task::spawn_blocking(move || omp::ask_receipt(&path, &call_id))
+        .await
+        .unwrap_or(omp::AskReceipt::Pending)
+}
+
+async fn scan_ask_option_labels(path: &str, call_id: &str) -> Option<Vec<String>> {
+    let path = path.to_string();
+    let call_id = call_id.to_string();
+    tokio::task::spawn_blocking(move || omp::ask_option_labels(&path, &call_id))
         .await
         .ok()
-        .flatten();
-        if receipt.is_some() {
-            return receipt;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        .flatten()
+}
+
+async fn scan_ask_option_label(path: &str, call_id: &str, index: usize) -> Option<String> {
+    let path = path.to_string();
+    let call_id = call_id.to_string();
+    tokio::task::spawn_blocking(move || omp::ask_option_label(&path, &call_id, index))
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn reject_duplicate_ask_labels(
+    action: &Arc<Mutex<AskAction>>,
+    labels: Option<&[String]>,
+) -> bool {
+    let Some(labels) = labels else {
+        return false;
+    };
+    if duplicate_ask_option_label(labels.iter().map(String::as_str)).is_none() {
+        return false;
     }
-    None
+    update_action(
+        action,
+        AskPhase::FailedBeforeSubmit,
+        false,
+        false,
+        Some(DUPLICATE_ASK_LABEL_ERROR.into()),
+    )
+    .await;
+    true
 }
 
 #[derive(Deserialize)]
 struct AskBody {
+    call_id: String,
     index: usize,
 }
 
-/// Answer a pending single-select ask from the currently rendered focus row,
-/// then confirm the exact option against the correlated ask tool result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReceiptConfirmation {
+    Confirmed,
+    DuplicateLabels,
+    NotConfirmed,
+}
+
+async fn mark_receipt_if_confirmed(
+    action: &Arc<Mutex<AskAction>>,
+    path: &str,
+) -> ReceiptConfirmation {
+    let (identity, entered, saved_label) = {
+        let current = action.lock().await;
+        (
+            current.identity.clone(),
+            current.entered,
+            current.option_label.clone(),
+        )
+    };
+    let exact_option_labels = scan_ask_option_labels(path, &identity.call_id).await;
+    if reject_duplicate_ask_labels(action, exact_option_labels.as_deref()).await {
+        return ReceiptConfirmation::DuplicateLabels;
+    }
+    let expected_label = if let Some(label) = saved_label {
+        Some(label)
+    } else if let Some(label) = exact_option_labels
+        .as_ref()
+        .and_then(|labels| labels.get(identity.index).cloned())
+    {
+        Some(label)
+    } else {
+        scan_ask_option_label(path, &identity.call_id, identity.index).await
+    };
+    let receipt = scan_ask_receipt(path, &identity.call_id).await;
+    match receipt {
+        omp::AskReceipt::Confirmed(selected) => {
+            if expected_label
+                .as_deref()
+                .is_some_and(|label| selected == [label.to_string()])
+            {
+                update_action(action, AskPhase::Confirmed, true, false, None).await;
+                ReceiptConfirmation::Confirmed
+            } else {
+                if entered {
+                    update_action(
+                        action,
+                        AskPhase::StaleAfterSubmit,
+                        true,
+                        false,
+                        Some("ask selection receipt did not match the requested option".into()),
+                    )
+                    .await;
+                }
+                ReceiptConfirmation::NotConfirmed
+            }
+        }
+        omp::AskReceipt::Error | omp::AskReceipt::Malformed if entered => {
+            update_action(
+                action,
+                AskPhase::StaleAfterSubmit,
+                true,
+                false,
+                Some("ask receipt was an error or malformed".into()),
+            )
+            .await;
+            ReceiptConfirmation::NotConfirmed
+        }
+        _ => ReceiptConfirmation::NotConfirmed,
+    }
+}
+
+async fn drive_ask(state: Shared, action: Arc<Mutex<AskAction>>) {
+    let identity = action.lock().await.identity.clone();
+    let Some(path) = session_path_for(&state, &identity.pane_id).await else {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            true,
+            Some("no transcript for pane".into()),
+        )
+        .await;
+        return;
+    };
+
+    let exact_option_labels = scan_ask_option_labels(&path, &identity.call_id).await;
+    if reject_duplicate_ask_labels(&action, exact_option_labels.as_deref()).await {
+        return;
+    }
+    let receipt_option_label = exact_option_labels
+        .as_ref()
+        .and_then(|labels| labels.get(identity.index).cloned());
+    match scan_ask_receipt(&path, &identity.call_id).await {
+        omp::AskReceipt::Confirmed(selected)
+            if receipt_option_label
+                .as_deref()
+                .is_some_and(|label| selected.len() == 1 && selected[0] == label) =>
+        {
+            {
+                let mut current = action.lock().await;
+                current.option_label = receipt_option_label.clone();
+                current.updated_at_ms = now_ms();
+            }
+            update_action(&action, AskPhase::Confirmed, true, false, None).await;
+            return;
+        }
+        omp::AskReceipt::Confirmed(_) => {
+            update_action(
+                &action,
+                AskPhase::FailedBeforeSubmit,
+                false,
+                false,
+                Some("ask already has a different receipt".into()),
+            )
+            .await;
+            return;
+        }
+        omp::AskReceipt::Error | omp::AskReceipt::Malformed => {
+            update_action(
+                &action,
+                AskPhase::FailedBeforeSubmit,
+                false,
+                false,
+                Some("ask already has a failed receipt".into()),
+            )
+            .await;
+            return;
+        }
+        omp::AskReceipt::Pending => {}
+    }
+
+    let parse_path = path.clone();
+    let transcript = tokio::task::spawn_blocking(move || omp::parse_session(&parse_path))
+        .await
+        .unwrap_or_default();
+    let Some(ask) = transcript.pending_ask else {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            false,
+            Some("ask no longer pending".into()),
+        )
+        .await;
+        return;
+    };
+    if ask.call_id != identity.call_id {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            false,
+            Some("ask call_id is no longer current".into()),
+        )
+        .await;
+        return;
+    }
+    if duplicate_ask_option_label(ask.options.iter().map(|option| option.label.as_str())).is_some()
+    {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            false,
+            Some("ask option labels are not unique; use the raw terminal to recover".into()),
+        )
+        .await;
+        return;
+    }
+    if ask.multi {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            false,
+            Some("multi-select not supported yet; use keys".into()),
+        )
+        .await;
+        return;
+    }
+    let Some(option) = ask.options.get(identity.index).cloned() else {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            false,
+            Some("option index out of range".into()),
+        )
+        .await;
+        return;
+    };
+    {
+        let mut current = action.lock().await;
+        current.option_label = Some(option.label.clone());
+        current.updated_at_ms = now_ms();
+    }
+    if identity.call_id.is_empty() {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            false,
+            Some("pending ask has no tool-call identity".into()),
+        )
+        .await;
+        return;
+    }
+
+    let claimed = state
+        .pane_locks
+        .lock()
+        .await
+        .insert(identity.pane_id.clone());
+    if !claimed {
+        update_action(
+            &action,
+            AskPhase::FailedBeforeSubmit,
+            false,
+            true,
+            Some("another pane write is in progress".into()),
+        )
+        .await;
+        return;
+    }
+
+    let result: Result<(), String> = tokio::time::timeout(ASK_DRIVER_TIMEOUT, async {
+        let screen = screen_text(&identity.pane_id)
+            .await
+            .map_err(|error| error.to_string())?;
+        let start = focused_ask_index(&screen, &ask)
+            .ok_or_else(|| "ask picker focus could not be verified".to_string())?;
+        let (direction, count) = if identity.index >= start {
+            ("Down", identity.index - start)
+        } else {
+            ("Up", start - identity.index)
+        };
+        for _ in 0..count {
+            herdr::send_keys(&identity.pane_id, &[direction.to_string()])
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        let focused = wait_screen(&identity.pane_id, 30, |screen| {
+            focused_ask_index(screen, &ask) == Some(identity.index)
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+        if focused.is_none() {
+            return Err("ask picker did not focus the requested option".into());
+        }
+
+        {
+            let mut current = action.lock().await;
+            current.phase = AskPhase::SubmittedAwaitingReceipt;
+            current.entered = true;
+            current.retryable = false;
+            current.error = None;
+            current.updated_at_ms = now_ms();
+        }
+        herdr::send_keys(&identity.pane_id, &["Enter".to_string()])
+            .await
+            .map_err(|error| error.to_string())?;
+
+        for _ in 0..50 {
+            match scan_ask_receipt(&path, &identity.call_id).await {
+                omp::AskReceipt::Confirmed(selected) if selected == [option.label.clone()] => {
+                    update_action(&action, AskPhase::Confirmed, true, false, None).await;
+                    return Ok(());
+                }
+                omp::AskReceipt::Confirmed(_) => {
+                    return Err("ask selection receipt did not match the requested option".into());
+                }
+                omp::AskReceipt::Error => return Err("ask tool returned an error".into()),
+                omp::AskReceipt::Malformed => return Err("ask receipt was malformed".into()),
+                omp::AskReceipt::Pending => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
+        Err("ask selection was not recorded before the receipt deadline".into())
+    })
+    .await
+    .unwrap_or_else(|_| Err("ask driver deadline expired".into()));
+    state.pane_locks.lock().await.remove(&identity.pane_id);
+
+    if let Err(message) = result {
+        let entered = action.lock().await.entered;
+        if entered {
+            match mark_receipt_if_confirmed(&action, &path).await {
+                ReceiptConfirmation::Confirmed | ReceiptConfirmation::DuplicateLabels => return,
+                ReceiptConfirmation::NotConfirmed => {}
+            }
+        }
+        let (phase, retryable, error) = classify_driver_failure(entered, message);
+        update_action(&action, phase, entered, retryable, Some(error)).await;
+    }
+}
+
+async fn reconcile_before_retry(state: &Shared, action: &Arc<Mutex<AskAction>>) -> bool {
+    let identity = action.lock().await.identity.clone();
+    let Some(path) = session_path_for(state, &identity.pane_id).await else {
+        return false;
+    };
+    let exact_option_labels = scan_ask_option_labels(&path, &identity.call_id).await;
+    if reject_duplicate_ask_labels(action, exact_option_labels.as_deref()).await {
+        return true;
+    }
+    match scan_ask_receipt(&path, &identity.call_id).await {
+        omp::AskReceipt::Pending => false,
+        omp::AskReceipt::Confirmed(_) => match mark_receipt_if_confirmed(action, &path).await {
+            ReceiptConfirmation::Confirmed | ReceiptConfirmation::DuplicateLabels => true,
+            ReceiptConfirmation::NotConfirmed => {
+                update_action(
+                    action,
+                    AskPhase::FailedBeforeSubmit,
+                    false,
+                    false,
+                    Some("ask receipt did not match the requested option".into()),
+                )
+                .await;
+                true
+            }
+        },
+        omp::AskReceipt::Error | omp::AskReceipt::Malformed => {
+            update_action(
+                action,
+                AskPhase::FailedBeforeSubmit,
+                false,
+                false,
+                Some("ask already has a failed receipt".into()),
+            )
+            .await;
+            true
+        }
+    }
+}
+
 async fn post_ask(
     State(state): State<Shared>,
     Path(pane_id): Path<String>,
     Json(body): Json<AskBody>,
 ) -> impl IntoResponse {
-    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
-    if !claimed {
+    if body.call_id.trim().is_empty() {
         return (
-            StatusCode::CONFLICT,
-            Json(json!({"error": "another pane write is in progress"})),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "call_id is required"})),
         )
             .into_response();
     }
-
-    let run = async {
-        let path = session_path_for(&state, &pane_id)
-            .await
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
-        let parse_path = path.clone();
-        let transcript = tokio::task::spawn_blocking(move || omp::parse_session(&parse_path))
-            .await
-            .unwrap_or_default();
-        let ask = transcript
-            .pending_ask
-            .ok_or_else(|| (StatusCode::CONFLICT, "ask no longer pending".to_string()))?;
-        if ask.multi {
-            return Err((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "multi-select not supported yet; use keys".to_string(),
-            ));
+    let identity = AskIdentity {
+        pane_id,
+        call_id: body.call_id,
+        index: body.index,
+    };
+    let (action, registration) = register_ask_action(&state, identity).await;
+    if registration == ActionRegistration::Conflict {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "another option is already active for this ask call_id",
+                "action": action_json_for(&action).await,
+            })),
+        )
+            .into_response();
+    }
+    let should_spawn = match registration {
+        ActionRegistration::New => true,
+        ActionRegistration::RetryFailedBeforeSubmit => {
+            !reconcile_before_retry(&state, &action).await
         }
-        let Some(option) = ask.options.get(body.index) else {
-            return Err((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "option index out of range".to_string(),
-            ));
-        };
-        if ask.call_id.is_empty() {
-            return Err((
-                StatusCode::BAD_GATEWAY,
-                "pending ask has no tool-call identity".to_string(),
-            ));
-        }
+        ActionRegistration::Existing | ActionRegistration::Conflict => false,
+    };
+    if should_spawn {
+        tokio::spawn(drive_ask(state, action.clone()));
+    }
+    let response = action_json_for(&action).await;
+    (StatusCode::ACCEPTED, Json(response)).into_response()
+}
 
-        let screen = screen_text(&pane_id)
-            .await
-            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-        let start = focused_ask_index(&screen, &ask).ok_or_else(|| {
-            (
-                StatusCode::CONFLICT,
-                "ask picker focus could not be verified".to_string(),
-            )
-        })?;
-        let (direction, count) = if body.index >= start {
-            ("Down", body.index - start)
+async fn get_ask_status(
+    State(state): State<Shared>,
+    Path((pane_id, call_id, index)): Path<(String, String, usize)>,
+) -> impl IntoResponse {
+    if call_id.trim().is_empty() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "call_id is required"})),
+        )
+            .into_response();
+    }
+    let identity = AskIdentity {
+        pane_id,
+        call_id,
+        index,
+    };
+    let (action, conflict_action) = {
+        let actions = state.ask_actions.lock().await;
+        if let Some(action) = actions.get(&identity).cloned() {
+            (Some(action), None)
+        } else if let Some(action) = actions
+            .iter()
+            .find(|(key, _)| key.pane_id == identity.pane_id && key.call_id == identity.call_id)
+            .map(|(_, action)| action.clone())
+        {
+            (None, Some(action))
         } else {
-            ("Up", start - body.index)
-        };
-        for _ in 0..count {
-            herdr::send_keys(&pane_id, &[direction.to_string()])
-                .await
-                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+            (None, None)
         }
-        let focused = wait_screen(&pane_id, 30, |screen| {
-            focused_ask_index(screen, &ask) == Some(body.index)
-        })
-        .await
-        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-        if focused.is_none() {
-            return Err((
-                StatusCode::CONFLICT,
-                "ask picker did not focus the requested option".to_string(),
-            ));
-        }
-        herdr::send_keys(&pane_id, &["Enter".to_string()])
-            .await
-            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-
-        let selected = wait_ask_selection(&path, &ask.call_id)
-            .await
-            .ok_or_else(|| {
-                (
-                    StatusCode::BAD_GATEWAY,
-                    "ask selection was not recorded".to_string(),
+    };
+    if let Some(action) = conflict_action {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "a different option is already active for this ask call_id",
+                "action": action_json_for(&action).await,
+            })),
+        )
+            .into_response();
+    }
+    let Some(action) = action else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "ask action not found", "action_id": action_id(&identity)})),
+        )
+            .into_response();
+    };
+    if let Some(path) = session_path_for(&state, &identity.pane_id).await {
+        let current = action.lock().await.clone();
+        if matches!(
+            current.phase,
+            AskPhase::PreSubmit
+                | AskPhase::SubmittedAwaitingReceipt
+                | AskPhase::FailedBeforeSubmit
+                | AskPhase::StaleAfterSubmit
+        ) {
+            let _ = mark_receipt_if_confirmed(&action, &path).await;
+            let current = action.lock().await.clone();
+            if current.phase == AskPhase::SubmittedAwaitingReceipt
+                && now_ms().saturating_sub(current.updated_at_ms as u128)
+                    >= ASK_RECEIPT_TIMEOUT.as_millis()
+            {
+                update_action(
+                    &action,
+                    AskPhase::StaleAfterSubmit,
+                    true,
+                    false,
+                    Some("ask receipt deadline expired".into()),
                 )
-            })?
-            .map_err(|message| (StatusCode::BAD_GATEWAY, message))?;
-        if selected.as_slice() != [option.label.as_str()] {
-            return Err((
-                StatusCode::BAD_GATEWAY,
-                "ask selection receipt did not match the requested option".to_string(),
-            ));
+                .await;
+            }
         }
-        Ok(())
     }
-    .await;
-
-    state.pane_locks.lock().await.remove(&pane_id);
-    match run {
-        Ok(()) => Json(json!({"ok": true})).into_response(),
-        Err((status, message)) => (status, Json(json!({"error": message}))).into_response(),
-    }
+    Json(action_json_for(&action).await).into_response()
 }
 
 async fn sse_events(
@@ -1335,6 +1849,7 @@ async fn main() -> Result<()> {
         fleet: RwLock::new(Fleet::default()),
         pokes: Some(tx),
         pane_locks: Mutex::new(HashSet::new()),
+        ask_actions: Mutex::new(HashMap::new()),
     });
 
     // Prime the fleet once before serving so first paint isn't empty.
@@ -1356,6 +1871,10 @@ async fn main() -> Result<()> {
         .route("/api/pane/{pane_id}/model", post(post_model))
         .route("/api/pane/{pane_id}/ask", post(post_ask))
         .route(
+            "/api/pane/{pane_id}/ask/{call_id}/{index}",
+            get(get_ask_status),
+        )
+        .route(
             "/api/pane/{pane_id}/upload",
             post(post_upload).layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024)),
         )
@@ -1376,4 +1895,83 @@ async fn main() -> Result<()> {
     println!("kelpie listening on http://{BIND} (static: {static_dir})");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ask_driver_deadline_is_retryable_only_before_enter() {
+        let (phase, retryable, message) =
+            classify_driver_failure(false, "ask driver deadline expired".into());
+        assert_eq!(phase, AskPhase::FailedBeforeSubmit);
+        assert!(retryable);
+        assert_eq!(message, "ask driver deadline expired");
+
+        let (phase, retryable, _) =
+            classify_driver_failure(true, "ask driver deadline expired".into());
+        assert_eq!(phase, AskPhase::StaleAfterSubmit);
+        assert!(!retryable);
+    }
+
+    #[test]
+    fn duplicate_ask_option_labels_are_rejected_without_rejecting_unique_labels() {
+        let unique = vec![
+            omp::AskOption {
+                label: "first".into(),
+                description: None,
+            },
+            omp::AskOption {
+                label: "second".into(),
+                description: None,
+            },
+        ];
+        assert_eq!(
+            duplicate_ask_option_label(unique.iter().map(|option| option.label.as_str())),
+            None
+        );
+
+        let duplicate = vec![
+            omp::AskOption {
+                label: "first".into(),
+                description: None,
+            },
+            omp::AskOption {
+                label: "first".into(),
+                description: Some("different details".into()),
+            },
+        ];
+        assert_eq!(
+            duplicate_ask_option_label(duplicate.iter().map(|option| option.label.as_str())),
+            Some("first")
+        );
+    }
+
+    #[tokio::test]
+    async fn duplicate_ask_identity_starts_one_driver_and_conflicts_on_other_index() {
+        let state = Arc::new(AppState::default());
+        let identity = AskIdentity {
+            pane_id: "pane-1".into(),
+            call_id: "call-1".into(),
+            index: 0,
+        };
+        let (first, first_registration) = register_ask_action(&state, identity.clone()).await;
+        let (duplicate, duplicate_registration) = register_ask_action(&state, identity).await;
+        assert_eq!(first_registration, ActionRegistration::New);
+        assert_eq!(duplicate_registration, ActionRegistration::Existing);
+        assert!(Arc::ptr_eq(&first, &duplicate));
+
+        let (different, different_registration) = register_ask_action(
+            &state,
+            AskIdentity {
+                pane_id: "pane-1".into(),
+                call_id: "call-1".into(),
+                index: 1,
+            },
+        )
+        .await;
+        assert_eq!(different_registration, ActionRegistration::Conflict);
+        assert!(Arc::ptr_eq(&first, &different));
+    }
 }

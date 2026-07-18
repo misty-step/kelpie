@@ -93,8 +93,10 @@ pub enum Entry {
     },
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Ask {
+    #[serde(default)]
+    pub call_id: String,
     #[serde(default)]
     pub question: String,
     #[serde(default)]
@@ -104,7 +106,7 @@ pub struct Ask {
     pub recommended: Option<usize>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct AskOption {
     #[serde(default)]
     pub label: String,
@@ -202,9 +204,72 @@ pub struct KeysBody<'a> {
     pub keys: &'a [String],
 }
 
-#[derive(Serialize)]
-pub struct AskBody {
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct AskActionKey {
+    pub pane_id: String,
+    pub call_id: String,
+    pub option_index: usize,
+}
+
+impl AskActionKey {
+    pub fn new(
+        pane_id: impl Into<String>,
+        call_id: impl Into<String>,
+        option_index: usize,
+    ) -> Self {
+        Self {
+            pane_id: pane_id.into(),
+            call_id: call_id.into(),
+            option_index,
+        }
+    }
+
+    pub fn action_id(&self) -> String {
+        format!("{}:{}:{}", self.pane_id, self.call_id, self.option_index)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct AskActionRequest {
+    pub call_id: String,
     pub index: usize,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AskActionPhase {
+    #[default]
+    PreSubmit,
+    SubmittedAwaitingReceipt,
+    Confirmed,
+    FailedBeforeSubmit,
+    StaleAfterSubmit,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct AskActionReceipt {
+    #[serde(default)]
+    pub action_id: String,
+    #[serde(default)]
+    pub pane_id: String,
+    #[serde(default)]
+    pub call_id: String,
+    #[serde(default)]
+    pub index: usize,
+    #[serde(default)]
+    pub phase: AskActionPhase,
+    #[serde(default)]
+    pub entered: bool,
+    #[serde(default)]
+    pub retryable: bool,
+    #[serde(default)]
+    pub accepted: bool,
+    pub option_label: Option<String>,
+    pub created_at_ms: Option<u64>,
+    pub updated_at_ms: Option<u64>,
+    pub error: Option<String>,
 }
 
 #[derive(Serialize)]

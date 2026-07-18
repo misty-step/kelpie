@@ -949,6 +949,56 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-weight: 400;
 }
 
+.ask-lifecycle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 24px;
+  padding: 4px 0;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--muted);
+}
+.ask-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.ask-lifecycle-state { font-weight: 700; color: var(--text); }
+.ask-lifecycle-error {
+  flex: 1 1 100%;
+  color: var(--st-blocked);
+  overflow-wrap: anywhere;
+}
+.ask-action-control {
+  min-width: 82px;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 8px 13px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ask-action-control.secondary {
+  border-color: var(--hairline);
+  background: var(--bg);
+  color: var(--text);
+}
+.ask-action-control:active { transform: var(--press); }
+.ask-option:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+@media (max-width: 420px) {
+  .ask-box { padding-left: calc(var(--safe-left) + 12px); padding-right: calc(var(--safe-right) + 12px); }
+  .ask-action-control { min-width: 88px; }
+}
+
 /* ── Composer ── */
 .composer-wrap {
   flex-shrink: 0;

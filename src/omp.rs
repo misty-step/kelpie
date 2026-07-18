@@ -133,6 +133,120 @@ fn parse_ask(args: &Value, call_id: &str) -> Option<Ask> {
     })
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum AskReceipt {
+    Pending,
+    Confirmed(Vec<String>),
+    Error,
+    Malformed,
+}
+
+/// Find the option labels from the original exact ask tool call, even after
+/// its toolResult has made the ask no longer pending in parse_session.
+pub fn ask_option_labels(path: &str, call_id: &str) -> Option<Vec<String>> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if event.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(message) = event.get("message") else {
+            continue;
+        };
+        if message.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        let Some(items) = message.get("content").and_then(Value::as_array) else {
+            continue;
+        };
+        for item in items {
+            if item.get("type").and_then(Value::as_str) != Some("toolCall")
+                || item.get("name").and_then(Value::as_str) != Some("ask")
+                || item.get("id").and_then(Value::as_str) != Some(call_id)
+            {
+                continue;
+            }
+            let Some(options) = item
+                .get("arguments")
+                .and_then(|args| args.get("questions"))
+                .and_then(Value::as_array)
+                .and_then(|questions| questions.first())
+                .and_then(|question| question.get("options"))
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            let Some(labels) = options
+                .iter()
+                .map(|option| {
+                    option
+                        .get("label")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            return Some(labels);
+        }
+    }
+    None
+}
+
+pub fn ask_option_label(path: &str, call_id: &str, index: usize) -> Option<String> {
+    ask_option_labels(path, call_id)?.get(index).cloned()
+}
+
+/// Scan only the exact OMP tool-result receipt for one ask call. The latest
+/// matching receipt wins, so a lost HTTP response converges by readback.
+pub fn ask_receipt(path: &str, call_id: &str) -> AskReceipt {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return AskReceipt::Pending;
+    };
+    for line in raw.lines().rev() {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if event.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(message) = event.get("message") else {
+            continue;
+        };
+        if message.get("role").and_then(Value::as_str) != Some("toolResult")
+            || message.get("toolCallId").and_then(Value::as_str) != Some(call_id)
+        {
+            continue;
+        }
+        if message
+            .get("isError")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            return AskReceipt::Error;
+        }
+        let Some(selected) = message
+            .get("details")
+            .and_then(|details| details.get("selectedOptions"))
+            .and_then(Value::as_array)
+        else {
+            return AskReceipt::Malformed;
+        };
+        let mut values = Vec::with_capacity(selected.len());
+        for value in selected {
+            let Some(value) = value.as_str() else {
+                return AskReceipt::Malformed;
+            };
+            values.push(value.to_string());
+        }
+        return AskReceipt::Confirmed(values);
+    }
+    AskReceipt::Pending
+}
+
 pub fn parse_session(path: &str) -> Transcript {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return Transcript::default();
@@ -333,5 +447,47 @@ pub fn summarize(path: &str) -> Summary {
         title: t.title,
         snippet,
         pending_ask: t.pending_ask.is_some(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn receipt_scan_correlates_exact_call_id() {
+        let path = std::env::temp_dir().join(format!(
+            "kelpie-omp-receipt-{}-{}.jsonl",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let raw = r#"{"type":"message","message":{"role":"assistant","content":[{"type":"toolCall","id":"call-1","name":"ask","arguments":{"questions":[{"options":[{"label":"left"},{"label":"right"}]}]}}]}}
+{"type":"message","message":{"role":"toolResult","toolCallId":"other","details":{"selectedOptions":["wrong"]}}}
+{"type":"message","message":{"role":"toolResult","toolCallId":"call-1","details":{"selectedOptions":["right"]}}}"#;
+        std::fs::write(&path, raw).unwrap();
+        assert_eq!(
+            ask_receipt(path.to_str().unwrap(), "call-1"),
+            AskReceipt::Confirmed(vec!["right".into()])
+        );
+        assert_eq!(
+            ask_option_labels(path.to_str().unwrap(), "call-1"),
+            Some(vec!["left".into(), "right".into()])
+        );
+        assert_eq!(
+            ask_option_label(path.to_str().unwrap(), "call-1", 1),
+            Some("right".into())
+        );
+        assert_eq!(
+            ask_receipt(path.to_str().unwrap(), "other"),
+            AskReceipt::Confirmed(vec!["wrong".into()])
+        );
+        assert_eq!(
+            ask_receipt(path.to_str().unwrap(), "missing"),
+            AskReceipt::Pending
+        );
+        let _ = std::fs::remove_file(path);
     }
 }
