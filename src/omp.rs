@@ -9,10 +9,24 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Seek};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::LazyLock;
 
 const RESULT_CLIP: usize = 4000;
 const SNIPPET_CLIP: usize = 140;
+static NEXT_PROJECTION_GENERATION: LazyLock<AtomicU64> = LazyLock::new(|| {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let seed = (nanos as u64) ^ ((nanos >> 64) as u64) ^ (u64::from(std::process::id()) << 32);
+    AtomicU64::new(seed.max(1))
+});
+
+fn next_projection_generation() -> u64 {
+    NEXT_PROJECTION_GENERATION.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -298,56 +312,163 @@ pub fn ask_receipt(path: &str, call_id: &str) -> AskReceipt {
     AskReceipt::Pending
 }
 
-pub fn parse_session(path: &str) -> Transcript {
-    let Ok(raw) = std::fs::read_to_string(path) else {
-        return Transcript::default();
-    };
-    let mut t = Transcript::default();
-    // toolCallId -> (entries index, ask payload if the tool is `ask`)
-    let mut open_tools: HashMap<String, (usize, Option<Ask>)> = HashMap::new();
+#[derive(Serialize, Clone)]
+pub struct IndexedEntry {
+    pub index: usize,
+    #[serde(flatten)]
+    pub entry: Entry,
+}
 
-    for line in raw.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+#[derive(Serialize, Clone)]
+pub struct SessionPage {
+    pub title: Option<String>,
+    pub entries: Vec<IndexedEntry>,
+    pub pending_ask: Option<Ask>,
+    pub model: Option<ModelInfo>,
+    pub thinking: Option<String>,
+    pub total_entries: usize,
+    pub start_index: usize,
+    pub has_older: bool,
+    /// Monotonic session incarnation; changes when the source is replaced.
+    pub generation: u64,
+    pub revision: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct FileIdentity {
+    #[cfg(unix)]
+    dev: u64,
+    #[cfg(unix)]
+    ino: u64,
+}
+
+fn file_identity(metadata: &std::fs::Metadata) -> FileIdentity {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        FileIdentity {
+            dev: metadata.dev(),
+            ino: metadata.ino(),
         }
-        // A partially-written trailing line simply fails to parse; skip it.
-        let Ok(e) = serde_json::from_str::<Value>(line) else {
-            continue;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        FileIdentity::default()
+    }
+}
+
+const FILE_FINGERPRINT_BYTES: u64 = 1024;
+
+fn read_window(path: &str, start: u64, length: u64) -> std::io::Result<Vec<u8>> {
+    let mut file = std::fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(length).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn file_prefix(path: &str, length: u64) -> std::io::Result<Vec<u8>> {
+    read_window(path, 0, length)
+}
+
+/// Stateful append-only projection of one OMP JSONL session.
+///
+/// The byte offset is advanced only after a complete JSONL record is consumed.
+/// Entries are never removed while appending, so vector positions are stable
+/// absolute semantic indices. A tool result mutates its indexed tool entry via
+/// the open-tool map rather than appending a duplicate entry.
+pub struct SessionProjection {
+    transcript: Transcript,
+    open_tools: HashMap<String, (usize, Option<Ask>)>,
+    offset: u64,
+    generation: u64,
+    identity: Option<FileIdentity>,
+    prefix: Vec<u8>,
+    suffix: Vec<u8>,
+}
+
+impl Default for SessionProjection {
+    fn default() -> Self {
+        Self {
+            transcript: Transcript::default(),
+            open_tools: HashMap::new(),
+            offset: 0,
+            generation: next_projection_generation(),
+            identity: None,
+            prefix: Vec::new(),
+            suffix: Vec::new(),
+        }
+    }
+}
+
+impl SessionProjection {
+    fn reset(&mut self) {
+        self.generation = next_projection_generation();
+        self.transcript = Transcript::default();
+        self.open_tools.clear();
+        self.offset = 0;
+        self.identity = None;
+        self.prefix.clear();
+        self.suffix.clear();
+    }
+
+    fn replace_required(
+        &self,
+        metadata: &std::fs::Metadata,
+        prefix: &[u8],
+        prior_tail: &[u8],
+    ) -> bool {
+        let Some(identity) = self.identity else {
+            return false;
         };
-        let ts = e.get("timestamp").and_then(Value::as_str).map(String::from);
-        match e.get("type").and_then(Value::as_str) {
+        if identity != file_identity(metadata) || metadata.len() < self.offset {
+            return true;
+        }
+        if prefix.len() < self.prefix.len()
+            || prefix.get(..self.prefix.len()) != Some(self.prefix.as_slice())
+        {
+            return true;
+        }
+        // Verify the bounded tail at the old offset. Ordinary appends preserve
+        // these bytes; in-place replacement cannot silently reuse the suffix.
+        prior_tail != self.suffix.as_slice()
+    }
+
+    fn apply_event(&mut self, event: Value) {
+        let ts = event
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .map(String::from);
+        match event.get("type").and_then(Value::as_str) {
             Some("session") | Some("title") | Some("title_change") => {
-                if let Some(title) = e.get("title").and_then(Value::as_str) {
-                    t.title = Some(title.to_string());
+                if let Some(title) = event.get("title").and_then(Value::as_str) {
+                    self.transcript.title = Some(title.to_string());
                 }
             }
             Some("message") => {
-                let Some(msg) = e.get("message") else {
-                    continue;
+                let Some(message) = event.get("message") else {
+                    return;
                 };
-                match msg.get("role").and_then(Value::as_str) {
+                match message.get("role").and_then(Value::as_str) {
                     Some("user") => {
-                        let text = content_text(msg.get("content").unwrap_or(&Value::Null));
+                        let text = content_text(message.get("content").unwrap_or(&Value::Null));
                         if !text.is_empty() {
-                            t.entries.push(Entry::User {
-                                text,
-                                ts: ts.clone(),
-                            });
+                            self.transcript.entries.push(Entry::User { text, ts });
                         }
                     }
                     Some("assistant") => {
                         if let (Some(provider), Some(model)) = (
-                            msg.get("provider").and_then(Value::as_str),
-                            msg.get("model").and_then(Value::as_str),
+                            message.get("provider").and_then(Value::as_str),
+                            message.get("model").and_then(Value::as_str),
                         ) {
-                            t.model = Some(ModelInfo {
+                            self.transcript.model = Some(ModelInfo {
                                 provider: provider.to_string(),
                                 model: model.to_string(),
                             });
                         }
-                        let Some(items) = msg.get("content").and_then(Value::as_array) else {
-                            continue;
+                        let Some(items) = message.get("content").and_then(Value::as_array) else {
+                            return;
                         };
                         for item in items {
                             match item.get("type").and_then(Value::as_str) {
@@ -355,7 +476,7 @@ pub fn parse_session(path: &str) -> Transcript {
                                     let text =
                                         item.get("text").and_then(Value::as_str).unwrap_or("");
                                     if !text.trim().is_empty() {
-                                        t.entries.push(Entry::Assistant {
+                                        self.transcript.entries.push(Entry::Assistant {
                                             text: text.to_string(),
                                             ts: ts.clone(),
                                         });
@@ -365,7 +486,7 @@ pub fn parse_session(path: &str) -> Transcript {
                                     let text =
                                         item.get("thinking").and_then(Value::as_str).unwrap_or("");
                                     if !text.trim().is_empty() {
-                                        t.entries.push(Entry::Thinking {
+                                        self.transcript.entries.push(Entry::Thinking {
                                             text: text.to_string(),
                                             ts: ts.clone(),
                                         });
@@ -388,16 +509,18 @@ pub fn parse_session(path: &str) -> Transcript {
                                     let ask = (name == "ask")
                                         .then(|| parse_ask(&args, call_id.unwrap_or("")))
                                         .flatten();
-                                    t.entries.push(Entry::Tool {
+                                    self.transcript.entries.push(Entry::Tool {
                                         name,
                                         intent,
                                         status: "pending".to_string(),
                                         result: None,
                                         ts: ts.clone(),
                                     });
-                                    if let Some(id) = call_id {
-                                        open_tools
-                                            .insert(id.to_string(), (t.entries.len() - 1, ask));
+                                    if let Some(call_id) = call_id {
+                                        self.open_tools.insert(
+                                            call_id.to_string(),
+                                            (self.transcript.entries.len() - 1, ask),
+                                        );
                                     }
                                 }
                                 _ => {}
@@ -405,16 +528,21 @@ pub fn parse_session(path: &str) -> Transcript {
                         }
                     }
                     Some("toolResult") => {
-                        let Some(id) = msg.get("toolCallId").and_then(Value::as_str) else {
-                            continue;
+                        let Some(call_id) = message.get("toolCallId").and_then(Value::as_str)
+                        else {
+                            return;
                         };
-                        if let Some((idx, _ask)) = open_tools.remove(id) {
-                            if let Some(Entry::Tool { status, result, .. }) = t.entries.get_mut(idx)
+                        if let Some((index, _ask)) = self.open_tools.remove(call_id) {
+                            if let Some(Entry::Tool { status, result, .. }) =
+                                self.transcript.entries.get_mut(index)
                             {
-                                let is_err =
-                                    msg.get("isError").and_then(Value::as_bool).unwrap_or(false);
-                                *status = if is_err { "error" } else { "ok" }.to_string();
-                                let text = content_text(msg.get("content").unwrap_or(&Value::Null));
+                                let is_error = message
+                                    .get("isError")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false);
+                                *status = if is_error { "error" } else { "ok" }.to_string();
+                                let text =
+                                    content_text(message.get("content").unwrap_or(&Value::Null));
                                 if !text.is_empty() {
                                     *result = Some(clip(&text, RESULT_CLIP));
                                 }
@@ -425,9 +553,9 @@ pub fn parse_session(path: &str) -> Transcript {
                 }
             }
             Some("model_change") => {
-                if let Some(selector) = e.get("model").and_then(Value::as_str) {
+                if let Some(selector) = event.get("model").and_then(Value::as_str) {
                     if let Some((provider, model)) = selector.split_once('/') {
-                        t.model = Some(ModelInfo {
+                        self.transcript.model = Some(ModelInfo {
                             provider: provider.to_string(),
                             model: model.to_string(),
                         });
@@ -435,75 +563,186 @@ pub fn parse_session(path: &str) -> Transcript {
                 }
             }
             Some("thinking_level_change") => {
-                let configured = e.get("configured").and_then(Value::as_str);
-                let effective = e.get("thinkingLevel").and_then(Value::as_str);
+                let configured = event.get("configured").and_then(Value::as_str);
+                let effective = event.get("thinkingLevel").and_then(Value::as_str);
                 if let Some(level) = configured.or(effective) {
-                    t.thinking = Some(level.to_string());
-                } else if e.get("configured").is_some() || e.get("thinkingLevel").is_some() {
-                    t.thinking = Some("off".to_string());
+                    self.transcript.thinking = Some(level.to_string());
+                } else if event.get("configured").is_some() || event.get("thinkingLevel").is_some()
+                {
+                    self.transcript.thinking = Some("off".to_string());
                 }
             }
             _ => {}
         }
     }
 
-    // Pending ask: newest unresolved `ask` toolCall, but only if it is still
-    // live — i.e. nothing later in the transcript has moved past it.
-    let mut best: Option<(usize, Ask)> = None;
-    for (idx, ask) in open_tools.into_values() {
-        if let Some(ask) = ask {
-            if best.as_ref().is_none_or(|(b, _)| idx > *b) {
-                best = Some((idx, ask));
+    fn update_pending_ask(&mut self) {
+        let mut best: Option<(usize, Ask)> = None;
+        for (index, ask) in self.open_tools.values() {
+            if let Some(ask) = ask {
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_index, _)| index > best_index)
+                {
+                    best = Some((*index, ask.clone()));
+                }
             }
         }
+        self.transcript.pending_ask = best.and_then(|(index, ask)| {
+            (self.transcript.entries.len().saturating_sub(index) <= 6).then_some(ask)
+        });
     }
-    if let Some((idx, ask)) = best {
-        // Live only when it's among the last few entries (abandoned branches
-        // or superseded asks deeper in history don't count).
-        if t.entries.len().saturating_sub(idx) <= 6 {
-            t.pending_ask = Some(ask);
+
+    pub fn refresh(&mut self, path: &str) -> std::io::Result<()> {
+        let metadata = match std::fs::metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                self.reset();
+                return Err(error);
+            }
+        };
+        let prefix = file_prefix(path, FILE_FINGERPRINT_BYTES.min(metadata.len()))?;
+        let prior_tail = if self.offset == 0 {
+            Vec::new()
+        } else {
+            read_window(
+                path,
+                self.offset.saturating_sub(FILE_FINGERPRINT_BYTES),
+                FILE_FINGERPRINT_BYTES.min(self.offset),
+            )?
+        };
+        if self.replace_required(&metadata, &prefix, &prior_tail) {
+            self.reset();
+        }
+
+        let mut file = std::fs::File::open(path)?;
+        file.seek(SeekFrom::Start(self.offset))?;
+        let mut reader = BufReader::new(file);
+        loop {
+            let mut raw_line = String::new();
+            let read = reader.read_line(&mut raw_line)?;
+            if read == 0 {
+                break;
+            }
+            let terminated = raw_line.ends_with('\n');
+            let text = raw_line.trim_end_matches(['\r', '\n']);
+            let event = match serde_json::from_str::<Value>(text) {
+                Ok(event) => event,
+                Err(_) if !terminated => break,
+                Err(_) => {
+                    self.offset = self.offset.saturating_add(read as u64);
+                    continue;
+                }
+            };
+            self.offset = self.offset.saturating_add(read as u64);
+            self.apply_event(event);
+        }
+        self.update_pending_ask();
+        self.identity = Some(file_identity(&metadata));
+        self.prefix = prefix;
+        self.suffix = if self.offset == 0 {
+            Vec::new()
+        } else {
+            read_window(
+                path,
+                self.offset.saturating_sub(FILE_FINGERPRINT_BYTES),
+                FILE_FINGERPRINT_BYTES.min(self.offset),
+            )?
+        };
+        Ok(())
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.offset
+    }
+
+    pub fn total_entries(&self) -> usize {
+        self.transcript.entries.len()
+    }
+
+    pub fn pending_ask(&self) -> Option<Ask> {
+        self.transcript.pending_ask.clone()
+    }
+
+    pub fn page(&self, before: Option<usize>, limit: usize) -> SessionPage {
+        let total_entries = self.transcript.entries.len();
+        let end = before.unwrap_or(total_entries).min(total_entries);
+        let start_index = end.saturating_sub(limit);
+        let entries = self.transcript.entries[start_index..end]
+            .iter()
+            .enumerate()
+            .map(|(offset, entry)| IndexedEntry {
+                index: start_index + offset,
+                entry: entry.clone(),
+            })
+            .collect();
+        SessionPage {
+            title: self.transcript.title.clone(),
+            entries,
+            pending_ask: self.transcript.pending_ask.clone(),
+            model: self.transcript.model.clone(),
+            thinking: self.transcript.thinking.clone(),
+            total_entries,
+            start_index,
+            has_older: start_index > 0,
+            generation: self.generation,
+            revision: self.revision(),
         }
     }
-    t
+
+    pub fn summary(&self) -> Summary {
+        let snippet = self
+            .transcript
+            .entries
+            .iter()
+            .rev()
+            .find_map(|entry| match entry {
+                Entry::Assistant { text, .. } | Entry::User { text, .. } => {
+                    let line = text.lines().rev().find(|line| !line.trim().is_empty())?;
+                    Some(clip(line.trim(), SNIPPET_CLIP))
+                }
+                Entry::Tool { name, intent, .. } => Some(clip(
+                    &format!(
+                        "⚒ {}{}",
+                        name,
+                        intent
+                            .as_deref()
+                            .map(|intent| format!(" — {intent}"))
+                            .unwrap_or_default()
+                    ),
+                    SNIPPET_CLIP,
+                )),
+                Entry::Thinking { .. } => None,
+            });
+        Summary {
+            title: self.transcript.title.clone(),
+            snippet,
+            pending_ask: self.transcript.pending_ask.is_some(),
+        }
+    }
+
+    #[cfg(test)]
+    fn entry_count(&self) -> usize {
+        self.transcript.entries.len()
+    }
+
+    #[cfg(test)]
+    fn entry(&self, index: usize) -> Option<&Entry> {
+        self.transcript.entries.get(index)
+    }
 }
 
-/// Cheap summary for the fleet view: last visible line + pending-ask flag.
+/// Cheap summary for the fleet view: last visible line plus pending-ask state.
 pub struct Summary {
     pub title: Option<String>,
     pub snippet: Option<String>,
     pub pending_ask: bool,
 }
 
-pub fn summarize(path: &str) -> Summary {
-    let t = parse_session(path);
-    let snippet = t.entries.iter().rev().find_map(|e| match e {
-        Entry::Assistant { text, .. } | Entry::User { text, .. } => {
-            let line = text.lines().rev().find(|l| !l.trim().is_empty())?;
-            Some(clip(line.trim(), SNIPPET_CLIP))
-        }
-        Entry::Tool { name, intent, .. } => Some(clip(
-            &format!(
-                "⚒ {}{}",
-                name,
-                intent
-                    .as_deref()
-                    .map(|i| format!(" — {i}"))
-                    .unwrap_or_default()
-            ),
-            SNIPPET_CLIP,
-        )),
-        Entry::Thinking { .. } => None,
-    });
-    Summary {
-        title: t.title,
-        snippet,
-        pending_ask: t.pending_ask.is_some(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn receipt_scan_correlates_exact_call_id() {
@@ -574,6 +813,176 @@ mod tests {
             &mut cursor,
             "old"
         ));
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn projection_test_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "kelpie-projection-{label}-{}-{}.jsonl",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn user_event(text: &str) -> String {
+        serde_json::to_string(&serde_json::json!({
+            "type": "message",
+            "message": {"role": "user", "content": text}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn projection_pages_are_bounded_stable_and_flatten_indexed() {
+        let path = projection_test_path("pages");
+        let lines = (0..300)
+            .map(|index| user_event(&format!("message-{index}")))
+            .collect::<Vec<_>>();
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let mut projection = SessionProjection::default();
+        projection.refresh(path.to_str().unwrap()).unwrap();
+
+        let latest = projection.page(None, 160);
+        assert_eq!(latest.total_entries, 300);
+        assert_eq!(latest.entries.len(), 160);
+        assert_eq!(latest.start_index, 140);
+        assert!(latest.has_older);
+        assert_eq!(latest.entries.first().unwrap().index, 140);
+        assert_eq!(latest.entries.last().unwrap().index, 299);
+
+        let older = projection.page(Some(latest.start_index), 160);
+        assert_eq!(older.entries.len(), 140);
+        assert_eq!(older.start_index, 0);
+        assert!(!older.has_older);
+        assert_eq!(older.entries.first().unwrap().index, 0);
+        assert_eq!(older.entries.last().unwrap().index, 139);
+
+        let encoded = serde_json::to_value(latest.entries.first().unwrap()).unwrap();
+        assert_eq!(encoded["index"], 140);
+        assert_eq!(encoded["kind"], "user");
+        assert_eq!(encoded["text"], "message-140");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn projection_consumes_only_appended_tail_and_updates_open_tool_entry() {
+        let path = projection_test_path("tail");
+        let tool_call = serde_json::json!({
+            "type": "message",
+            "message": {"role": "assistant", "content": [{
+                "type": "toolCall", "id": "call-1", "name": "search",
+                "arguments": {"i": "find the answer"}
+            }]}
+        });
+        std::fs::write(&path, format!("{}\n", tool_call)).unwrap();
+        let mut projection = SessionProjection::default();
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        let first_revision = projection.revision();
+        assert_eq!(projection.entry_count(), 1);
+        assert!(
+            matches!(projection.entry(0), Some(Entry::Tool { status, result: None, .. }) if status == "pending")
+        );
+
+        let partial = user_event("tail event");
+        let split = partial.len() / 2;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(partial[..split].as_bytes()).unwrap();
+        drop(file);
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        assert_eq!(projection.entry_count(), 1);
+        assert_eq!(projection.revision(), first_revision);
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(format!("{}\n", &partial[split..]).as_bytes())
+            .unwrap();
+        drop(file);
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        assert_eq!(projection.entry_count(), 2);
+        assert_eq!(
+            projection.revision(),
+            std::fs::metadata(&path).unwrap().len()
+        );
+
+        let result = serde_json::json!({
+            "type": "message",
+            "message": {"role": "toolResult", "toolCallId": "call-1", "content": "answer"}
+        });
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(format!("\n{}\n", result).as_bytes())
+            .unwrap();
+        drop(file);
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        assert_eq!(projection.entry_count(), 2);
+        assert!(
+            matches!(projection.entry(0), Some(Entry::Tool { status, result: Some(value), .. }) if status == "ok" && value == "answer")
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn projection_resets_after_truncation_or_replacement() {
+        let path = projection_test_path("reset");
+        std::fs::write(
+            &path,
+            format!("{}\n{}\n", user_event("old"), user_event("keep")),
+        )
+        .unwrap();
+        let mut projection = SessionProjection::default();
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        assert_eq!(projection.entry_count(), 2);
+        let initial_generation = projection.page(None, 160).generation;
+
+        std::fs::write(&path, format!("{}\n", user_event("replacement"))).unwrap();
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        assert_eq!(projection.entry_count(), 1);
+        assert!(projection.page(None, 160).generation > initial_generation);
+        assert!(
+            matches!(projection.entry(0), Some(Entry::User { text, .. }) if text == "replacement")
+        );
+        assert_eq!(
+            projection.page(None, 160).revision,
+            std::fs::metadata(&path).unwrap().len()
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn summary_and_page_share_current_projection_metadata() {
+        let path = projection_test_path("summary");
+        let raw = [
+            serde_json::json!({"type": "title", "title": "Live title"}),
+            serde_json::json!({"type": "model_change", "model": "openai/gpt-5"}),
+            serde_json::json!({"type": "thinking_level_change", "configured": "high"}),
+            serde_json::from_str::<serde_json::Value>(&user_event("latest message")).unwrap(),
+        ];
+        std::fs::write(
+            &path,
+            raw.iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let mut projection = SessionProjection::default();
+        projection.refresh(path.to_str().unwrap()).unwrap();
+        let page = projection.page(None, 160);
+        let summary = projection.summary();
+        assert_eq!(page.title, summary.title);
+        assert_eq!(page.pending_ask.is_some(), summary.pending_ask);
+        assert_eq!(page.entries.last().unwrap().index, page.total_entries - 1);
+        assert_eq!(page.model.as_ref().unwrap().model, "gpt-5");
+        assert_eq!(page.thinking.as_deref(), Some("high"));
         let _ = std::fs::remove_file(path);
     }
 }

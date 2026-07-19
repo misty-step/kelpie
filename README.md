@@ -138,7 +138,7 @@ Everything the frontend uses, usable from scripts too:
 | Route | Purpose |
 |---|---|
 | `GET /api/fleet` | Workspaces, tabs, panes with status + pending-ask flags |
-| `GET /api/session/{pane_id}` | Parsed omp transcript for a pane |
+| `GET /api/session/{pane_id}?before={index}&limit={1..256}` | Bounded indexed transcript page (newest 160 by default), with `total_entries`, `start_index`, `has_older`, `generation`, and byte-offset `revision` |
 | `GET /api/pane/{pane_id}/screen` | Plain-text visible screen of any pane |
 | `GET /api/commands` | omp slash-command catalog |
 | `GET /api/models` | Model catalog (`omp models --json`, cached) |

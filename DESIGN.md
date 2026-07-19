@@ -1,48 +1,50 @@
 ---
 colors:
-  background: "#f4f3f1"
-  surface: "#ffffff"
-  overlay: "#e4e2de"
-  hairline: "#d8d5d0"
-  foreground: "#1c1b1a"
-  muted: "#6b6862"
-  faint: "#706c66"
-  accent: "#0f6e6e"
-  accentText: "#0a5252"
-  working: "#1f6a3a"
-  blocked: "#b8332a"
-  idle: "#6b6862"
-  done: "#45637a"
-  backgroundDark: "#14130f"
-  surfaceDark: "#1e1d1a"
-  overlayDark: "#2a2824"
-  hairlineDark: "#383631"
-  foregroundDark: "#e8e6e1"
-  mutedDark: "#9a968e"
-  faintDark: "#8a8680"
-  accentDark: "#2dd4cf"
-  accentTextDark: "#5ee5e0"
-  workingDark: "#65c97b"
-  blockedDark: "#ff7a72"
-  idleDark: "#9a968e"
-  doneDark: "#82a8c4"
+  background: "#f4f1ea"
+  surface: "#fbf9f3"
+  overlay: "#ece8de"
+  overlayDeep: "#e3ddcf"
+  hairline: "#e7e1d2"
+  foreground: "#1c1f17"
+  muted: "#4a4f44"
+  faint: "#5d6453"
+  accent: "#0c7263"
+  accentText: "#0a5e54"
+  working: "#0c7263"
+  blocked: "#a8323c"
+  idle: "#7a4a00"
+  done: "#2b7048"
+  backgroundDark: "#15171c"
+  surfaceDark: "#1c1f25"
+  overlayDark: "#13151a"
+  overlayDeepDark: "#0e1014"
+  hairlineDark: "#232730"
+  foregroundDark: "#e8e6df"
+  mutedDark: "#b8b5ac"
+  faintDark: "#88857b"
+  accentDark: "#4dc4b0"
+  accentTextDark: "#4dc4b0"
+  workingDark: "#4dc4b0"
+  blockedDark: "#e87882"
+  idleDark: "#d0a040"
+  doneDark: "#5cb87f"
 typography:
-  fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
+  fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, system-ui, Roboto, sans-serif"
   monoFamily: "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace"
   body: "15px / 1.4"
   title: "16px / 700 / -0.01em"
   chip: "10.5px / 600 / uppercase / 0.03em"
   metadata: "11-12px"
-  mono: "12px / 1.4"
+  mono: "12-13px / 1.4"
 rounded:
-  sm: "8px"
-  md: "12px"
+  sm: "6px"
+  md: "10px"
   lg: "16px"
   pill: "999px"
-spacing: ["4px", "6px", "8px", "10px", "12px", "14px", "16px"]
+spacing: ["4px", "8px", "12px", "16px", "24px"]
 ---
 
-# kelpie — Signal Deck
+# kelpie — The Well
 
 ## Overview
 
@@ -51,71 +53,87 @@ in herdr terminal workspaces. One expert operator, one-handed iPhone use
 (390×844), served over Tailscale. Views: inbox (fleet triage), agent session
 (transcript + composer), terminal (raw screen + key row).
 
-The design language is **Signal Deck**: a fleet operations console, not a chat
-app. Graphite base (warm stone grays), single teal accent, semantic status
-colors. Dense, information-first, professional. Every pixel earns its place by
-carrying signal.
+The design language is **The Well**: a calm, layered operator console. Warm
+parchment and ink establish the room; four surface decks express depth without
+decoration; one teal signal marks interaction and active work. Inputs,
+transcript bubbles, terminal screens, tool cards, and composers sit in recessed
+wells so content has an obvious place to arrive and be acted on.
 
 ## Design thesis
 
-Previous lab-001 produced 15 candidates across decorative lanes (anthro,
-brutalist, soft, minimal, impeccable) and was rejected wholesale. The lesson:
-kelpie is an operational tool, not a canvas. Signal Deck strips decoration to
-zero and invests the entire visual budget in scannability and status clarity.
+kelpie is an operational tool, not a personality contest. Its visual system
+must make a shifting fleet legible before it makes itself noticed. The
+operator's core loop is triage: scan the inbox, spot the pane that needs
+attention, act, repeat. The Well gives that loop a physical grammar:
 
-The operator's core loop is triage: scan the inbox, spot the pane that needs
-attention, act, repeat. The design optimizes for this loop at every layer.
+- **Raised panels** hold navigational and fleet-level controls.
+- **Inset wells** hold mutable, streaming, or inspectable content.
+- **Ridges** separate layers without high-contrast chrome.
+- **Teal signal** identifies interaction and active work.
+- **Semantic status colors plus glyphs** carry urgency without relying on
+  color alone.
+
+No gradient, glass, decorative illustration, or mascot chrome. Depth is quiet:
+small lift shadows in light mode and border rings in dark mode.
 
 ## Color architecture
 
-### Base palette
+### Four surface decks
 
-Warm stone graphite. Not neutral gray — warm. The difference is felt: pure
-gray reads as sterile; warm stone reads as paper, which is what a terminal
-operator's eye expects after decades of reading logs on light backgrounds.
+The base is warm parchment rather than neutral gray. Its four named decks are
+the system's signature:
 
-- `--bg` (page): light warm stone `#f4f3f1` / dark `#14130f`
-- `--surface` (cards, headers): pure white `#ffffff` / dark `#1e1d1a`
-- `--overlay` (pressed states, desktop frame): `#e4e2de` / `#2a2824`
-- `--hairline` (borders): `#d8d5d0` / `#383631`
-- `--text`: near-black `#1c1b1a` / `#e8e6e1`
-- `--muted`: `#6b6862` / `#9a968e` (secondary text, timestamps)
-- `--faint`: `#9b9893` / `#6b6862` (tertiary, section labels, empty states)
+| Deck | Light | Dark | Role |
+| --- | --- | --- | --- |
+| `--vellum` | `#f4f1ea` | `#15171c` | page and application base |
+| `--panel` | `#fbf9f3` | `#1c1f25` | raised cards, headers, composer shell |
+| `--well` | `#ece8de` | `#13151a` | bubbles, controls, editable fields |
+| `--well-deep` | `#e3ddcf` | `#0e1014` | terminal, code, demanding content |
+
+`--ridge` and `--ridge-soft` border the decks. `--lift` and `--lift-2`
+provide whisper-quiet elevation in light mode; dark mode replaces drop shadows
+with border rings. `--well-inset` and `--well-deep-inset` reinforce recessed
+content surfaces.
+
+### Ink ramp
+
+- `--ink`: `#1c1f17` / `#e8e6df`
+- `--ink-2`: `#4a4f44` / `#b8b5ac`
+- `--ink-3`: `#5d6453` / `#88857b`
+- `--ink-mute`: `#9aa094` / `#5e5b53`
+
+The first three tiers are used only where they retain WCAG AA contrast at
+their implemented size. `--ink-mute` is reserved for nonessential decoration.
 
 ### Accent — single teal
 
-One accent color, used for: interactive elements (send buttons, links), active
-selection (tab chips, recommended ask options), and connection status (up dot).
-Not used for status semantics.
+One accent marks interactive controls, active selection, connection, and
+working state:
 
-- Light: `#0f6e6e` (deep teal, text-safe on white)
-- Dark: `#2dd4cf` (bright teal, text-safe on dark surface)
-- Soft variant: 12% mix for backgrounds (active tab, user bubbles)
+- Light: `#0c7263`
+- Dark: `#4dc4b0`
+- Soft tint: `#d8efe9` / `#162a26`
 
-Teal was chosen over the Rose Pine iris/purple because it reads as
-"operational" rather than "decorative." It's the color of status LEDs,
-oscilloscope traces, and terminal cursor blocks — the operator's visual
-vernacular.
+Teal is not used to imply generic success; completed work remains green.
 
 ### Status semantics — four states
 
-Each status has a text color and a soft background color (for chips). Active
-work is green: it means the current task is moving. A pending ask is red because
-it requires the operator. Completed work moves to blue-gray so success never
-competes with the active-work signal. All text variants pass AA contrast in
-their theme.
+| Status | Light | Dark | Meaning |
+| --- | --- | --- | --- |
+| working | `#0c7263` | `#4dc4b0` | current task is executing |
+| blocked | `#a8323c` | `#e87882` | pending ask, needs input |
+| idle | `#7a4a00` | `#d0a040` | alive but waiting |
+| done | `#2b7048` | `#5cb87f` | completed |
+| unknown | `#5d6453` | `#6e6b63` | status not reported |
 
-| Status   | Light text  | Dark text  | Meaning                    |
-|----------|-------------|------------|----------------------------|
-| working  | `#1f6a3a`   | `#65c97b`  | current task is executing  |
-| blocked  | `#b8332a`   | `#ff7a72`  | pending ask, needs input    |
-| idle     | `#6b6862`   | `#9a968e`  | alive but not working       |
-| done     | `#45637a`   | `#82a8c4`  | completed                   |
-| unknown  | `#6b6862`   | `#9a968e`  | status not reported         |
+Chip tints use the related base pigments (`#a8323c` / `#d9616b` for blocked,
+`#9a6a00` / `#d0a040` for idle, `#2f7d4f` / `#5cb87f` for done) at 12% over
+the panel. Text uses the table values above so small status labels retain AA
+contrast on their own tint.
 
-Blocked is the highest-attention state and uses an attention pulse. Working
-uses a slower breathing pulse. Both are opacity-only and disabled under
-reduced motion.
+Status is redundant: color, glyph/shape, and text. Blocked and working may
+pulse; all ambient motion is opacity-only and disabled under
+`prefers-reduced-motion`.
 
 ## Workspace identity
 
@@ -160,7 +178,7 @@ commands. No web fonts — zero build step, zero network dependency.
 - Card title: 15px / 700 / -0.01em
 - Chips: 10.5px / 600 / uppercase / 0.03em tracking
 - Metadata: 11-12px / muted color
-- Mono (terminal, code, tool names): 12px / 1.4
+- Mono (terminal, code, tool names): 12-13px / 1.4
 
 The uppercase chip with tracking is the signature typographic move: it makes
 status labels read as operational indicators, not prose.
@@ -218,9 +236,9 @@ Single compact row: back chevron (44px), workspace avatar (28px), workspace
 name as the primary text, and a status dot on the right. The pane title lives
 in the composer's meta row, not the header. The dot is 12px inside a 44px
 tappable button (tap toasts the status word; the button carries the
-aria-label): blocked = red attention pulse, working = green breathing pulse,
-idle = static gray, done = static blue-gray with an inset check (non-color cue),
-unknown = hollow ring. Each state adds a faint status-tinted ring. Pulses are
+aria-label): blocked = red diamond with attention pulse, working = teal
+rounded-square with breathing pulse, idle = static amber circle, done = green
+ring with an inset non-color cue, unknown = hollow ring. Pulses are
 the sanctioned ambient motion and are disabled under reduced motion. A 1px
 workspace-hue edge underlines the header. When SSE drops, a tappable amber
 "Reconnecting" pill appears beside the dot (nothing is shown while
@@ -318,6 +336,22 @@ final resize event. The tab strip disappears and the header collapses to one
 thin row (~49px vs 97px of chrome): sub-label and avatar hidden, title 14px.
 The transcript keeps the reclaimed space.
 
+### Progressive transcript window
+
+The bridge keeps one incremental projection per live session file instead of
+reparsing and retransferring the entire JSONL history. The initial session
+response contains the newest 160 semantic entries; `before` requests older
+pages, with a hard server cap of 256 entries. Absolute entry indices keep tool
+updates and overlapping pages stable. `generation` identifies a projection
+incarnation across file replacement or bridge restart, while `revision` is the
+last fully consumed byte offset.
+
+The browser renders at most 480 transcript entries. Loading older history
+preserves the visible reading anchor and enters a historical mode once the
+window fills; live tail refreshes pause there rather than evicting the section
+being read. “Jump to latest” discards that historical window and resumes SSE
+refreshes. Stale older-page responses cannot replace a newer projection.
+
 ### Markdown rendering
 
 Assistant and thinking text render a whitelisted markdown subset: fenced
@@ -357,7 +391,7 @@ as the favicon (`static/favicon.png`), and as the iOS home-screen icon
 
 ### Avatar system
 
-Rounded square (8px radius) with deterministic icon + hue. Three sizes:
+Rounded square (6px radius) with deterministic icon + hue. Three sizes:
 - `avatar-sm` (28px, header): 15px icon
 - `avatar` (36px, inbox cards): 18px icon
 - `avatar-lg` (44px, reserved): 22px icon
@@ -404,8 +438,8 @@ group headers are opaque (no backdrop blur). The bridge polls herdr every
 ## Accessibility
 
 - **WCAG AA contrast** in both light and dark themes. Status text colors are
-  theme-specific: green marks active work, red marks required operator input,
-  and blue-gray marks completion without competing with either.
+  theme-specific: teal marks active work, red marks required operator input,
+  amber marks idle, and green marks completion.
 - **44px touch targets** minimum on all interactive elements.
 - **Color + shape redundancy:** status uses both color (chip color) and shape
   (dot, uppercase label) so colorblind users can distinguish states.
@@ -445,6 +479,6 @@ Every surface handles 0..N workspaces/panes gracefully:
 
 The lab produced 15 candidates across six decorative lanes (anthro, taste,
 minimal, brutalist, soft, impeccable) plus the shipped Rose Pine baseline.
-All were rejected. The lesson taken: kelpie doesn't need a personality contest;
-it needs operational clarity. Signal Deck is the anti-lab: one coherent voice,
-no decoration, every decision in service of the triage loop.
+All were rejected. The lesson taken: kelpie does not need a personality
+contest; it needs operational clarity. The Well is the anti-lab: one coherent
+voice, quiet physical depth, every decision in service of the triage loop.

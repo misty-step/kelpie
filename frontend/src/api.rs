@@ -242,12 +242,18 @@ pub async fn fleet() -> Result<Fleet, ApiError> {
     get_json("/api/fleet", "fleet fetch failed").await
 }
 
-pub async fn session(pane_id: &str) -> Result<Transcript, ApiError> {
-    get_json(
-        &format!("/api/session/{}", enc(pane_id)),
-        "session fetch failed",
-    )
-    .await
+pub const SESSION_PAGE_LIMIT: usize = 160;
+
+pub async fn session_page(
+    pane_id: &str,
+    before: Option<usize>,
+    limit: usize,
+) -> Result<SessionPage, ApiError> {
+    let mut url = format!("/api/session/{}?limit={limit}", enc(pane_id),);
+    if let Some(before) = before {
+        url.push_str(&format!("&before={before}"));
+    }
+    get_json(&url, "session fetch failed").await
 }
 
 pub async fn screen(pane_id: &str) -> Result<ScreenResponse, ApiError> {

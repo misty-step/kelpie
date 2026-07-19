@@ -111,13 +111,32 @@ pub struct TextActionReceipt {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-pub struct Transcript {
+pub struct SessionPage {
     pub title: Option<String>,
     #[serde(default)]
-    pub entries: Vec<Entry>,
     pub pending_ask: Option<Ask>,
     pub model: Option<SessionModel>,
     pub thinking: Option<String>,
+    #[serde(default)]
+    pub entries: Vec<IndexedEntry>,
+    #[serde(default)]
+    pub total_entries: usize,
+    #[serde(default)]
+    pub start_index: usize,
+    #[serde(default)]
+    pub has_older: bool,
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default)]
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct IndexedEntry {
+    #[serde(default)]
+    pub index: usize,
+    #[serde(flatten)]
+    pub entry: Entry,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -185,6 +204,14 @@ pub struct Command {
     #[serde(default)]
     pub aliases: Vec<String>,
     pub description: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FleetStatus {
+    #[default]
+    Loading,
+    Ready,
+    Unavailable,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -535,5 +562,27 @@ mod tests {
         assert!(TextActionPhase::FailedBeforeSubmit.is_terminal());
         assert!(TextActionPhase::FailedBeforeSubmit.preserves_draft());
         assert!(TextActionPhase::StaleAfterSubmit.preserves_draft());
+    }
+
+    #[test]
+    fn session_page_decodes_flattened_indexed_entries() {
+        let page: SessionPage = serde_json::from_value(serde_json::json!({
+            "title": "pane",
+            "pending_ask": null,
+            "model": null,
+            "thinking": "medium",
+            "entries": [{ "index": 42, "kind": "user", "text": "hello", "ts": null }],
+            "total_entries": 43,
+            "start_index": 42,
+            "has_older": true,
+            "revision": 8192,
+            "generation": 3
+        }))
+        .expect("flattened session page");
+        assert_eq!(page.entries[0].index, 42);
+        assert!(matches!(page.entries[0].entry, Entry::User { .. }));
+        assert_eq!(page.total_entries, 43);
+        assert_eq!(page.revision, 8192);
+        assert_eq!(page.generation, 3);
     }
 }

@@ -5,6 +5,7 @@ use std::rc::Rc;
 use gloo_events::EventListener;
 use gloo_timers::callback::{Interval, Timeout};
 use gloo_timers::future::TimeoutFuture;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{
     Event, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, MouseEvent,
@@ -21,19 +22,158 @@ use crate::storage::{
 };
 use crate::types::{
     canonical_model_label, dedupe_models, format_model_pricing, Ask, AskActionKey, AskActionPhase,
-    AskActionReceipt, Command, Entry, Model, ModelCatalogStatus, Pane, SessionModel,
-    TextActionPhase, TextActionReceipt, Transcript,
+    AskActionReceipt, Command, Entry, IndexedEntry, Model, ModelCatalogStatus, Pane, SessionModel,
+    SessionPage, TextActionPhase, TextActionReceipt,
 };
 use crate::{navigate, AppContext, Route, ToastKind, ToastMessage};
 
+const MAX_RENDERED_ENTRIES: usize = 480;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionMode {
+    Latest,
+    Historical,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PageDirection {
+    Latest,
+    Older,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum SessionState {
-    Loading,
+    Loading {
+        error: Option<String>,
+    },
     Ready {
         pane_id: String,
-        transcript: Transcript,
+        page: SessionPage,
+        mode: SessionMode,
+        error: Option<String>,
     },
-    Error(String),
+}
+
+fn merge_entries(
+    existing: &[IndexedEntry],
+    incoming: &[IndexedEntry],
+    mode: SessionMode,
+    direction: PageDirection,
+) -> (Vec<IndexedEntry>, SessionMode) {
+    let replace_disconnected_latest = direction == PageDirection::Latest
+        && existing.last().is_some_and(|last| {
+            incoming
+                .first()
+                .is_some_and(|first| first.index > last.index.saturating_add(1))
+        });
+    let mut merged = if replace_disconnected_latest {
+        Vec::new()
+    } else {
+        existing.to_vec()
+    };
+    for entry in incoming {
+        if let Some(slot) = merged.iter_mut().find(|value| value.index == entry.index) {
+            *slot = entry.clone();
+        } else {
+            merged.push(entry.clone());
+        }
+    }
+    merged.sort_by_key(|entry| entry.index);
+    let entered_historical =
+        direction == PageDirection::Older && merged.len() > MAX_RENDERED_ENTRIES;
+    let next_mode = if mode == SessionMode::Historical || entered_historical {
+        SessionMode::Historical
+    } else {
+        SessionMode::Latest
+    };
+    if merged.len() > MAX_RENDERED_ENTRIES {
+        if next_mode == SessionMode::Latest {
+            let keep_from = merged.len() - MAX_RENDERED_ENTRIES;
+            merged.drain(..keep_from);
+        } else {
+            merged.truncate(MAX_RENDERED_ENTRIES);
+        }
+    }
+    (merged, next_mode)
+}
+
+fn merge_session_page(
+    existing: Option<&SessionPage>,
+    incoming: SessionPage,
+    mode: SessionMode,
+    direction: PageDirection,
+) -> (SessionPage, SessionMode) {
+    if direction == PageDirection::Older {
+        if let Some(page) = existing {
+            if incoming.generation != page.generation {
+                return (page.clone(), mode);
+            }
+        }
+    }
+    let projection_reset = existing.is_some_and(|page| {
+        incoming.generation != page.generation
+            || (direction == PageDirection::Latest
+                && (incoming.total_entries < page.total_entries
+                    || incoming.revision < page.revision))
+    });
+    let (old_entries, old_mode) = if projection_reset {
+        (&[][..], SessionMode::Latest)
+    } else {
+        existing
+            .map(|page| (page.entries.as_slice(), mode))
+            .unwrap_or((&[], mode))
+    };
+    let (entries, next_mode) = merge_entries(old_entries, &incoming.entries, old_mode, direction);
+    let start_index = entries
+        .first()
+        .map(|entry| entry.index)
+        .unwrap_or(incoming.start_index);
+    let page = SessionPage {
+        title: incoming.title,
+        pending_ask: incoming.pending_ask,
+        model: incoming.model,
+        thinking: incoming.thinking,
+        entries,
+        total_entries: incoming.total_entries,
+        start_index,
+        has_older: incoming.has_older || start_index > 0,
+        revision: incoming.revision,
+        generation: incoming.generation,
+    };
+    (page, next_mode)
+}
+
+fn bump_generation(generation: &Rc<RefCell<u64>>) {
+    let mut current = generation.borrow_mut();
+    *current = current.wrapping_add(1);
+}
+
+fn set_session_state(
+    state: &UseStateHandle<SessionState>,
+    current: &Rc<RefCell<SessionState>>,
+    value: SessionState,
+) {
+    *current.borrow_mut() = value.clone();
+    state.set(value);
+}
+
+fn with_session_error(state: &SessionState, message: String) -> SessionState {
+    match state {
+        SessionState::Loading { .. } => SessionState::Loading {
+            error: Some(message),
+        },
+        SessionState::Ready {
+            pane_id,
+            page,
+            mode,
+            ..
+        } => SessionState::Ready {
+            pane_id: pane_id.clone(),
+            page: page.clone(),
+            mode: *mode,
+            error: Some(message),
+        },
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -571,9 +711,13 @@ pub struct SessionViewProps {
 pub fn session_view(props: &SessionViewProps) -> Html {
     let ctx = use_context::<AppContext>().expect("AppContext");
     let pane_id = props.pane_id.clone();
-    let state = use_state(|| SessionState::Loading);
+    let state = use_state(|| SessionState::Loading { error: None });
+    let state_current = use_mut_ref(|| SessionState::Loading { error: None });
+    *state_current.borrow_mut() = (*state).clone();
+    let older_loading = use_state(|| false);
     let retry = use_state(|| 0_u64);
     let session_generation = use_mut_ref(|| 0_u64);
+    let older_request_generation = use_mut_ref(|| 0_u64);
     let session_applied_generation = use_state(|| 0_u64);
     let session_refresh_gate = use_mut_ref(SessionRefreshGate::default);
     let session_refresh_wake = use_state(|| 0_u64);
@@ -655,8 +799,13 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let optimistic_working = optimistic_working.clone();
         let writer_busy = writer_busy.clone();
         let writer_lock = writer_lock.clone();
+        let older_loading = older_loading.clone();
+        let older_request_generation = older_request_generation.clone();
         use_effect_with(pane_id.clone(), move |_| {
+            older_loading.set(false);
+            bump_generation(&older_request_generation);
             move || {
+                bump_generation(&older_request_generation);
                 let mut current = session_generation.borrow_mut();
                 *current = current.wrapping_add(1);
                 let mut poll_generation = ask_poll_generation.borrow_mut();
@@ -669,6 +818,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     }
     {
         let state = state.clone();
+        let state_current = state_current.clone();
         let live_thinking = live_thinking.clone();
         let session_generation = session_generation.clone();
         let session_applied_generation = session_applied_generation.clone();
@@ -679,6 +829,14 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let session_refresh_epoch = ctx.session_refresh_epoch;
         let session_refresh_wake_value = *session_refresh_wake;
         let session_refresh_wake = session_refresh_wake.clone();
+        let transcript_mode = match &*state {
+            SessionState::Ready {
+                pane_id: loaded,
+                mode,
+                ..
+            } if loaded == &pane_id => *mode,
+            _ => SessionMode::Latest,
+        };
         use_effect_with(
             (
                 pane_id.clone(),
@@ -686,66 +844,106 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                 session_event,
                 session_refresh_epoch,
                 session_refresh_wake_value,
+                transcript_mode,
             ),
             move |_| {
-                let generation = {
-                    let mut gate = session_refresh_gate.borrow_mut();
-                    let mut current = session_generation.borrow_mut();
-                    gate.begin(&pane_id, &mut current)
-                };
-                if let Some(generation) = generation {
-                    let have_data = matches!(
-                        &*state,
-                        SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
-                    );
-                    if !have_data {
-                        state.set(SessionState::Loading);
-                    }
-                    let state = state.clone();
-                    let live_thinking = live_thinking.clone();
-                    let session_applied_generation = session_applied_generation.clone();
-                    let pane_id = pane_id.clone();
-                    let session_generation = session_generation.clone();
-                    let session_refresh_gate = session_refresh_gate.clone();
-                    let session_refresh_wake = session_refresh_wake.clone();
-                    spawn_local(async move {
-                        let result = api::session(&pane_id).await;
-                        if *session_generation.borrow() == generation {
-                            match result {
-                                Ok(value) => {
-                                    let fresh_thinking = value
-                                        .thinking
-                                        .as_deref()
-                                        .map(normalize_thinking)
-                                        .filter(|value| value != "unknown");
-                                    live_thinking.set(fresh_thinking);
-                                    session_applied_generation.set(generation);
-                                    state.set(SessionState::Ready {
-                                        pane_id: pane_id.clone(),
-                                        transcript: value,
-                                    });
-                                }
-                                Err(error) => {
-                                    if matches!(
-                                        &*state,
-                                        SessionState::Loading | SessionState::Error(_)
-                                    ) {
-                                        state.set(SessionState::Error(error.message));
+                if transcript_mode != SessionMode::Historical {
+                    let generation = {
+                        let mut gate = session_refresh_gate.borrow_mut();
+                        let mut current = session_generation.borrow_mut();
+                        gate.begin(&pane_id, &mut current)
+                    };
+                    if let Some(generation) = generation {
+                        let have_data = matches!(
+                            &*state,
+                            SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
+                        );
+                        if !have_data {
+                            set_session_state(
+                                &state,
+                                &state_current,
+                                SessionState::Loading { error: None },
+                            );
+                        }
+                        let state = state.clone();
+                        let live_thinking = live_thinking.clone();
+                        let session_applied_generation = session_applied_generation.clone();
+                        let pane_id = pane_id.clone();
+                        let session_generation = session_generation.clone();
+                        let session_refresh_gate = session_refresh_gate.clone();
+                        let session_refresh_wake = session_refresh_wake.clone();
+                        spawn_local(async move {
+                            let result =
+                                api::session_page(&pane_id, None, api::SESSION_PAGE_LIMIT).await;
+                            if *session_generation.borrow() == generation {
+                                match result {
+                                    Ok(value) => {
+                                        let current_state = state_current.borrow().clone();
+                                        let should_apply = !matches!(
+                                            &current_state,
+                                            SessionState::Ready {
+                                                pane_id: loaded,
+                                                mode: SessionMode::Historical,
+                                                ..
+                                            } if loaded == &pane_id
+                                        );
+                                        if should_apply {
+                                            let existing = match &current_state {
+                                                SessionState::Ready {
+                                                    pane_id: loaded,
+                                                    page,
+                                                    mode,
+                                                    ..
+                                                } if loaded == &pane_id => Some((page, *mode)),
+                                                _ => None,
+                                            };
+                                            let (page, mode) = merge_session_page(
+                                                existing.map(|(page, _)| page),
+                                                value,
+                                                existing
+                                                    .map(|(_, mode)| mode)
+                                                    .unwrap_or(SessionMode::Latest),
+                                                PageDirection::Latest,
+                                            );
+                                            let fresh_thinking = page
+                                                .thinking
+                                                .as_deref()
+                                                .map(normalize_thinking)
+                                                .filter(|value| value != "unknown");
+                                            live_thinking.set(fresh_thinking);
+                                            session_applied_generation.set(generation);
+                                            set_session_state(
+                                                &state,
+                                                &state_current,
+                                                SessionState::Ready {
+                                                    pane_id: pane_id.clone(),
+                                                    page,
+                                                    mode,
+                                                    error: None,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    Err(error) => {
+                                        let failed = with_session_error(
+                                            &state_current.borrow(),
+                                            error.message,
+                                        );
+                                        set_session_state(&state, &state_current, failed);
                                     }
                                 }
                             }
-                        }
-                        let wake_epoch = session_refresh_gate.borrow_mut().finish();
-                        if let Some(wake_epoch) = wake_epoch {
-                            session_refresh_wake.set(wake_epoch);
-                        }
-                    });
+                            let wake_epoch = session_refresh_gate.borrow_mut().finish();
+                            if let Some(wake_epoch) = wake_epoch {
+                                session_refresh_wake.set(wake_epoch);
+                            }
+                        });
+                    }
                 }
                 || ()
             },
         );
     }
-
     {
         let near_bottom = near_bottom.clone();
         let transcript_ref = transcript_ref.clone();
@@ -770,8 +968,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let entry_count = match &*state {
             SessionState::Ready {
                 pane_id: loaded,
-                transcript,
-            } if loaded == &pane_id => transcript.entries.len(),
+                page,
+                ..
+            } if loaded == &pane_id => page.entries.len(),
             _ => 0,
         };
         use_effect_with(entry_count, move |_| {
@@ -791,8 +990,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let ready = match &*state {
         SessionState::Ready {
             pane_id: loaded,
-            transcript,
-        } if loaded == &pane_id => Some(transcript.clone()),
+            page,
+            ..
+        } if loaded == &pane_id => Some(page.clone()),
         _ => None,
     };
     {
@@ -971,7 +1171,11 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     } else {
         pane.as_ref().map(Pane::status).unwrap_or("unknown")
     };
-    let title = workspace.clone().unwrap_or_else(|| pane_id.clone());
+    let title = ready
+        .as_ref()
+        .and_then(|page| page.title.clone())
+        .or(workspace.clone())
+        .unwrap_or_else(|| pane_id.clone());
     let status_label = status_descriptor(status, pending).label.to_owned();
     let model = ready.as_ref().and_then(|data| data.model.clone());
     let model_text = model_label(
@@ -1644,11 +1848,170 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let on_jump = {
         let transcript_ref = transcript_ref.clone();
         let near_bottom = near_bottom.clone();
+        let state = state.clone();
+        let state_current = state_current.clone();
+        let retry = retry.clone();
+        let session_generation = session_generation.clone();
+        let older_request_generation = older_request_generation.clone();
+        let older_loading = older_loading.clone();
+        let pane_id = pane_id.clone();
         Callback::from(move |_| {
+            if let SessionState::Ready {
+                pane_id: loaded,
+                mode,
+                ..
+            } = &*state
+            {
+                if loaded == &pane_id && *mode == SessionMode::Historical {
+                    bump_generation(&session_generation);
+                    bump_generation(&older_request_generation);
+                    older_loading.set(false);
+                    set_session_state(
+                        &state,
+                        &state_current,
+                        SessionState::Loading { error: None },
+                    );
+                    retry.set((*retry).wrapping_add(1));
+                }
+            }
             if let Some(element) = transcript_ref.cast::<HtmlElement>() {
                 element.set_scroll_top(element.scroll_height());
                 near_bottom.set(true);
             }
+        })
+    };
+
+    let load_older = {
+        let state = state.clone();
+        let state_current = state_current.clone();
+        let pane_id = pane_id.clone();
+        let session_generation = session_generation.clone();
+        let older_request_generation = older_request_generation.clone();
+        let older_loading = older_loading.clone();
+        let transcript_ref = transcript_ref.clone();
+        Callback::from(move |_| {
+            if *older_loading {
+                return;
+            }
+            let Some(page) = (match &*state {
+                SessionState::Ready {
+                    pane_id: loaded,
+                    page,
+                    ..
+                } if loaded == &pane_id && page.has_older => Some(page.clone()),
+                _ => None,
+            }) else {
+                return;
+            };
+            older_loading.set(true);
+            let scroll_anchor = transcript_ref.cast::<HtmlElement>().and_then(|element| {
+                let anchor_index = page.entries.first()?.index;
+                let selector = format!("[data-entry-index=\"{anchor_index}\"]");
+                let anchor = element
+                    .query_selector(&selector)
+                    .ok()
+                    .flatten()?
+                    .dyn_into::<HtmlElement>()
+                    .ok()?;
+                Some((anchor_index, anchor.offset_top(), element.scroll_top()))
+            });
+            let request_generation = *older_request_generation.borrow();
+            let state = state.clone();
+            let pane_id = pane_id.clone();
+            let session_generation = session_generation.clone();
+            let older_request_generation = older_request_generation.clone();
+            let state_current = state_current.clone();
+            let older_loading = older_loading.clone();
+            let transcript_ref = transcript_ref.clone();
+            spawn_local(async move {
+                if *older_request_generation.borrow() != request_generation {
+                    older_loading.set(false);
+                    return;
+                }
+                match api::session_page(&pane_id, Some(page.start_index), api::SESSION_PAGE_LIMIT)
+                    .await
+                {
+                    Ok(value) => {
+                        if *older_request_generation.borrow() != request_generation {
+                            older_loading.set(false);
+                            return;
+                        }
+                        let current_state = state_current.borrow().clone();
+                        if let SessionState::Ready {
+                            pane_id: loaded,
+                            page: current,
+                            mode: current_mode,
+                            ..
+                        } = &current_state
+                        {
+                            if loaded == &pane_id {
+                                let (merged, next_mode) = merge_session_page(
+                                    Some(current),
+                                    value,
+                                    *current_mode,
+                                    PageDirection::Older,
+                                );
+                                if next_mode == SessionMode::Historical
+                                    && *current_mode != SessionMode::Historical
+                                {
+                                    bump_generation(&session_generation);
+                                }
+                                set_session_state(
+                                    &state,
+                                    &state_current,
+                                    SessionState::Ready {
+                                        pane_id: pane_id.clone(),
+                                        page: merged,
+                                        mode: next_mode,
+                                        error: None,
+                                    },
+                                );
+                                if let Some((anchor_index, old_offset, old_top)) = scroll_anchor {
+                                    let transcript_ref = transcript_ref.clone();
+                                    Timeout::new(0, move || {
+                                        let Some(element) = transcript_ref.cast::<HtmlElement>()
+                                        else {
+                                            return;
+                                        };
+                                        let selector =
+                                            format!("[data-entry-index=\"{anchor_index}\"]");
+                                        let Some(anchor) = element
+                                            .query_selector(&selector)
+                                            .ok()
+                                            .flatten()
+                                            .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+                                        else {
+                                            return;
+                                        };
+                                        element.set_scroll_top(
+                                            old_top + anchor.offset_top() - old_offset,
+                                        );
+                                    })
+                                    .forget();
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        if *older_request_generation.borrow() != request_generation {
+                            older_loading.set(false);
+                            return;
+                        }
+                        let current_state = state_current.borrow().clone();
+                        if matches!(
+                            &current_state,
+                            SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
+                        ) {
+                            set_session_state(
+                                &state,
+                                &state_current,
+                                with_session_error(&current_state, error.message),
+                            );
+                        }
+                    }
+                }
+                older_loading.set(false);
+            });
         })
     };
 
@@ -2013,17 +2376,44 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         </div>
     };
 
+    let retry_transcript = {
+        let retry = retry.clone();
+        let state = state.clone();
+        let state_current = state_current.clone();
+        let session_generation = session_generation.clone();
+        let older_request_generation = older_request_generation.clone();
+        let older_loading = older_loading.clone();
+        Callback::from(move |_| {
+            if matches!(
+                &*state,
+                SessionState::Ready {
+                    mode: SessionMode::Historical,
+                    ..
+                }
+            ) {
+                bump_generation(&session_generation);
+                bump_generation(&older_request_generation);
+                older_loading.set(false);
+                set_session_state(
+                    &state,
+                    &state_current,
+                    SessionState::Loading { error: None },
+                );
+            }
+            retry.set((*retry).wrapping_add(1));
+        })
+    };
     let transcript = match &*state {
-        SessionState::Loading => {
-            html! { <div class="session-skeleton" role="status" aria-label="Loading transcript"><span class="session-skeleton-line"></span><span class="session-skeleton-line short"></span><span class="session-skeleton-block"></span></div> }
-        }
-        SessionState::Error(message) => html! {
-            <div class="error-state">
-                <span class="empty-icon error-icon">{icon("circle-alert", 40)}</span>
-                <div>{"Couldn't load session."}</div>
-                <div class="empty-hint">{message}</div>
-                <button class="retry-btn" onclick={Callback::from({ let retry = retry.clone(); move |_| retry.set((*retry).wrapping_add(1)) })}>{"Retry"}</button>
-            </div>
+        SessionState::Loading { error } => match error {
+            Some(message) => html! {
+                <div class="delivery-warning session-transcript-error" role="alert">
+                    <span>{"Couldn't load transcript. "}<span class="empty-hint">{message.clone()}</span></span>
+                    <button type="button" onclick={retry_transcript.clone()}>{"Retry"}</button>
+                </div>
+            },
+            None => {
+                html! { <div class="session-skeleton" role="status" aria-label="Loading transcript"><span class="session-skeleton-line"></span><span class="session-skeleton-line short"></span><span class="session-skeleton-block"></span></div> }
+            }
         },
         SessionState::Ready {
             pane_id: loaded, ..
@@ -2032,19 +2422,55 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         }
         SessionState::Ready {
             pane_id: loaded,
-            transcript: data,
-        } if loaded == &pane_id && data.entries.is_empty() => html! {
-            <div class="empty-state"><span class="empty-icon">{icon("message-circle-question", 40)}</span><div>{"No messages yet."}</div><div class="empty-hint">{"Send a message to start the agent working."}</div></div>
-        },
-        SessionState::Ready {
-            pane_id: loaded,
-            transcript: data,
+            page: data,
+            error,
+            ..
         } if loaded == &pane_id => html! {
-            for data.entries.iter().enumerate().map(|(index, entry)| render_entry(entry, index, &thinking_expanded, &tool_expanded, &toggle_thinking, &toggle_tool))
+            <>
+                if let Some(message) = error {
+                    <div class="delivery-warning session-transcript-error" role="alert">
+                        <span>{"Transcript refresh failed. "}<span class="empty-hint">{message.clone()}</span></span>
+                        <button type="button" onclick={retry_transcript.clone()}>{"Retry"}</button>
+                    </div>
+                }
+                if data.entries.is_empty() && error.is_none() {
+                    <div class="empty-state"><span class="empty-icon">{icon("message-circle-question", 40)}</span><div>{"No messages yet."}</div><div class="empty-hint">{"Send a message to start the agent working."}</div></div>
+                } else {
+                    {for data.entries.iter().map(|entry| render_entry(entry, &thinking_expanded, &tool_expanded, &toggle_thinking, &toggle_tool))}
+                }
+            </>
         },
         SessionState::Ready { .. } => {
             html! { <div class="session-skeleton" role="status" aria-label="Loading transcript"><span class="session-skeleton-line"></span><span class="session-skeleton-line short"></span><span class="session-skeleton-block"></span></div> }
         }
+    };
+
+    let historical_mode = matches!(
+        &*state,
+        SessionState::Ready {
+            pane_id: loaded,
+            mode: SessionMode::Historical,
+            ..
+        } if loaded == &pane_id
+    );
+    let older_control = match &*state {
+        SessionState::Ready {
+            pane_id: loaded,
+            page,
+            ..
+        } if loaded == &pane_id && page.has_older => html! {
+            <button
+                class="retry-btn"
+                type="button"
+                aria-label="Load older transcript entries"
+                aria-busy={(*older_loading).to_string()}
+                onclick={load_older.clone()}
+                disabled={*older_loading}
+            >
+                {if *older_loading { "Loading older…" } else { "Load older messages" }}
+            </button>
+        },
+        _ => Html::default(),
     };
 
     let ask_html = ask
@@ -2148,8 +2574,13 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             <Header title={title} workspace={workspace.clone()} status={Some(status_label)} pending={pending} connected={ctx.connected} on_back={Some(on_back)} />
             <TabStrip pane_id={pane_id.clone()} busy={pending_text.is_some() || *writer_busy || *sending || *model_busy || *thinking_busy || *uploading > 0} />
             <div class="session-scroll-wrap">
-                <div id="transcript" class="scroll transcript" ref={transcript_ref}>{transcript}</div>
-                if !*near_bottom { <button id="jump-pill" class="jump-pill" onclick={on_jump.clone()}><span class="jump-pill-ic">{icon("arrow-down", 13)}</span>{"Jump to latest"}</button> }
+                <div id="transcript" class="scroll transcript" ref={transcript_ref}>
+                    {older_control}
+                    {transcript}
+                </div>
+                if !*near_bottom || historical_mode {
+                    <button id="jump-pill" class="jump-pill" type="button" aria-label="Jump to latest transcript entries" onclick={on_jump.clone()}><span class="jump-pill-ic">{icon("arrow-down", 13)}</span>{"Jump to latest"}</button>
+                }
             </div>
             <div id="ask-box" class="ask-box">{ask_html}</div>
             <div id="composer-wrap" class="composer-wrap kb-pin">
@@ -2257,25 +2688,25 @@ fn render_ask(
 }
 
 fn render_entry(
-    entry: &Entry,
-    index: usize,
+    indexed: &IndexedEntry,
     thinking_expanded: &UseStateHandle<HashSet<usize>>,
     tool_expanded: &UseStateHandle<HashSet<usize>>,
     toggle_thinking: &Callback<usize>,
     toggle_tool: &Callback<usize>,
 ) -> Html {
-    match entry {
+    let index = indexed.index;
+    match &indexed.entry {
         Entry::User { text, ts } => {
-            html! { <div key={format!("entry-{index}")} class="entry entry-user"><div class="bubble">{text}</div>{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
+            html! { <div key={format!("entry-{index}")} data-entry-index={index.to_string()} class="entry entry-user"><div class="bubble">{text}</div>{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
         }
         Entry::Assistant { text, ts } => {
-            html! { <div key={format!("entry-{index}")} class="entry entry-assistant"><div class="bubble">{markdown::render(text)}</div>{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
+            html! { <div key={format!("entry-{index}")} data-entry-index={index.to_string()} class="entry entry-assistant"><div class="bubble">{markdown::render(text)}</div>{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
         }
         Entry::Thinking { text, ts } => {
             let long = text.chars().count() > 240;
             let expanded = thinking_expanded.contains(&index);
             let toggle = toggle_thinking.clone();
-            html! { <div key={format!("entry-{index}")} class={classes!("entry", "entry-thinking", (long && !expanded).then_some("collapsed"))}><div class="bubble">{markdown::render(text)}</div>{if long { html! { <button class="expand-toggle" onclick={Callback::from(move |_| toggle.emit(index))}>{if expanded { "Show less" } else { "Show more" }}</button> } } else { Html::default() }}{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
+            html! { <div key={format!("entry-{index}")} data-entry-index={index.to_string()} class={classes!("entry", "entry-thinking", (long && !expanded).then_some("collapsed"))}><div class="bubble">{markdown::render(text)}</div>{if long { html! { <button class="expand-toggle" onclick={Callback::from(move |_| toggle.emit(index))}>{if expanded { "Show less" } else { "Show more" }}</button> } } else { Html::default() }}{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
         }
         Entry::Tool {
             name,
@@ -2286,7 +2717,7 @@ fn render_entry(
         } => {
             let open = tool_expanded.contains(&index);
             let toggle = toggle_tool.clone();
-            html! { <div key={format!("entry-{index}")} class="entry entry-tool tool-card"><button class="tool-head" aria-expanded={open.to_string()} onclick={Callback::from(move |_| toggle.emit(index))}><span class="tool-ic">{icon("wrench", 12)}</span><span class={classes!("tool-status", status)}></span><span class="tool-name">{if name.is_empty() { "tool" } else { name }}</span><span class="tool-intent">{intent.clone().unwrap_or_default()}</span></button>{result.as_ref().map(|value| html! { <div class={classes!("tool-result", (!open).then_some("hidden"))}>{value}</div> })}{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
+            html! { <div key={format!("entry-{index}")} data-entry-index={index.to_string()} class="entry entry-tool tool-card"><button class="tool-head" aria-expanded={open.to_string()} onclick={Callback::from(move |_| toggle.emit(index))}><span class="tool-ic">{icon("wrench", 12)}</span><span class={classes!("tool-status", status)}></span><span class="tool-name">{if name.is_empty() { "tool" } else { name }}</span><span class="tool-intent">{intent.clone().unwrap_or_default()}</span></button>{result.as_ref().map(|value| html! { <div class={classes!("tool-result", (!open).then_some("hidden"))}>{value}</div> })}{ts.as_ref().map(|value| html! { <div class="entry-ts">{relative_time(value)}</div> })}</div> }
         }
     }
 }
@@ -2294,11 +2725,12 @@ fn render_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_model_override, encode_model_override, model_override_superseded, ModelOverride,
-        SessionRefreshGate,
+        decode_model_override, encode_model_override, merge_session_page,
+        model_override_superseded, with_session_error, ModelOverride, PageDirection, SessionMode,
+        SessionPage, SessionRefreshGate, SessionState, MAX_RENDERED_ENTRIES,
     };
     use crate::components::status_descriptor;
-    use crate::types::SessionModel;
+    use crate::types::{Entry, IndexedEntry, SessionModel};
 
     #[test]
     fn status_descriptor_is_shared_for_pending_work_idle_and_done() {
@@ -2396,5 +2828,201 @@ mod tests {
         assert_eq!(gate.begin("pane-a", &mut generation), Some(2));
         assert_eq!(gate.begin("pane-a", &mut generation), None);
         assert_eq!(gate.finish(), Some(2));
+    }
+
+    fn user(index: usize, text: &str) -> IndexedEntry {
+        IndexedEntry {
+            index,
+            entry: Entry::User {
+                text: text.to_owned(),
+                ts: None,
+            },
+        }
+    }
+
+    fn page(entries: Vec<IndexedEntry>, total_entries: usize, has_older: bool) -> SessionPage {
+        let start_index = entries.first().map(|entry| entry.index).unwrap_or(0);
+        SessionPage {
+            entries,
+            total_entries,
+            start_index,
+            has_older,
+            ..SessionPage::default()
+        }
+    }
+
+    #[test]
+    fn indexed_pages_merge_and_replace_by_absolute_index() {
+        let existing = page(vec![user(10, "old"), user(11, "same")], 12, true);
+        let incoming = page(vec![user(10, "updated"), user(12, "new")], 13, true);
+        let (merged, mode) = merge_session_page(
+            Some(&existing),
+            incoming,
+            SessionMode::Latest,
+            PageDirection::Latest,
+        );
+        assert_eq!(mode, SessionMode::Latest);
+        assert_eq!(
+            merged
+                .entries
+                .iter()
+                .map(|entry| entry.index)
+                .collect::<Vec<_>>(),
+            [10, 11, 12]
+        );
+        match &merged.entries[0].entry {
+            Entry::User { text, .. } => assert_eq!(text, "updated"),
+            _ => panic!("expected user entry"),
+        }
+    }
+
+    #[test]
+    fn older_pages_enter_historical_mode_and_never_exceed_the_cap() {
+        let existing = page(
+            (160..640).map(|index| user(index, "tail")).collect(),
+            640,
+            true,
+        );
+        let incoming = page(
+            (0..160).map(|index| user(index, "older")).collect(),
+            640,
+            false,
+        );
+        let (merged, mode) = merge_session_page(
+            Some(&existing),
+            incoming,
+            SessionMode::Latest,
+            PageDirection::Older,
+        );
+        assert_eq!(mode, SessionMode::Historical);
+        assert_eq!(merged.entries.len(), MAX_RENDERED_ENTRIES);
+        assert_eq!(merged.start_index, 0);
+        assert_eq!(
+            merged.entries.last().unwrap().index,
+            MAX_RENDERED_ENTRIES - 1
+        );
+    }
+
+    #[test]
+    fn latest_and_historical_transitions_are_explicit() {
+        let existing = page(
+            (400..640).map(|index| user(index, "tail")).collect(),
+            640,
+            true,
+        );
+        let older = page(
+            (160..400).map(|index| user(index, "older")).collect(),
+            640,
+            true,
+        );
+        let (merged, mode) = merge_session_page(
+            Some(&existing),
+            older,
+            SessionMode::Latest,
+            PageDirection::Older,
+        );
+        assert_eq!(mode, SessionMode::Latest);
+        let oldest = page(
+            (0..160).map(|index| user(index, "oldest")).collect(),
+            640,
+            false,
+        );
+        let (historical, mode) =
+            merge_session_page(Some(&merged), oldest, mode, PageDirection::Older);
+        assert_eq!(mode, SessionMode::Historical);
+        assert_eq!(historical.entries.len(), MAX_RENDERED_ENTRIES);
+    }
+
+    #[test]
+    fn projection_generation_reset_replaces_overlapping_indices() {
+        let mut existing = page(vec![user(10, "old")], 11, true);
+        existing.generation = 4;
+        let mut incoming = page(vec![user(10, "new")], 11, true);
+        incoming.generation = 5;
+        let (merged, mode) = merge_session_page(
+            Some(&existing),
+            incoming,
+            SessionMode::Latest,
+            PageDirection::Latest,
+        );
+        assert_eq!(mode, SessionMode::Latest);
+        assert_eq!(merged.entries.len(), 1);
+        match &merged.entries[0].entry {
+            Entry::User { text, .. } => assert_eq!(text, "new"),
+            _ => panic!("expected reset entry"),
+        }
+    }
+
+    #[test]
+    fn stale_older_page_cannot_replace_a_new_projection() {
+        let mut current = page(vec![user(10, "new")], 11, true);
+        current.generation = 5;
+        let mut stale = page(vec![user(0, "old")], 11, false);
+        stale.generation = 4;
+        let (merged, mode) = merge_session_page(
+            Some(&current),
+            stale,
+            SessionMode::Historical,
+            PageDirection::Older,
+        );
+        assert_eq!(mode, SessionMode::Historical);
+        assert_eq!(merged, current);
+    }
+
+    #[test]
+    fn latest_refresh_replaces_a_disconnected_historical_window() {
+        let historical = page(
+            (0..480).map(|index| user(index, "old")).collect(),
+            960,
+            true,
+        );
+        let newest = page(
+            (900..960).map(|index| user(index, "new")).collect(),
+            960,
+            false,
+        );
+        let (merged, mode) = merge_session_page(
+            Some(&historical),
+            newest,
+            SessionMode::Latest,
+            PageDirection::Latest,
+        );
+        assert_eq!(mode, SessionMode::Latest);
+        assert_eq!(merged.entries.len(), 60);
+        assert_eq!(merged.start_index, 900);
+        assert_eq!(merged.entries[0].index, 900);
+    }
+
+    #[test]
+    fn initial_transcript_error_preserves_loading_or_ready_surface() {
+        let loading = with_session_error(
+            &SessionState::Loading { error: None },
+            "session fetch failed".to_owned(),
+        );
+        assert!(matches!(
+            loading,
+            SessionState::Loading { error: Some(message) } if message == "session fetch failed"
+        ));
+        let ready_page = page(vec![user(4, "retained")], 5, true);
+        let ready = with_session_error(
+            &SessionState::Ready {
+                pane_id: "pane-a".to_owned(),
+                page: ready_page.clone(),
+                mode: SessionMode::Latest,
+                error: None,
+            },
+            "refresh failed".to_owned(),
+        );
+        match ready {
+            SessionState::Ready {
+                page,
+                error: Some(message),
+                ..
+            } => {
+                assert_eq!(message, "refresh failed");
+                assert_eq!(page.entries, ready_page.entries);
+            }
+            _ => panic!("transcript errors must not discard the session surface"),
+        }
     }
 }

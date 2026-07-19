@@ -16,7 +16,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{Event, EventSource, MessageEvent};
 use yew::prelude::*;
 
-use types::{dedupe_models, Fleet, Model, ModelCatalogStatus};
+use types::{dedupe_models, Fleet, FleetStatus, Model, ModelCatalogStatus};
 use views::{InboxView, SessionView, TermView};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -72,6 +72,7 @@ impl Reducible for SessionEvents {
 #[derive(Clone, PartialEq)]
 pub struct AppContext {
     pub fleet: Option<Rc<Fleet>>,
+    pub fleet_status: FleetStatus,
     pub model_catalog: Option<Rc<Vec<Model>>>,
     pub model_catalog_status: ModelCatalogStatus,
     pub model_catalog_refresh: Callback<()>,
@@ -121,6 +122,7 @@ fn app() -> Html {
     viewport::use_viewport_fix();
     let route = use_state(current_route);
     let fleet = use_state(|| None::<Rc<Fleet>>);
+    let fleet_status = use_state(FleetStatus::default);
     let model_catalog = use_state(|| None::<Rc<Vec<Model>>>);
     let model_catalog_status = use_state(ModelCatalogStatus::default);
     let model_catalog_seq = use_state(|| 0_u64);
@@ -243,12 +245,16 @@ fn app() -> Html {
     }
     {
         let fleet = fleet.clone();
+        let fleet_status = fleet_status.clone();
         let fleet_request = fleet_request.clone();
         let fleet_seq = fleet_seq.clone();
         let fleet_seq_counter = fleet_seq_counter.clone();
         use_effect_with(*fleet_seq, move |_| {
             if !fleet_request.borrow().queued {
                 return ();
+            }
+            if fleet.is_none() {
+                fleet_status.set(FleetStatus::Loading);
             }
             let generation = {
                 let mut request = fleet_request.borrow_mut();
@@ -258,19 +264,24 @@ fn app() -> Html {
                 request.next_generation
             };
             spawn_local(async move {
-                if let Ok(next) = api::fleet().await {
-                    let should_apply = {
-                        let mut request = fleet_request.borrow_mut();
-                        if generation < request.applied_generation {
-                            false
-                        } else {
-                            request.applied_generation = generation;
-                            true
+                match api::fleet().await {
+                    Ok(next) => {
+                        let should_apply = {
+                            let mut request = fleet_request.borrow_mut();
+                            if generation < request.applied_generation {
+                                false
+                            } else {
+                                request.applied_generation = generation;
+                                true
+                            }
+                        };
+                        if should_apply {
+                            fleet.set(Some(Rc::new(next)));
+                            fleet_status.set(FleetStatus::Ready);
                         }
-                    };
-                    if should_apply {
-                        fleet.set(Some(Rc::new(next)));
                     }
+                    Err(_) if fleet.is_none() => fleet_status.set(FleetStatus::Unavailable),
+                    Err(_) => {}
                 }
                 let schedule_next = {
                     let mut request = fleet_request.borrow_mut();
@@ -331,6 +342,9 @@ fn app() -> Html {
         let session_refresh_epoch = session_refresh_epoch.clone();
         let session_refresh_counter = session_refresh_counter.clone();
         let session_events = session_events.clone();
+        let fleet = fleet.clone();
+        let fleet_status = fleet_status.clone();
+        let fleet_request = fleet_request.clone();
         use_effect_with((), move |_| {
             let Ok(source) = EventSource::new("/api/events") else {
                 connected.set(false);
@@ -368,7 +382,24 @@ fn app() -> Html {
                         return;
                     };
                     match value.get("type").and_then(|v| v.as_str()) {
-                        Some("fleet") => refresh_fleet.emit(()),
+                        Some("fleet") => {
+                            let pushed = value.get("fleet").and_then(|payload| {
+                                serde_json::from_value::<Fleet>(payload.clone()).ok()
+                            });
+                            if let Some(next) = pushed {
+                                {
+                                    let mut request = fleet_request.borrow_mut();
+                                    request.next_generation =
+                                        request.next_generation.wrapping_add(1);
+                                    request.applied_generation = request.next_generation;
+                                    request.pending = false;
+                                }
+                                fleet.set(Some(Rc::new(next)));
+                                fleet_status.set(FleetStatus::Ready);
+                            } else {
+                                refresh_fleet.emit(());
+                            }
+                        }
                         Some("session") => {
                             let Some(pane_id) = value.get("pane_id").and_then(|v| v.as_str())
                             else {
@@ -401,6 +432,7 @@ fn app() -> Html {
 
     let context = AppContext {
         fleet: (*fleet).clone(),
+        fleet_status: *fleet_status,
         model_catalog: (*model_catalog).clone(),
         model_catalog_status: *model_catalog_status,
         model_catalog_refresh: refresh_model_catalog,

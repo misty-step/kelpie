@@ -8,7 +8,7 @@ mod herdr;
 mod omp;
 
 use anyhow::Result;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
@@ -22,7 +22,7 @@ use std::future::Future;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::{broadcast, watch, Mutex, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
@@ -72,6 +72,8 @@ struct Fleet {
 #[derive(Default)]
 struct AppState {
     fleet: RwLock<Fleet>,
+    /// One incremental JSONL projection per currently referenced session path.
+    session_store: Mutex<HashMap<String, Arc<StdMutex<omp::SessionProjection>>>>,
     pokes: Option<broadcast::Sender<String>>,
     /// Panes with an in-flight TUI drive (reasoning cycle or model picker) —
     /// both steer the same terminal, so one guard covers both.
@@ -450,7 +452,42 @@ fn mtime_iso(path: &str) -> Option<String> {
 
 // -------------------------------------------------------------- fleet builder
 
-async fn build_fleet() -> Result<Fleet> {
+async fn session_projection_for(
+    state: &Shared,
+    path: &str,
+) -> Arc<StdMutex<omp::SessionProjection>> {
+    let mut store = state.session_store.lock().await;
+    store
+        .entry(path.to_owned())
+        .or_insert_with(|| Arc::new(StdMutex::new(omp::SessionProjection::default())))
+        .clone()
+}
+
+async fn session_summary(state: &Shared, path: &str) -> omp::Summary {
+    let projection = session_projection_for(state, path).await;
+    let refresh_path = path.to_owned();
+    let refreshed = tokio::task::spawn_blocking(move || {
+        let mut projection = projection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        projection
+            .refresh(&refresh_path)
+            .map(|()| projection.summary())
+    })
+    .await;
+    match refreshed {
+        Ok(Ok(summary)) => summary,
+        _ => omp::Summary {
+            title: None,
+            snippet: None,
+            pending_ask: false,
+        },
+    }
+}
+
+// -------------------------------------------------------------- fleet builder
+
+async fn build_fleet(state: &Shared) -> Result<Fleet> {
     let snap = herdr::snapshot().await?;
     let workspaces = snap
         .get("workspaces")
@@ -468,6 +505,7 @@ async fn build_fleet() -> Result<Fleet> {
         .unwrap_or_default();
 
     let mut panes = Vec::new();
+    let mut referenced_paths = HashSet::new();
     for p in snap
         .get("panes")
         .and_then(Value::as_array)
@@ -487,7 +525,8 @@ async fn build_fleet() -> Result<Fleet> {
 
         let (title, snippet, pending_ask) = match &session_path {
             Some(path) => {
-                let sum = omp::summarize(path);
+                referenced_paths.insert(path.clone());
+                let sum = session_summary(state, path).await;
                 (sum.title, sum.snippet, sum.pending_ask)
             }
             None => (None, None, false),
@@ -530,6 +569,14 @@ async fn build_fleet() -> Result<Fleet> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+
+    // Session paths leave the cache when herdr no longer references them.
+    state
+        .session_store
+        .lock()
+        .await
+        .retain(|path, _| referenced_paths.contains(path));
+
     Ok(Fleet {
         workspaces,
         tabs,
@@ -540,7 +587,7 @@ async fn build_fleet() -> Result<Fleet> {
 async fn refresher(state: Shared) {
     let mut file_sizes: HashMap<String, u64> = HashMap::new();
     loop {
-        match build_fleet().await {
+        match build_fleet(&state).await {
             Ok(new_fleet) => {
                 let changed = {
                     let cur = state.fleet.read().await;
@@ -558,9 +605,10 @@ async fn refresher(state: Shared) {
                     }
                 }
                 if changed {
+                    let event = json!({"type": "fleet", "fleet": &new_fleet}).to_string();
                     *state.fleet.write().await = new_fleet;
                     if let Some(tx) = &state.pokes {
-                        let _ = tx.send(json!({"type": "fleet"}).to_string());
+                        let _ = tx.send(event);
                     }
                 }
                 if let Some(tx) = &state.pokes {
@@ -592,40 +640,116 @@ async fn session_path_for(state: &Shared, pane_id: &str) -> Option<String> {
         .and_then(|p| p.session_path.clone())
 }
 
+#[derive(Deserialize, Default)]
+struct SessionQuery {
+    before: Option<String>,
+    limit: Option<String>,
+}
+
+const SESSION_PAGE_DEFAULT: usize = 160;
+const SESSION_PAGE_MAX: usize = 256;
+
+fn parse_session_query(query: &SessionQuery) -> Result<(Option<usize>, usize), String> {
+    let limit = match query.limit.as_deref() {
+        None => SESSION_PAGE_DEFAULT,
+        Some(raw) => raw
+            .parse::<usize>()
+            .map_err(|_| "limit must be a positive integer".to_string())?,
+    };
+    if limit == 0 {
+        return Err("limit must be greater than zero".to_string());
+    }
+    let before = query
+        .before
+        .as_deref()
+        .map(|raw| {
+            raw.parse::<usize>()
+                .map_err(|_| "before must be an absolute entry index".to_string())
+        })
+        .transpose()?;
+    Ok((before, limit.min(SESSION_PAGE_MAX)))
+}
+
+fn validate_session_cursor(before: Option<usize>, total_entries: usize) -> Result<(), String> {
+    if before.is_some_and(|cursor| cursor > total_entries) {
+        return Err("before cursor is beyond total_entries".to_string());
+    }
+    Ok(())
+}
+
 async fn get_session(
     State(state): State<Shared>,
     Path(pane_id): Path<String>,
+    Query(query): Query<SessionQuery>,
 ) -> impl IntoResponse {
-    match session_path_for(&state, &pane_id).await {
-        Some(path) => {
-            let mut transcript = tokio::task::spawn_blocking(move || omp::parse_session(&path))
-                .await
-                .unwrap_or_default();
-            if transcript.model.is_none() || transcript.thinking.is_none() {
-                if let Ok(screen) = screen_text(&pane_id).await {
-                    if transcript.model.is_none() {
-                        if let Some(selector) = screen_model_selector(&screen) {
-                            if let Some((provider, model)) = selector.split_once('/') {
-                                transcript.model = Some(omp::ModelInfo {
-                                    provider: provider.to_owned(),
-                                    model: model.to_owned(),
-                                });
-                            }
-                        }
-                    }
-                    if transcript.thinking.is_none() {
-                        transcript.thinking = screen_thinking_level(&screen).map(str::to_owned);
-                    }
-                }
-            }
-            Json(serde_json::to_value(transcript).unwrap_or(Value::Null)).into_response()
+    let (before, limit) = match parse_session_query(&query) {
+        Ok(query) => query,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"error": error}))).into_response();
         }
-        None => (
+    };
+    let Some(path) = session_path_for(&state, &pane_id).await else {
+        return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "no transcript for pane"})),
         )
-            .into_response(),
+            .into_response();
+    };
+    let projection = session_projection_for(&state, &path).await;
+    let refresh_path = path.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<omp::SessionPage, String> {
+        let mut projection = projection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        projection
+            .refresh(&refresh_path)
+            .map_err(|error| format!("session refresh failed: {error}"))?;
+        let total = projection.total_entries();
+        validate_session_cursor(before, total)?;
+        Ok(projection.page(before, limit))
+    })
+    .await;
+    let mut page = match result {
+        Ok(Ok(page)) => page,
+        Ok(Err(error)) if error.starts_with("before cursor") => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"error": error}))).into_response();
+        }
+        Ok(Err(_)) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "session transcript is unavailable"})),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "session projection failed"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Empty sessions may not have emitted model/thinking metadata yet. Keep
+    // the existing terminal readback fallback without reparsing the transcript.
+    if page.model.is_none() || page.thinking.is_none() {
+        if let Ok(screen) = screen_text(&pane_id).await {
+            if page.model.is_none() {
+                if let Some(selector) = screen_model_selector(&screen) {
+                    if let Some((provider, model)) = selector.split_once('/') {
+                        page.model = Some(omp::ModelInfo {
+                            provider: provider.to_owned(),
+                            model: model.to_owned(),
+                        });
+                    }
+                }
+            }
+            if page.thinking.is_none() {
+                page.thinking = screen_thinking_level(&screen).map(str::to_owned);
+            }
+        }
     }
+    Json(page).into_response()
 }
 
 #[derive(Deserialize)]
@@ -1760,11 +1884,18 @@ async fn drive_ask(state: Shared, action: Arc<Mutex<AskAction>>) {
         omp::AskReceipt::Pending => {}
     }
 
+    let projection = session_projection_for(&state, &path).await;
     let parse_path = path.clone();
-    let transcript = tokio::task::spawn_blocking(move || omp::parse_session(&parse_path))
-        .await
-        .unwrap_or_default();
-    let Some(ask) = transcript.pending_ask else {
+    let pending_ask = tokio::task::spawn_blocking(move || {
+        let mut projection = projection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        projection.refresh(&parse_path).ok()?;
+        projection.pending_ask()
+    })
+    .await
+    .unwrap_or(None);
+    let Some(ask) = pending_ask else {
         update_action(
             &action,
             AskPhase::FailedBeforeSubmit,
@@ -2671,6 +2802,7 @@ async fn main() -> Result<()> {
     let omp_version = fetch_omp_version().await;
     let state: Shared = Arc::new(AppState {
         fleet: RwLock::new(Fleet::default()),
+        session_store: Mutex::new(HashMap::new()),
         pokes: Some(tx),
         pane_locks: Mutex::new(HashSet::new()),
         workspace_locks: Mutex::new(HashSet::new()),
@@ -2683,7 +2815,7 @@ async fn main() -> Result<()> {
     });
 
     // Prime the fleet once before serving so first paint isn't empty.
-    if let Ok(f) = build_fleet().await {
+    if let Ok(f) = build_fleet(&state).await {
         *state.fleet.write().await = f;
     }
     tokio::spawn(refresher(state.clone()));
@@ -2737,6 +2869,44 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_query_defaults_and_clamps_page_limits() {
+        let (before, limit) = parse_session_query(&SessionQuery::default()).unwrap();
+        assert_eq!(before, None);
+        assert_eq!(limit, SESSION_PAGE_DEFAULT);
+        let (_, limit) = parse_session_query(&SessionQuery {
+            before: Some("140".into()),
+            limit: Some("999".into()),
+        })
+        .unwrap();
+        assert_eq!(limit, SESSION_PAGE_MAX);
+    }
+
+    #[test]
+    fn session_query_rejects_zero_or_incompatible_cursor_values() {
+        assert_eq!(
+            parse_session_query(&SessionQuery {
+                before: Some("not-an-index".into()),
+                limit: None,
+            })
+            .unwrap_err(),
+            "before must be an absolute entry index"
+        );
+        assert_eq!(
+            parse_session_query(&SessionQuery {
+                before: None,
+                limit: Some("0".into()),
+            })
+            .unwrap_err(),
+            "limit must be greater than zero"
+        );
+        assert_eq!(
+            validate_session_cursor(Some(301), 300).unwrap_err(),
+            "before cursor is beyond total_entries"
+        );
+        assert!(validate_session_cursor(Some(300), 300).is_ok());
+    }
 
     #[test]
     fn ask_driver_deadline_is_retryable_only_before_enter() {

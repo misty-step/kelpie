@@ -30,26 +30,27 @@ without babysitting terminals.`
   standard `.ae-app-mark` frame so the header geometry stays kit-identical.
 - Everything else follows the kit: no colored wordmark, no emoji marks.
 
-## Palette Hooks
+## The Well on the public site
 
-kelpie steers only the accent pair, matching the app's own accent
-(`static/style.css`):
+The site and app now share one visual language: warm parchment, the four
+`vellum / panel / well / well-deep` decks, quiet ridges, a single teal signal,
+and 6/10/16px radii. The public page defines `--w-*` tokens in
+`docs/marketing.css`, then maps them onto the shared Aesthetic `--ae-*`
+contract. This preserves the site kit's structure while making the rendered
+site unmistakably kelpie.
 
-```css
-:root {
-  --ae-accent: #0f6e6e;
-  --ae-accent-dark: #2dd4cf;
-}
-```
-
-No named theme is pinned; everything else is stock Aesthetic ink.
+Light accent is `#0c7263`; dark accent is `#4dc4b0`. Light depth uses small
+lift shadows. Dark depth uses border rings. Screenshot frames and quickstart
+code are recessed wells; feature rows are raised panels. The site uses the
+same system sans and mono roles as the app.
 
 ## Layout
 
-One focused page. Sticky header bar, sticky footer bar; content scrolls
-inside `.ae-stage-scroll` per the Aesthetic "no page scroll" law. Sections:
-hero, features (`ae-list-rows`), screens (three phone shots, zoomable),
-quickstart (one code block).
+One focused, document-scrolling page. The header is sticky; the footer remains
+in normal flow. The hero introduces the operator outcome and proof. Features
+use compact panel rows with mono labels, screenshots sit in well-backed frames,
+and quickstart is one deep code well. The full composition remains
+single-column at phone width and expands without changing hierarchy on desktop.
 
 ## Screenshot Inventory
 

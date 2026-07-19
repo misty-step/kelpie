@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -7,15 +5,8 @@ use yew::prelude::*;
 use crate::api;
 use crate::components::{status_descriptor, BottomSheet, Header};
 use crate::icons::{avatar, hue_for, icon};
-use crate::types::{Fleet, Pane};
+use crate::types::{Fleet, FleetStatus, Pane};
 use crate::{navigate, AppContext, Route};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum LoadState {
-    Loading,
-    Ready,
-    Error,
-}
 
 fn status_tier(pane: &Pane) -> u8 {
     match status_descriptor(pane.status(), pane.pending_ask).class {
@@ -145,32 +136,11 @@ fn skeletons() -> Html {
 #[function_component(InboxView)]
 pub fn inbox_view() -> Html {
     let context = use_context::<AppContext>().expect("AppContext");
-    let local_fleet = use_state(|| None::<Rc<Fleet>>);
-    let load_state = use_state(|| LoadState::Loading);
-    let request_seq = use_state(|| 0_u64);
     let dialog_open = use_state(|| false);
     let cwd = use_state(String::new);
     let dialog_error = use_state(|| None::<String>);
     let submitting = use_state(|| false);
     let submitting_lock = use_mut_ref(|| false);
-
-    {
-        let local_fleet = local_fleet.clone();
-        let load_state = load_state.clone();
-        let seq = *request_seq;
-        use_effect_with(seq, move |_| {
-            spawn_local(async move {
-                match api::fleet().await {
-                    Ok(fleet) => {
-                        local_fleet.set(Some(Rc::new(fleet)));
-                        load_state.set(LoadState::Ready);
-                    }
-                    Err(_) => load_state.set(LoadState::Error),
-                }
-            });
-            || ()
-        });
-    }
 
     let open_dialog = {
         let dialog_open = dialog_open.clone();
@@ -240,14 +210,8 @@ pub fn inbox_view() -> Html {
         Callback::from(move |_| submit_workspace.emit(()))
     };
     let retry = {
-        let request_seq = request_seq.clone();
-        let load_state = load_state.clone();
         let fleet_refresh = context.fleet_refresh.clone();
-        Callback::from(move |_| {
-            load_state.set(LoadState::Loading);
-            fleet_refresh.emit(());
-            request_seq.set((*request_seq).wrapping_add(1));
-        })
+        Callback::from(move |_| fleet_refresh.emit(()))
     };
     let on_input = {
         let cwd = cwd.clone();
@@ -266,16 +230,16 @@ pub fn inbox_view() -> Html {
         })
     };
 
-    let fleet = context.fleet.clone().or_else(|| (*local_fleet).clone());
-    let content = match fleet.as_deref() {
-        Some(fleet) if fleet.panes.is_empty() => html! {
+    let fleet = context.fleet.clone();
+    let content = match (fleet.as_deref(), context.fleet_status) {
+        (Some(fleet), _) if fleet.panes.is_empty() => html! {
             <div class="empty-state">
                 <span class="empty-icon">{icon("inbox", 48)}</span>
                 <div>{"No agents running."}</div>
                 <div class="empty-hint">{"Tap + to open a workspace."}</div>
             </div>
         },
-        Some(fleet) => {
+        (Some(fleet), _) => {
             let (agents, shells) = sort_panes(fleet);
             if agents.is_empty() && shells.is_empty() {
                 html! {
@@ -300,14 +264,14 @@ pub fn inbox_view() -> Html {
                 }
             }
         }
-        None if *load_state == LoadState::Error => html! {
+        (None, FleetStatus::Unavailable) => html! {
             <div class="error-state" role="alert">
                 <span class="empty-icon error-icon">{icon("circle-alert", 40)}</span>
                 <div>{"Couldn't load agents."}</div>
                 <button class="retry-btn" type="button" onclick={retry.clone()}>{"Retry"}</button>
             </div>
         },
-        None => skeletons(),
+        (None, _) => skeletons(),
     };
 
     html! {

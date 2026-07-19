@@ -1,210 +1,587 @@
-/* Product brand hooks: edit these from DESIGN.md, then leave the rest alone. */
+/* ─────────────────────────────────────────────────────────────────────
+   kelpie marketing — "The Well" (OPRT-2)
+   Warm-neutral parchment/ink. Four whisper-quiet decks
+   (vellum / panel / well / well-deep). Single teal accent. 8px rhythm,
+   radii 6/10/16. Subtle lift in light, border-ring depth in dark.
+   Signature: content fields live in recessed wells (quickstart, shots).
+
+   Layered over aesthetic.css. Only the marketing page loads this file,
+   so every override below is site-scoped — the PWA is untouched.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* ── The Well tokens ──────────────────────────────────────────────── */
 :root {
-  /* kelpie's app accent — the same teal the PWA uses (static/style.css). */
-  --ae-accent: #0f6e6e;
-  --ae-accent-dark: #2dd4cf;
+  /* ink ramp */
+  --w-ink: #1c1f17;
+  --w-ink-2: #4a4f44;
+  --w-ink-3: #676d60;
+  --w-ink-mute: #9aa094;
+  /* surface decks */
+  --w-vellum: #f4f1ea;
+  --w-panel: #fbf9f3;
+  --w-well: #ece8de;
+  --w-well-deep: #e3ddcf;
+  /* ridges (borders) */
+  --w-ridge: #d6cfbe;
+  --w-ridge-soft: #e7e1d2;
+  /* the one accent */
+  --w-signal: #0c7263;
+  --w-signal-tint: #d8efe9;
+  /* text on the accent fill — white in light, near-black on the light dark-mode teal */
+  --w-on-signal: #ffffff;
+  /* status — semantic, rides glyphs */
+  --w-ok: #2f7d4f;
+  --w-warn: #9a6a00;
+  --w-bad: #a8323c;
+  /* radii + grid */
+  --w-radius-sm: 6px;
+  --w-radius-md: 10px;
+  --w-radius-lg: 16px;
+  --w-grid: 8px;
+  /* lift: soft in light, ring in dark */
+  --w-lift: 0 1px 2px rgba(28, 31, 23, 0.04), 0 0 0 1px rgba(28, 31, 23, 0.05);
+  --w-lift-2: 0 2px 8px rgba(28, 31, 23, 0.06), 0 0 0 1px rgba(28, 31, 23, 0.06);
+  --w-inset: inset 0 1px 2px rgba(28, 31, 23, 0.05);
+  --w-inset-deep: inset 0 2px 4px rgba(28, 31, 23, 0.06);
+  /* system grotesque + monospace only for code/data */
+  --w-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --w-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Map onto aesthetic's token contract so the shared ae-* components
+     warm up with the parchment palette. Aesthetic's own dark blocks
+     reassign --ae-* from --ae-*-dark; the dark blocks below re-map them
+     to the Well's dark decks, and later source order (this file) wins. */
+  --ae-surface: var(--w-vellum);
+  --ae-wash: var(--w-well);
+  --ae-ink: var(--w-ink);
+  --ae-ink-muted: var(--w-ink-3);
+  --ae-ink-faint: var(--w-ink-mute);
+  --ae-line: var(--w-ridge-soft);
+  --ae-accent: var(--w-signal);
+  --ae-ok: var(--w-ok);
+  --ae-warn: var(--w-warn);
+  --ae-err: var(--w-bad);
+  --ae-font: var(--w-sans);
 }
 
-/* ── kelpie exceptions ─────────────────────────────────────────────── */
+/* pinned dark — the toggle sets `.dark` on <html> (mode.js) */
+:root.dark,
+:root[data-ae-mode="dark"] {
+  --w-ink: #e8e6df;
+  --w-ink-2: #b8b5ac;
+  --w-ink-3: #88857b;
+  --w-ink-mute: #5e5b53;
+  --w-vellum: #15171c;
+  --w-panel: #1c1f25;
+  --w-well: #13151a;
+  --w-well-deep: #0e1014;
+  --w-ridge: #2c3038;
+  --w-ridge-soft: #232730;
+  --w-signal: #4dc4b0;
+  --w-signal-tint: #162a26;
+  --w-on-signal: #0e1014;
+  --w-ok: #5cb87f;
+  --w-warn: #d0a040;
+  --w-bad: #d9616b;
+  --w-lift: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --w-lift-2: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --w-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  --w-inset-deep: inset 0 2px 4px rgba(0, 0, 0, 0.45);
 
-/* The mark: kelpie's line-art water horse (deliberate deviation from the
-   kit's Lucide-only rule — see site/DESIGN.md). Inlined SVG using
-   fill="currentColor", so it inherits .ae-app-mark's `color: var(--ae-ink)`
-   and themes for free — no filter hack needed. */
+  --ae-surface: var(--w-vellum);
+  --ae-wash: var(--w-well);
+  --ae-ink: var(--w-ink);
+  --ae-ink-muted: var(--w-ink-3);
+  --ae-ink-faint: var(--w-ink-mute);
+  --ae-line: var(--w-ridge-soft);
+  --ae-accent: var(--w-signal);
+  --ae-ok: var(--w-ok);
+  --ae-warn: var(--w-warn);
+  --ae-err: var(--w-bad);
+}
+
+/* auto dark — follow the OS when nothing is pinned */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-ae-mode="light"]) {
+    --w-ink: #e8e6df;
+    --w-ink-2: #b8b5ac;
+    --w-ink-3: #88857b;
+    --w-ink-mute: #5e5b53;
+    --w-vellum: #15171c;
+    --w-panel: #1c1f25;
+    --w-well: #13151a;
+    --w-well-deep: #0e1014;
+    --w-ridge: #2c3038;
+    --w-ridge-soft: #232730;
+    --w-signal: #4dc4b0;
+    --w-signal-tint: #162a26;
+    --w-on-signal: #0e1014;
+    --w-ok: #5cb87f;
+    --w-warn: #d0a040;
+    --w-bad: #d9616b;
+    --w-lift: 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --w-lift-2: 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --w-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    --w-inset-deep: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+
+    --ae-surface: var(--w-vellum);
+    --ae-wash: var(--w-well);
+    --ae-ink: var(--w-ink);
+    --ae-ink-muted: var(--w-ink-3);
+    --ae-ink-faint: var(--w-ink-mute);
+    --ae-line: var(--w-ridge-soft);
+    --ae-accent: var(--w-signal);
+    --ae-ok: var(--w-ok);
+    --ae-warn: var(--w-warn);
+    --ae-err: var(--w-bad);
+  }
+}
+
+/* ── page surface: a scrolling document so the nav can be calm + sticky ─
+   The kit locks the screen to 100dvh with internal stage scroll; the
+   marketing page reads better as a scrolling document with a sticky nav.
+   Content, links, the mode toggle, and the zoom dialog are unchanged. */
+.ae-screen.ae-wide {
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  background: var(--w-vellum);
+}
+.ae-wide .ae-stage {
+  overflow: visible;
+  width: min(var(--ae-measure-wide), 100% - 2.5rem);
+}
+
+/* ── the mark: kelpie's line-art water horse ──────────────────────── */
 .msk-mark-img {
   width: 1.5em;
   height: 1.5em;
   display: block;
 }
+.ae-app-mark .msk-mark-img {
+  color: var(--w-signal);
+}
 
-/* Hero headline: ink and black weight, never larger (the one-size law). */
-.msk-hero h1 {
-  font-weight: var(--ae-w-black);
+/* ── nav bar: calm sticky surface ─────────────────────────────────── */
+.ae-wide .msk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  width: min(var(--ae-measure-wide), 100% - 2.5rem);
+  margin-inline: auto;
+  padding: 0.6em 0;
+  align-items: center;
+  gap: var(--ae-space-3);
+  background: color-mix(in srgb, var(--w-vellum) 90%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  border-bottom: 1px solid var(--w-ridge-soft);
+}
+.msk-bar .ae-name {
+  font-size: 1.0625rem;
+  font-weight: 600;
   letter-spacing: -0.01em;
-  line-height: 1.3;
-  max-width: 34ch;
+  color: var(--w-ink);
 }
-
-/* Portrait phone screenshots need more height than the kit's 15rem
-   landscape default to stay legible. */
-.msk-shot img {
-  height: 22rem;
-}
-
-/* Quickstart code block, styled like .ae-doc pre. */
-.msk-quickstart pre {
-  background: var(--ae-wash);
-  border: 1px solid var(--ae-line);
-  font-size: 13px;
-  line-height: 1.75;
-  padding: var(--ae-space-4);
-  overflow-x: auto;
-  max-width: 42rem;
-}
-.msk-quickstart .ae-dim {
-  max-width: 42rem;
-}
-
-/* Feature rows carry sentences, not table data: two equal columns,
-   wrapping values instead of the kit's single-line ellipsis. */
-#features .ae-list-row {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-#features .ae-list-value {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.msk-bar,
-.msk-footer {
-  width: min(var(--ae-measure-wide), 100% - 5rem);
-}
-
 .msk-actions {
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--ae-space-5);
+  align-items: center;
+  gap: var(--ae-space-3);
 }
-
 .msk-nav {
   display: inline-flex;
-  gap: var(--ae-space-5);
+  gap: 0.15em;
+  align-items: center;
+}
+.msk-nav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4em 0.7em;
+  margin-block: 0;
+  border-radius: var(--w-radius-sm);
+  min-height: 44px;
+  color: var(--w-ink-3);
+  text-decoration: none;
+  transition: color var(--ae-quick) var(--ae-ease),
+    background-color var(--ae-quick) var(--ae-ease);
+}
+.msk-nav a:hover {
+  color: var(--w-ink);
+  background: var(--w-well);
+}
+.msk-nav a:focus-visible {
+  outline: 2px solid var(--w-signal);
+  outline-offset: 2px;
+}
+.msk-nav a[aria-current="page"] {
+  color: var(--w-ink);
+  background: var(--w-well);
+}
+.msk-bar .ae-mode {
+  width: 44px;
+  height: 44px;
+  color: var(--w-ink-3);
+  border-radius: var(--w-radius-sm);
+}
+.msk-bar .ae-mode:hover {
+  color: var(--w-ink);
+  background: var(--w-well);
+}
+.msk-bar .ae-mode:focus-visible {
+  outline: 2px solid var(--w-signal);
+  outline-offset: 2px;
 }
 
-.msk-nav a[aria-current='page'] {
-  color: var(--ae-ink);
-  text-decoration-color: currentColor;
-}
-
+/* ── hero: compact ────────────────────────────────────────────────── */
 .msk-page {
   width: min(var(--ae-measure-wide), 100%);
   display: grid;
-  gap: var(--ae-space-8);
+  gap: var(--ae-space-6);
 }
-
 .msk-hero {
   display: grid;
-  gap: var(--ae-space-4);
+  gap: 0.85em;
   max-width: 45rem;
-  padding-top: var(--ae-space-6);
+  padding-top: var(--ae-space-7);
 }
-
+/* eyebrow: the chrome line lifted to the accent */
+.msk-hero > .ae-chrome {
+  font-family: var(--w-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-signal);
+}
+/* the one display: compact, fluid — never the lab's 48px */
+.msk-hero h1 {
+  font-size: clamp(1.7rem, 1.15rem + 2.4vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  max-width: 18ch;
+  color: var(--w-ink);
+}
 .msk-pitch {
+  font-size: 1.0625rem;
+  line-height: 1.55;
   font-weight: var(--ae-w-medium);
+  color: var(--w-ink-2);
+  max-width: 52ch;
+}
+.msk-pitch a {
+  color: var(--w-signal);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--w-signal) 40%, transparent);
+  text-underline-offset: 2px;
+}
+.msk-pitch a:hover {
+  text-decoration-color: var(--w-signal);
+}
+/* status line: mono, quiet; the check rides the ok hue */
+.msk-hero .ae-status {
+  font-family: var(--w-mono);
+  font-size: 12.5px;
+  color: var(--w-ink-3);
+  letter-spacing: 0.01em;
+}
+.msk-hero .ae-status .ae-icon {
+  color: var(--w-ok);
+}
+.msk-hero .ae-status .ae-status-label {
+  color: var(--w-ink-3);
+}
+/* CTAs: pills, 44px */
+.msk-hero .msk-actions {
+  gap: 0.75rem;
+  margin-top: 0.5em;
+}
+.msk-actions .ae-button {
+  border-radius: 999px;
+  background: var(--w-signal);
+  border: 1px solid var(--w-signal);
+  color: var(--w-on-signal);
+  padding: 0.6em 1.5em;
+  min-height: 44px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: filter var(--ae-quick) var(--ae-ease),
+    border-color var(--ae-quick) var(--ae-ease),
+    background-color var(--ae-quick) var(--ae-ease),
+    color var(--ae-quick) var(--ae-ease);
+}
+.msk-actions .ae-button:hover {
+  filter: brightness(1.06);
+  opacity: 1;
+}
+.msk-actions .ae-button:active {
+  transform: translateY(1px);
+}
+.msk-actions .ae-button:focus-visible {
+  outline: 2px solid var(--w-signal);
+  outline-offset: 2px;
+}
+.msk-actions .ae-button-quiet {
+  background: var(--w-panel);
+  border: 1px solid var(--w-ridge);
+  color: var(--w-ink);
+}
+.msk-actions .ae-button-quiet:hover {
+  border-color: var(--w-signal);
+  color: var(--w-signal);
+  background: var(--w-panel);
+  filter: none;
 }
 
+/* ── sections: airy, ridge-soft hairline ──────────────────────────── */
 .msk-section {
-  border-top: 1px solid var(--ae-line);
+  border-top: 1px solid var(--w-ridge-soft);
   padding-top: var(--ae-space-6);
   display: grid;
   gap: var(--ae-space-5);
 }
-
 .msk-section-head {
   display: grid;
   gap: var(--ae-space-2);
   max-width: 42rem;
 }
+.msk-section .ae-h,
+.msk-section-head .ae-h {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--w-ink);
+  margin: 0;
+}
+.msk-section-head .ae-dim {
+  color: var(--w-ink-3);
+  max-width: 52ch;
+}
 
+/* ── features: panel rows ─────────────────────────────────────────── */
+.msk-feat {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--w-ridge-soft);
+  border-radius: var(--w-radius-lg);
+  background: var(--w-panel);
+  box-shadow: var(--w-lift);
+  overflow: hidden;
+}
+.msk-feat-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: var(--ae-space-3);
+  align-items: baseline;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--w-ridge-soft);
+}
+.msk-feat-row:last-child {
+  border-bottom: 0;
+}
+.msk-feat-tag {
+  font-family: var(--w-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--w-signal);
+  white-space: nowrap;
+}
+.msk-feat-row p {
+  margin: 0;
+  color: var(--w-ink-2);
+  line-height: 1.55;
+  max-width: 62ch;
+}
+
+/* ── screens: screenshot cards ────────────────────────────────────── */
 .msk-gallery {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--ae-space-5);
 }
-
 .msk-shot {
   appearance: none;
-  border: 1px solid var(--ae-line);
-  background: var(--ae-surface);
-  color: var(--ae-ink);
-  padding: var(--ae-space-3);
+  border: 1px solid var(--w-ridge-soft);
+  border-radius: var(--w-radius-md);
+  background: var(--w-panel);
+  color: var(--w-ink);
+  padding: var(--w-grid);
   display: grid;
-  gap: var(--ae-space-3);
+  gap: var(--w-grid);
   text-align: left;
   cursor: pointer;
+  box-shadow: var(--w-lift);
+  transition: border-color var(--ae-quick) var(--ae-ease),
+    box-shadow var(--ae-quick) var(--ae-ease);
 }
-
-.msk-shot:hover,
+.msk-shot:hover {
+  border-color: var(--w-ridge);
+  box-shadow: var(--w-lift-2);
+}
 .msk-shot:focus-visible {
-  border-color: var(--ae-ink);
+  border-color: var(--w-ridge);
+  box-shadow: var(--w-lift-2);
+  outline: 2px solid var(--w-signal);
+  outline-offset: 2px;
 }
-
+/* the screenshot sits in a recessed well */
 .msk-shot img {
   width: 100%;
-
-  /* object-fit: contain, not cover — evidence screenshots arrive in every
-     aspect ratio (portrait docs, wide terminal captures, tall dashboards).
-     A fixed 16/10 cover crop hid most of the frame on three separate
-     shipped sites (aesthetic-911); a fixed height keeps the gallery row
-     aligned without cropping any of them. */
   aspect-ratio: auto;
   height: 15rem;
   object-fit: contain;
-  border: 1px solid var(--ae-line);
-  background: var(--ae-wash);
+  border: 1px solid var(--w-ridge-soft);
+  border-radius: var(--w-radius-sm);
+  background: var(--w-well);
+  box-shadow: var(--w-inset);
+}
+.msk-shot .ae-chrome {
+  font-family: var(--w-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--w-ink-3);
+  padding: 0 0.25rem;
 }
 
-.msk-release-slot {
+/* ── quickstart: deep well ────────────────────────────────────────── */
+.msk-quickstart pre {
+  background: var(--w-well-deep);
+  border: 1px solid var(--w-ridge-soft);
+  border-radius: var(--w-radius-md);
+  box-shadow: var(--w-inset-deep);
+  font-family: var(--w-mono);
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--w-ink-2);
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
   max-width: 42rem;
+  margin: 0;
+}
+.msk-quickstart pre code {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+}
+.msk-quickstart .ae-dim {
+  max-width: 42rem;
+  color: var(--w-ink-3);
+}
+.msk-quickstart .ae-dim a {
+  color: var(--w-signal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.msk-footer {
-  align-items: baseline;
+/* ── footer: restrained ───────────────────────────────────────────── */
+.ae-wide .msk-footer {
+  width: min(var(--ae-measure-wide), 100% - 2.5rem);
+  margin-inline: auto;
+  border-top: 1px solid var(--w-ridge-soft);
+  padding: 1.5em 0;
+  align-items: center;
+}
+.msk-footer .ae-chrome {
+  color: var(--w-ink-3);
+}
+.msk-footer nav a {
+  color: var(--w-ink-3);
+  text-decoration: none;
+  transition: color var(--ae-quick) var(--ae-ease);
+}
+.msk-footer nav a:hover {
+  color: var(--w-signal);
 }
 
+/* ── zoom dialog: well-backed ─────────────────────────────────────── */
 .msk-zoom {
   width: min(76rem, calc(100vw - 3rem));
+  background: var(--w-panel);
+  border: 1px solid var(--w-ridge);
+  border-radius: var(--w-radius-lg);
+  box-shadow: var(--w-lift-2);
 }
-
 .msk-zoom-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: var(--ae-space-4);
   margin-bottom: var(--ae-space-4);
 }
-
+.msk-zoom-head .ae-dialog-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--w-ink);
+}
+/* the close button keeps its ink treatment, softened to a calm square */
+.msk-zoom-head .ae-button {
+  border-radius: var(--w-radius-sm);
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0.4em;
+}
 .msk-zoom-img {
   display: block;
   width: 100%;
   max-height: min(72vh, 48rem);
   object-fit: contain;
-  border: 1px solid var(--ae-line);
-  background: var(--ae-wash);
+  border: 1px solid var(--w-ridge-soft);
+  border-radius: var(--w-radius-md);
+  background: var(--w-well);
 }
 
-.msk-release {
-  border-top: 1px solid var(--ae-line);
-  padding-top: var(--ae-space-5);
-  display: grid;
-  gap: var(--ae-space-3);
-}
-
-.msk-release:first-of-type {
-  border-top: 0;
-  padding-top: 0;
-}
-
-@media (max-width: 780px) {
-  /* qualified with .ae-wide, not just .msk-bar/.msk-footer: aesthetic.css's
-     `.ae-wide .ae-bar` rule (two classes) otherwise outranks the plain
-     one-class selector here and this override never takes effect, leaving
-     80px of dead margin at phone widths — the actual cause of the nav
-     "crowding" bug (aesthetic-910), confirmed by measuring the live
-     bounding box at 390px. */
+/* ── phone: 390×844 first ─────────────────────────────────────────── */
+@media (max-width: 48rem) {
   .ae-wide .msk-bar,
   .ae-wide .msk-footer {
-    width: min(var(--ae-measure), 100% - 2rem);
+    width: min(var(--ae-measure), 100% - 1.5rem);
   }
-
-  .msk-actions,
-  .msk-nav {
+  .ae-wide .ae-stage {
+    width: min(var(--ae-measure), 100% - 1.5rem);
+  }
+  .msk-bar {
+    padding: 0.55em 0;
     flex-wrap: wrap;
-    gap: var(--ae-space-3);
+    gap: 0.4em 0.75em;
   }
-
+  .msk-actions {
+    flex-wrap: wrap;
+    gap: 0.5em;
+  }
+  .msk-nav {
+    gap: 0.1em;
+  }
+  .msk-hero {
+    padding-top: var(--ae-space-5);
+    gap: 0.8em;
+  }
+  .msk-hero h1 {
+    font-size: clamp(1.55rem, 1.25rem + 1.6vw, 2rem);
+    max-width: 20ch;
+  }
+  .msk-pitch {
+    font-size: 1rem;
+  }
+  .msk-feat-row {
+    grid-template-columns: 1fr;
+    gap: 0.35em;
+    padding: 1rem 1.1rem;
+  }
+  .msk-feat-tag {
+    font-size: 11.5px;
+  }
   .msk-gallery {
     grid-template-columns: 1fr;
+    gap: var(--ae-space-4);
+  }
+  .msk-shot img {
+    height: 18rem;
+  }
+  .msk-quickstart pre {
+    font-size: 12px;
+    padding: 1rem 1.1rem;
   }
 }
+
+/* ── reduced motion: aesthetic handles it globally; nothing to add ── */
