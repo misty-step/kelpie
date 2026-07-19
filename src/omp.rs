@@ -9,6 +9,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Seek};
 
 const RESULT_CLIP: usize = 4000;
 const SNIPPET_CLIP: usize = 140;
@@ -139,6 +140,56 @@ pub enum AskReceipt {
     Confirmed(Vec<String>),
     Error,
     Malformed,
+}
+
+/// Byte offset from which the next appended JSONL record must be scanned.
+pub fn user_message_cursor(path: &str) -> u64 {
+    std::fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
+}
+
+/// Scan only records appended after `cursor`, advancing it past complete lines.
+/// A partially written trailing record remains unread for the next poll.
+pub fn scan_new_user_message(path: &str, cursor: &mut u64, expected: &str) -> bool {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    if file.seek(std::io::SeekFrom::Start(*cursor)).is_err() {
+        return false;
+    }
+    let mut reader = BufReader::new(file);
+    loop {
+        let mut raw_line = String::new();
+        let Ok(read) = reader.read_line(&mut raw_line) else {
+            return false;
+        };
+        if read == 0 {
+            return false;
+        }
+        let terminated = raw_line.ends_with('\n');
+        let parsed = serde_json::from_str::<Value>(raw_line.trim_end());
+        if !terminated && parsed.is_err() {
+            return false;
+        }
+        *cursor = cursor.saturating_add(read as u64);
+        let Ok(event) = parsed else {
+            continue;
+        };
+        if event.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(message) = event.get("message") else {
+            continue;
+        };
+        if message.get("role").and_then(Value::as_str) != Some("user") {
+            continue;
+        }
+        let text = content_text(message.get("content").unwrap_or(&Value::Null));
+        if text == expected {
+            return true;
+        }
+    }
 }
 
 /// Find the option labels from the original exact ask tool call, even after
@@ -488,6 +539,41 @@ mod tests {
             ask_receipt(path.to_str().unwrap(), "missing"),
             AskReceipt::Pending
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn user_receipt_requires_new_exact_message() {
+        let path = std::env::temp_dir().join(format!(
+            "kelpie-omp-user-receipt-{}-{}.jsonl",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let before_raw = r#"{"type":"message","message":{"role":"user","content":"old"}}
+{"type":"session"}"#;
+        std::fs::write(&path, before_raw).unwrap();
+        let mut cursor = user_message_cursor(path.to_str().unwrap());
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}",
+                before_raw, r#"{"type":"message","message":{"role":"user","content":"new"}}"#
+            ),
+        )
+        .unwrap();
+        assert!(scan_new_user_message(
+            path.to_str().unwrap(),
+            &mut cursor,
+            "new"
+        ));
+        assert!(!scan_new_user_message(
+            path.to_str().unwrap(),
+            &mut cursor,
+            "old"
+        ));
         let _ = std::fs::remove_file(path);
     }
 }

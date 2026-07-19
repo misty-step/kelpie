@@ -7,9 +7,13 @@ use web_sys::{HtmlElement, HtmlInputElement, KeyboardEvent, MouseEvent};
 use yew::prelude::*;
 
 use crate::api;
-use crate::components::{Header, TabStrip};
+use crate::components::{status_descriptor, Header, TabStrip};
 use crate::icons::icon;
-use crate::types::{Fleet, Pane};
+use crate::storage::{
+    clear_draft_if_matches, clear_pending_text, load_draft, load_pending_text, save_draft,
+    save_pending_text, PendingTextAction,
+};
+use crate::types::{Fleet, Pane, TextActionPhase};
 use crate::{document, navigate, window, AppContext, Route, ToastKind, ToastMessage};
 
 #[derive(Properties, PartialEq)]
@@ -45,25 +49,6 @@ fn workspace_label(ctx: &AppContext, pane: Option<&Pane>) -> Option<String> {
         .or_else(|| (!pane.workspace_id.is_empty()).then(|| pane.workspace_id.clone()))
 }
 
-fn status_label(status: &str, pending: bool) -> String {
-    if pending {
-        return "Needs input".to_owned();
-    }
-    match status {
-        "working" => "Working".to_owned(),
-        "blocked" => "Needs input".to_owned(),
-        "idle" => "Idle".to_owned(),
-        "done" => "Done".to_owned(),
-        _ => "Unknown".to_owned(),
-    }
-}
-
-fn pane_is_gone(fleet: Option<&Rc<Fleet>>, pane_id: &str) -> bool {
-    fleet.is_some_and(|fleet| {
-        !fleet.panes.is_empty() && !fleet.panes.iter().any(|pane| pane.pane_id == pane_id)
-    })
-}
-
 fn toast(ctx: &AppContext, text: impl Into<String>, kind: ToastKind) {
     ctx.toast.emit(ToastMessage {
         text: text.into(),
@@ -71,37 +56,7 @@ fn toast(ctx: &AppContext, text: impl Into<String>, kind: ToastKind) {
     });
 }
 
-fn draft_store() -> Option<web_sys::Storage> {
-    window().local_storage().ok()?
-}
-
-fn draft_key(pane_id: &str) -> String {
-    format!("kelpie:draft:{pane_id}")
-}
-
-fn load_draft(pane_id: &str) -> String {
-    draft_store()
-        .and_then(|store| store.get_item(&draft_key(pane_id)).ok().flatten())
-        .unwrap_or_default()
-}
-
-fn save_draft(pane_id: &str, value: &str) {
-    if let Some(store) = draft_store() {
-        let _ = store.set_item(&draft_key(pane_id), value);
-    }
-}
-
-fn clear_draft_if_matches(pane_id: &str, expected: &str) {
-    let Some(store) = draft_store() else {
-        return;
-    };
-    let key = draft_key(pane_id);
-    let current = store.get_item(&key).ok().flatten();
-    if current.as_deref() != Some(expected) && !(current.is_none() && expected.is_empty()) {
-        return;
-    }
-    let _ = store.remove_item(&key);
-}
+const SCREEN_NOT_FOUND_LIMIT: usize = 3;
 
 #[derive(Default)]
 struct ScreenRefresh {
@@ -111,6 +66,43 @@ struct ScreenRefresh {
     next_generation: u64,
     applied_generation: u64,
 }
+impl ScreenRefresh {
+    fn request(&mut self) -> Option<u64> {
+        if self.in_flight {
+            self.pending = true;
+            return None;
+        }
+        if self.queued {
+            return None;
+        }
+        self.queued = true;
+        self.next_generation = self.next_generation.wrapping_add(1);
+        Some(self.next_generation)
+    }
+
+    fn begin(&mut self) -> Option<u64> {
+        if !self.queued {
+            return None;
+        }
+        self.queued = false;
+        self.in_flight = true;
+        Some(self.next_generation)
+    }
+
+    fn finish(&mut self, closed: bool) -> Option<u64> {
+        self.in_flight = false;
+        if closed {
+            self.pending = false;
+            self.queued = false;
+            return None;
+        }
+        if self.pending {
+            self.pending = false;
+            return self.request();
+        }
+        None
+    }
+}
 
 #[function_component(TermView)]
 pub fn term_view(props: &TermViewProps) -> Html {
@@ -119,15 +111,51 @@ pub fn term_view(props: &TermViewProps) -> Html {
     let screen = use_state(String::new);
     let draft = use_state(|| load_draft(&pane_id));
     let draft_current = use_mut_ref(|| load_draft(&pane_id));
+    let pending_text = use_state(|| load_pending_text(&pane_id));
     let closed = use_state(|| false);
     let near_bottom = use_mut_ref(|| true);
     let poll_timer = use_mut_ref(|| None::<Interval>);
     let transient_timer = use_mut_ref(|| None::<Timeout>);
     let screen_refresh = use_mut_ref(ScreenRefresh::default);
+    let screen_not_found_count = use_mut_ref(|| 0_usize);
     let screen_tick = use_state(|| 0_u64);
     let writer_busy = use_state(|| false);
     let writer_lock = use_mut_ref(|| false);
     let screen_wrap_ref = use_node_ref();
+    {
+        let pending_text = pending_text.clone();
+        let pane_id = pane_id.clone();
+        let draft = draft.clone();
+        let draft_current = draft_current.clone();
+        let pending = pending_text.as_ref().cloned();
+        use_effect_with(pending, move |pending| {
+            if let Some(pending) = pending.clone() {
+                let pending_text = pending_text.clone();
+                let pane_id = pane_id.clone();
+                let draft = draft.clone();
+                let draft_current = draft_current.clone();
+                spawn_local(async move {
+                    if let Ok(receipt) = api::text_status(&pane_id, &pending.action_id).await {
+                        if receipt.phase == TextActionPhase::Confirmed {
+                            clear_draft_if_matches(&pane_id, &pending.submitted_draft);
+                            if *draft_current.borrow() == pending.submitted_draft {
+                                *draft_current.borrow_mut() = String::new();
+                                draft.set(String::new());
+                            }
+                        }
+                        if matches!(
+                            receipt.phase,
+                            TextActionPhase::Confirmed | TextActionPhase::FailedBeforeSubmit
+                        ) {
+                            clear_pending_text(&pane_id, &pending.action_id);
+                            pending_text.set(None);
+                        }
+                    }
+                });
+            }
+            || ()
+        });
+    }
 
     let pane = pane_for(ctx.fleet.as_ref(), &pane_id);
     let workspace = workspace_label(&ctx, pane.as_ref());
@@ -135,7 +163,7 @@ pub fn term_view(props: &TermViewProps) -> Html {
     let header_workspace = Some(title.clone());
     let pending = pane.as_ref().is_some_and(|value| value.pending_ask);
     let status = pane.as_ref().map(Pane::status).unwrap_or("unknown");
-    let status = status_label(status, pending);
+    let status = status_descriptor(status, pending);
     let is_agent = pane.as_ref().is_some_and(|value| value.agent.is_some());
 
     let load_screen = {
@@ -146,20 +174,8 @@ pub fn term_view(props: &TermViewProps) -> Html {
             if *closed {
                 return;
             }
-            let should_schedule = {
-                let mut refresh = screen_refresh.borrow_mut();
-                if refresh.in_flight {
-                    refresh.pending = true;
-                    false
-                } else if refresh.queued {
-                    false
-                } else {
-                    refresh.queued = true;
-                    true
-                }
-            };
-            if should_schedule {
-                screen_tick.set((*screen_tick).wrapping_add(1));
+            if let Some(generation) = screen_refresh.borrow_mut().request() {
+                screen_tick.set(generation);
             }
         })
     };
@@ -168,6 +184,7 @@ pub fn term_view(props: &TermViewProps) -> Html {
         let closed = closed.clone();
         let screen = screen.clone();
         let screen_refresh = screen_refresh.clone();
+        let screen_not_found_count = screen_not_found_count.clone();
         let screen_tick = screen_tick.clone();
         let screen_wrap_ref = screen_wrap_ref.clone();
         let near_bottom = near_bottom.clone();
@@ -179,16 +196,13 @@ pub fn term_view(props: &TermViewProps) -> Html {
             if *closed || !screen_refresh.borrow().queued {
                 return ();
             }
-            let generation = {
-                let mut refresh = screen_refresh.borrow_mut();
-                refresh.queued = false;
-                refresh.in_flight = true;
-                refresh.next_generation = refresh.next_generation.wrapping_add(1);
-                refresh.next_generation
+            let Some(generation) = screen_refresh.borrow_mut().begin() else {
+                return ();
             };
             spawn_local(async move {
                 match api::screen(&pane_id).await {
                     Ok(response) => {
+                        *screen_not_found_count.borrow_mut() = 0;
                         let should_apply = {
                             let mut refresh = screen_refresh.borrow_mut();
                             if generation < refresh.applied_generation {
@@ -212,34 +226,25 @@ pub fn term_view(props: &TermViewProps) -> Html {
                         }
                     }
                     Err(error) if error.status == 404 => {
-                        poll_timer.borrow_mut().take();
-                        closed.set(true);
-                        toast(&ctx, "Pane closed", ToastKind::Info);
-                        navigate(&Route::Inbox);
+                        let attempts = {
+                            let mut count = screen_not_found_count.borrow_mut();
+                            *count = count.saturating_add(1);
+                            *count
+                        };
+                        if attempts >= SCREEN_NOT_FOUND_LIMIT {
+                            poll_timer.borrow_mut().take();
+                            closed.set(true);
+                            toast(&ctx, "Pane closed", ToastKind::Info);
+                            navigate(&Route::Inbox);
+                        }
                     }
                     Err(_) => {
                         // Keep the last good screen. Polling retries transient failures.
                     }
                 }
-                let schedule_next = {
-                    let mut refresh = screen_refresh.borrow_mut();
-                    if *closed {
-                        refresh.in_flight = false;
-                        refresh.pending = false;
-                        refresh.queued = false;
-                        false
-                    } else if refresh.pending {
-                        refresh.pending = false;
-                        refresh.in_flight = false;
-                        refresh.queued = true;
-                        true
-                    } else {
-                        refresh.in_flight = false;
-                        false
-                    }
-                };
-                if schedule_next {
-                    screen_tick.set((*screen_tick).wrapping_add(1));
+                let next_generation = screen_refresh.borrow_mut().finish(*closed);
+                if let Some(generation) = next_generation {
+                    screen_tick.set(generation);
                 }
             });
             ()
@@ -250,6 +255,7 @@ pub fn term_view(props: &TermViewProps) -> Html {
         let closed = closed.clone();
         let screen = screen.clone();
         let poll_timer = poll_timer.clone();
+        let screen_not_found_count = screen_not_found_count.clone();
         let transient_timer = transient_timer.clone();
         let load_screen = load_screen.clone();
         let pane_id = pane_id.clone();
@@ -257,6 +263,7 @@ pub fn term_view(props: &TermViewProps) -> Html {
         let focus_screen_ref = screen_wrap_ref.clone();
         use_effect_with(pane_id, move |_| {
             closed.set(false);
+            *screen_not_found_count.borrow_mut() = 0;
             screen.set(String::new());
             let is_visible = document().visibility_state() == web_sys::VisibilityState::Visible;
             if is_visible {
@@ -334,20 +341,6 @@ pub fn term_view(props: &TermViewProps) -> Html {
     }
 
     {
-        let pane_id = pane_id.clone();
-        let ctx = ctx.clone();
-        let closed = closed.clone();
-        use_effect_with((ctx.fleet.clone(), pane_id), move |(fleet, pane_id)| {
-            if pane_is_gone(fleet.as_ref(), pane_id) && !*closed {
-                closed.set(true);
-                toast(&ctx, "Pane closed", ToastKind::Info);
-                navigate(&Route::Inbox);
-            }
-            || ()
-        });
-    }
-
-    {
         let load_screen = load_screen.clone();
         let ctx = ctx.clone();
         let previous_connected = use_mut_ref(|| ctx.connected);
@@ -389,6 +382,7 @@ pub fn term_view(props: &TermViewProps) -> Html {
     let send_text = {
         let draft = draft.clone();
         let draft_current = draft_current.clone();
+        let pending_text = pending_text.clone();
         let pane_id = pane_id.clone();
         let ctx = ctx.clone();
         let load_screen = load_screen.clone();
@@ -397,9 +391,22 @@ pub fn term_view(props: &TermViewProps) -> Html {
         Callback::from(move |_| {
             let submitted_draft = draft_current.borrow().clone();
             let text = submitted_draft.trim().to_owned();
-            if text.is_empty() || *writer_busy || *writer_lock.borrow() {
+            if text.is_empty() || *writer_busy || *writer_lock.borrow() || pending_text.is_some() {
                 return;
             }
+            let pending = PendingTextAction {
+                action_id: format!("text:{}:{}", pane_id, js_sys::Date::now() as u64),
+                submitted_draft: submitted_draft.clone(),
+            };
+            if !save_pending_text(&pane_id, &pending) {
+                toast(
+                    &ctx,
+                    "Cannot save a delivery receipt; text was not sent",
+                    ToastKind::Error,
+                );
+                return;
+            }
+            pending_text.set(Some(pending.clone()));
             *writer_lock.borrow_mut() = true;
             writer_busy.set(true);
             let pane_id = pane_id.clone();
@@ -409,8 +416,17 @@ pub fn term_view(props: &TermViewProps) -> Html {
             let draft_current = draft_current.clone();
             let writer_busy = writer_busy.clone();
             let writer_lock = writer_lock.clone();
+            let pending_text = pending_text.clone();
             spawn_local(async move {
-                if api::send_text(&pane_id, &text).await.is_ok() {
+                let receipt = api::submit_text_action(&pane_id, &text, &pending.action_id).await;
+                if matches!(
+                    receipt.phase,
+                    TextActionPhase::Confirmed | TextActionPhase::FailedBeforeSubmit
+                ) {
+                    clear_pending_text(&pane_id, &pending.action_id);
+                    pending_text.set(None);
+                }
+                if receipt.phase == TextActionPhase::Confirmed {
                     if *draft_current.borrow() == submitted_draft {
                         *draft_current.borrow_mut() = String::new();
                         draft.set(String::new());
@@ -418,7 +434,13 @@ pub fn term_view(props: &TermViewProps) -> Html {
                     clear_draft_if_matches(&pane_id, &submitted_draft);
                     load_screen.emit(());
                 } else {
-                    toast(&ctx, "Failed to send", ToastKind::Error);
+                    toast(
+                        &ctx,
+                        receipt
+                            .error
+                            .unwrap_or_else(|| "Message was not confirmed".to_owned()),
+                        ToastKind::Error,
+                    );
                 }
                 writer_busy.set(false);
                 *writer_lock.borrow_mut() = false;
@@ -499,20 +521,41 @@ pub fn term_view(props: &TermViewProps) -> Html {
         Html::default()
     };
 
+    let clear_unconfirmed = {
+        let pending_text = pending_text.clone();
+        let pane_id = pane_id.clone();
+        Callback::from(move |_| {
+            if let Some(pending) = pending_text.as_ref() {
+                clear_pending_text(&pane_id, &pending.action_id);
+                pending_text.set(None);
+            }
+        })
+    };
+    let unresolved_send = if pending_text.is_some() {
+        html! {
+            <div class="delivery-warning" role="status">
+                <span>{"Delivery unconfirmed. Verify the screen before sending again."}</span>
+                <button type="button" onclick={clear_unconfirmed}>{"I checked"}</button>
+            </div>
+        }
+    } else {
+        Html::default()
+    };
     html! {
         <div class="view term-view">
-            <Header title={title} workspace={header_workspace} status={Some(status)} pending={pending} connected={ctx.connected} on_back={Some(on_back)}>
+            <Header title={title} workspace={header_workspace} status={Some(status.label.to_owned())} pending={pending} connected={ctx.connected} on_back={Some(on_back)}>
                 {reconnect}
                 {chat}
             </Header>
-            <TabStrip pane_id={pane_id.clone()} />
+            <TabStrip pane_id={pane_id.clone()} busy={*writer_busy || pending_text.is_some()} />
             <div class="scroll term-screen-wrap" ref={screen_wrap_ref}>
                 <pre class="term-screen">{(*screen).clone()}</pre>
             </div>
             <div class="term-composer kb-pin">
+                {unresolved_send}
                 <div class="term-composer-row">
                     <input type="text" placeholder="Type and send…" autocapitalize="off" autocorrect="off" spellcheck="false" value={(*draft).clone()} oninput={on_draft} onkeydown={on_text_keydown} />
-                    <button type="button" class="term-send-btn" onclick={on_send_text} disabled={*writer_busy}>{"Send"}</button>
+                    <button type="button" class="term-send-btn" onclick={on_send_text} disabled={*writer_busy || pending_text.is_some()}>{"Send"}</button>
                 </div>
                 <div class="term-keys-row">
                     {key_button("Enter", "Enter", "corner-down-left", send_keys.clone())}
@@ -524,5 +567,22 @@ pub fn term_view(props: &TermViewProps) -> Html {
                 </div>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ScreenRefresh;
+
+    #[test]
+    fn screen_refresh_issues_a_new_generation_after_each_completed_poll() {
+        let mut refresh = ScreenRefresh::default();
+        assert_eq!(refresh.request(), Some(1));
+        assert_eq!(refresh.begin(), Some(1));
+        assert_eq!(refresh.request(), None);
+        assert_eq!(refresh.finish(false), Some(2));
+        assert_eq!(refresh.begin(), Some(2));
+        assert_eq!(refresh.finish(false), None);
+        assert_eq!(refresh.request(), Some(3));
     }
 }

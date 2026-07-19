@@ -93,8 +93,10 @@ viewport tracking, not scroll hacks).
 2. **Reply from the composer.** Text is saved in browser storage on every
    keystroke, separately for each pane. It survives inbox navigation, pane
    switches, full reloads, and background SSE refreshes. Send clears that
-   pane's saved draft only after the bridge confirms submission; a failed or
-   still-running send keeps the text.
+   pane's saved draft only after the bridge confirms submission. If delivery
+   crossed Enter but cannot be confirmed, Kelpie also persists that action id
+   and blocks fresh sends across reloads; inspect the raw terminal and tap
+   **I checked** before deliberately allowing another send.
 3. **Change session controls deliberately.** Tap the model chip for a
    searchable catalog, or the effort chip for the active model's supported
    levels. Both controls are serialized per pane and disable conflicting
@@ -147,7 +149,9 @@ Everything the frontend uses, usable from scripts too:
 | `POST /api/pane/{pane_id}/thinking` | Select an exact supported reasoning level; success includes the confirmed level |
 | `POST /api/pane/{pane_id}/model` | Select an exact model for this session; success includes the confirmed selector |
 | `POST /api/pane/{pane_id}/upload` | Upload an image; returns a path omp can read |
-| `POST /api/workspace`, `/api/tab`, … | Create/close workspaces and tabs |
+| `POST /api/workspace`, `/api/workspace/{id}/close`, `/api/tab/{id}/close` | Create or close workspaces and tabs |
+| `POST /api/tab` | Create a tab with a caller-stable `action_id`; duplicate delivery is accepted once |
+| `GET /api/tab/{workspace_id}/action/{action_id}` | Read back an accepted tab-creation action after a lost response |
 
 ### Why reasoning effort "cycles"
 

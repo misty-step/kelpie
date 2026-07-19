@@ -5,7 +5,7 @@ use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 use crate::api;
-use crate::components::{BottomSheet, Header};
+use crate::components::{status_descriptor, BottomSheet, Header};
 use crate::icons::{avatar, hue_for, icon};
 use crate::types::{Fleet, Pane};
 use crate::{navigate, AppContext, Route};
@@ -17,27 +17,14 @@ enum LoadState {
     Error,
 }
 
-const STATUS_TIERS: [(&str, u8); 5] = [
-    ("blocked", 1),
-    ("working", 2),
-    ("idle", 3),
-    ("done", 4),
-    ("unknown", 5),
-];
-
-fn normalized_status(pane: &Pane) -> String {
-    pane.status().to_ascii_lowercase()
-}
-
 fn status_tier(pane: &Pane) -> u8 {
-    if pane.pending_ask {
-        return 0;
+    match status_descriptor(pane.status(), pane.pending_ask).class {
+        "needs-input" => 0,
+        "working" => 1,
+        "idle" => 2,
+        "done" => 3,
+        _ => 4,
     }
-    let status = normalized_status(pane);
-    STATUS_TIERS
-        .iter()
-        .find_map(|(name, tier)| (*name == status).then_some(*tier))
-        .unwrap_or(5)
 }
 
 fn workspace_label(fleet: &Fleet, pane: &Pane) -> String {
@@ -114,25 +101,11 @@ fn sort_panes<'a>(fleet: &'a Fleet) -> (Vec<&'a Pane>, Vec<&'a Pane>) {
 }
 
 fn status_class(pane: &Pane) -> &'static str {
-    if pane.pending_ask {
-        "blocked"
-    } else {
-        match normalized_status(pane).as_str() {
-            "blocked" => "blocked",
-            "working" => "working",
-            "idle" => "idle",
-            "done" => "done",
-            _ => "unknown",
-        }
-    }
+    status_descriptor(pane.status(), pane.pending_ask).class
 }
 
-fn status_label(pane: &Pane) -> String {
-    if pane.pending_ask {
-        "needs input".to_owned()
-    } else {
-        normalized_status(pane)
-    }
+fn status_label(pane: &Pane) -> &'static str {
+    status_descriptor(pane.status(), pane.pending_ask).label
 }
 
 fn pane_card(fleet: &Fleet, pane: &Pane, terminal: bool) -> Html {
@@ -179,6 +152,7 @@ pub fn inbox_view() -> Html {
     let cwd = use_state(String::new);
     let dialog_error = use_state(|| None::<String>);
     let submitting = use_state(|| false);
+    let submitting_lock = use_mut_ref(|| false);
 
     {
         let local_fleet = local_fleet.clone();
@@ -211,19 +185,23 @@ pub fn inbox_view() -> Html {
     let close_dialog = {
         let dialog_open = dialog_open.clone();
         let dialog_error = dialog_error.clone();
+        let submitting_lock = submitting_lock.clone();
         Callback::from(move |_| {
-            dialog_error.set(None);
-            dialog_open.set(false);
+            if !*submitting_lock.borrow() {
+                dialog_error.set(None);
+                dialog_open.set(false);
+            }
         })
     };
     let submit_workspace: Callback<()> = {
         let cwd = cwd.clone();
         let dialog_error = dialog_error.clone();
         let submitting = submitting.clone();
+        let submitting_lock = submitting_lock.clone();
         let dialog_open = dialog_open.clone();
         let fleet_refresh = context.fleet_refresh.clone();
         Callback::from(move |_| {
-            if *submitting {
+            if *submitting_lock.borrow() {
                 return;
             }
             let directory = cwd.trim().to_owned();
@@ -231,11 +209,13 @@ pub fn inbox_view() -> Html {
                 dialog_error.set(Some("Enter a directory path.".to_owned()));
                 return;
             }
+            *submitting_lock.borrow_mut() = true;
             submitting.set(true);
             dialog_error.set(None);
             let cwd = cwd.clone();
             let dialog_error = dialog_error.clone();
             let submitting = submitting.clone();
+            let submitting_lock = submitting_lock.clone();
             let dialog_open = dialog_open.clone();
             let fleet_refresh = fleet_refresh.clone();
             spawn_local(async move {
@@ -250,6 +230,7 @@ pub fn inbox_view() -> Html {
                     }
                     Err(_) => dialog_error.set(Some("Failed to create workspace.".to_owned())),
                 }
+                *submitting_lock.borrow_mut() = false;
                 submitting.set(false);
             });
         })
@@ -363,8 +344,10 @@ pub fn inbox_view() -> Html {
                         <div class="dialog-error" role="alert">{message}</div>
                     }
                     <div class="dialog-actions">
-                        <button class="dialog-cancel-btn" style="min-height:44px" type="button" onclick={close_dialog.clone()}>{"Cancel"}</button>
-                        <button class="dialog-create-btn" style="min-height:44px" type="button" disabled={*submitting} onclick={submit_click}>{"Create"}</button>
+                        <button class="dialog-cancel-btn" style="min-height:44px" type="button" onclick={close_dialog.clone()} disabled={*submitting}>{"Cancel"}</button>
+                        <button class="dialog-create-btn" style="min-height:44px" type="button" disabled={*submitting} aria-busy={submitting.to_string()} onclick={submit_click}>
+                            {if *submitting { "Creating…" } else { "Create" }}
+                        </button>
                     </div>
                 </BottomSheet>
             }

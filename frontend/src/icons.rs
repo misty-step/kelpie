@@ -184,6 +184,9 @@ fn svg_body(name: &str) -> &'static str {
         "ellipsis" => {
             r#"<circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />"#
         }
+        "trash-2" => {
+            r#"<path d="M3 6h18" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M10 11v6" /><path d="M14 11v6" />"#
+        }
         "arrow-down" => r#"<path d="M12 5v14" /><path d="m19 12-7 7-7-7" />"#,
         "corner-down-left" => r#"<path d="M9 10 4 15l5 5" /><path d="M20 4v7a4 4 0 0 1-4 4H4" />"#,
         "activity" => r#"<polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />"#,

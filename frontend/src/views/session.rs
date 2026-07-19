@@ -12,12 +12,17 @@ use web_sys::{
 use yew::prelude::*;
 
 use crate::api;
-use crate::components::{BottomSheet, Header, MetaBadge, TabStrip};
+use crate::components::{status_descriptor, BottomSheet, Header, MetaBadge, TabStrip};
 use crate::icons::icon;
 use crate::markdown;
+use crate::storage::{
+    clear_draft_if_matches, clear_pending_text, load_draft, load_pending_text, save_draft,
+    save_pending_text, PendingTextAction,
+};
 use crate::types::{
-    Ask, AskActionKey, AskActionPhase, AskActionReceipt, Command, Entry, Model, Pane, SessionModel,
-    Transcript,
+    canonical_model_label, dedupe_models, format_model_pricing, Ask, AskActionKey, AskActionPhase,
+    AskActionReceipt, Command, Entry, Model, ModelCatalogStatus, Pane, SessionModel,
+    TextActionPhase, TextActionReceipt, Transcript,
 };
 use crate::{navigate, AppContext, Route, ToastKind, ToastMessage};
 
@@ -292,6 +297,10 @@ async fn poll_ask_action(
     }
 }
 
+fn text_receipt_confirmed(receipt: &TextActionReceipt) -> bool {
+    matches!(receipt.phase, TextActionPhase::Confirmed)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct Attachment {
     id: usize,
@@ -313,6 +322,56 @@ struct ModelOverride {
     label: String,
     min_generation: u64,
 }
+fn model_override_superseded(
+    value: &ModelOverride,
+    model: Option<&SessionModel>,
+    fetched_generation: u64,
+) -> bool {
+    fetched_generation >= value.min_generation.saturating_add(3)
+        && selector(model, None).is_some_and(|server| server != value.selector)
+}
+fn model_override_key(pane_id: &str) -> String {
+    format!("kelpie:model:{pane_id}")
+}
+
+fn encode_model_override(value: &ModelOverride) -> String {
+    format!("{}\n{}", value.selector, value.label)
+}
+
+fn decode_model_override(raw: &str) -> Option<ModelOverride> {
+    let (selector, label) = raw.split_once('\n')?;
+    if selector.is_empty() || label.is_empty() {
+        return None;
+    }
+    Some(ModelOverride {
+        selector: selector.to_owned(),
+        label: label.to_owned(),
+        min_generation: 0,
+    })
+}
+
+fn load_model_override(pane_id: &str) -> Option<ModelOverride> {
+    crate::window()
+        .session_storage()
+        .ok()
+        .flatten()?
+        .get_item(&model_override_key(pane_id))
+        .ok()
+        .flatten()
+        .and_then(|raw| decode_model_override(&raw))
+}
+
+fn save_model_override(pane_id: &str, value: &ModelOverride) {
+    if let Ok(Some(store)) = crate::window().session_storage() {
+        let _ = store.set_item(&model_override_key(pane_id), &encode_model_override(value));
+    }
+}
+
+fn clear_model_override(pane_id: &str) {
+    if let Ok(Some(store)) = crate::window().session_storage() {
+        let _ = store.remove_item(&model_override_key(pane_id));
+    }
+}
 
 fn pane_for(fleet: Option<&Rc<crate::types::Fleet>>, pane_id: &str) -> Option<Pane> {
     fleet?
@@ -331,69 +390,6 @@ fn workspace_label(ctx: &AppContext, pane: Option<&Pane>) -> Option<String> {
         .find(|workspace| workspace.id == pane.workspace_id)
         .and_then(|workspace| workspace.label.clone())
         .or_else(|| (!pane.workspace_id.is_empty()).then(|| pane.workspace_id.clone()))
-}
-
-fn basename(path: &str) -> String {
-    path.rsplit('/')
-        .next()
-        .filter(|part| !part.is_empty())
-        .unwrap_or(path)
-        .to_owned()
-}
-fn draft_store() -> Option<web_sys::Storage> {
-    crate::window().local_storage().ok()?
-}
-
-fn draft_key(pane_id: &str) -> String {
-    format!("kelpie:draft:{pane_id}")
-}
-
-fn load_draft(pane_id: &str) -> String {
-    draft_store()
-        .and_then(|store| store.get_item(&draft_key(pane_id)).ok().flatten())
-        .unwrap_or_default()
-}
-
-fn save_draft(pane_id: &str, value: &str) {
-    if let Some(store) = draft_store() {
-        let _ = store.set_item(&draft_key(pane_id), value);
-    }
-}
-
-fn clear_draft_if_matches(pane_id: &str, expected: &str) {
-    let Some(store) = draft_store() else {
-        return;
-    };
-    let key = draft_key(pane_id);
-    let current = store.get_item(&key).ok().flatten();
-    if current.as_deref() != Some(expected) && !(current.is_none() && expected.is_empty()) {
-        return;
-    }
-    let _ = store.remove_item(&key);
-}
-
-fn display_title(data: Option<&Transcript>, pane: Option<&Pane>, pane_id: &str) -> String {
-    data.and_then(|item| item.title.clone())
-        .or_else(|| pane.and_then(|item| item.title.clone()))
-        .or_else(|| {
-            pane.map(|item| basename(&item.cwd))
-                .filter(|item| !item.is_empty())
-        })
-        .unwrap_or_else(|| basename(pane_id))
-}
-
-fn status_label(status: &str, pending: bool) -> String {
-    if pending {
-        return "Needs input".into();
-    }
-    match status {
-        "working" => "Working",
-        "blocked" => "Blocked",
-        "idle" => "Idle",
-        "done" => "Done",
-        _ => "Unknown",
-    }
-    .into()
 }
 
 fn relative_time(raw: &str) -> String {
@@ -459,26 +455,34 @@ fn thinking_label(level: &str) -> String {
     .into()
 }
 
-fn model_label(model: Option<&SessionModel>, override_model: Option<&ModelOverride>) -> String {
+fn model_label(
+    model: Option<&SessionModel>,
+    override_model: Option<&ModelOverride>,
+    catalog: Option<&[Model]>,
+) -> String {
     if let Some(value) = override_model {
         return value.label.clone();
     }
     let Some(model) = model else {
         return "model …".into();
     };
-    let name = if model.model.is_empty() {
-        model.provider.clone()
-    } else {
+    let session_selector = if model.model.contains('/') {
         model.model.clone()
-    };
-    if model.provider.is_empty() {
-        return name;
-    }
-    if name.starts_with(&format!("{}/", model.provider)) || name == model.provider {
-        name
     } else {
-        format!("{} · {}", model.provider, name)
+        format!("{}/{}", model.provider, model.model)
+    };
+    if let Some(entry) = catalog.and_then(|models| {
+        models
+            .iter()
+            .find(|entry| entry.selector() == session_selector)
+    }) {
+        return entry.canonical_label();
     }
+    let id = model
+        .model
+        .strip_prefix(&format!("{}/", model.provider))
+        .unwrap_or(model.model.as_str());
+    canonical_model_label(&model.provider, id, "")
 }
 
 fn selector(
@@ -488,9 +492,13 @@ fn selector(
     override_model
         .map(|value| value.selector.clone())
         .or_else(|| {
-            model
-                .filter(|value| !value.model.is_empty())
-                .map(|value| format!("{}/{}", value.provider, value.model))
+            model.filter(|value| !value.model.is_empty()).map(|value| {
+                if value.model.contains('/') {
+                    value.model.clone()
+                } else {
+                    format!("{}/{}", value.provider, value.model)
+                }
+            })
         })
 }
 
@@ -525,23 +533,27 @@ fn toast(ctx: &AppContext, text: impl Into<String>, kind: ToastKind) {
 
 #[derive(Default)]
 struct SessionRefreshGate {
-    in_flight: bool,
+    in_flight: Option<String>,
     queued: bool,
     wake_epoch: u64,
 }
 
 impl SessionRefreshGate {
-    fn begin(&mut self) -> bool {
-        if self.in_flight {
+    fn begin(&mut self, pane_id: &str, generation: &mut u64) -> Option<u64> {
+        if let Some(in_flight) = self.in_flight.as_deref() {
             self.queued = true;
-            return false;
+            if in_flight != pane_id {
+                *generation = generation.wrapping_add(1);
+            }
+            return None;
         }
-        self.in_flight = true;
-        true
+        self.in_flight = Some(pane_id.to_owned());
+        *generation = generation.wrapping_add(1);
+        Some(*generation)
     }
 
     fn finish(&mut self) -> Option<u64> {
-        self.in_flight = false;
+        self.in_flight = None;
         if !std::mem::take(&mut self.queued) {
             return None;
         }
@@ -573,18 +585,23 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let sending = use_state(|| false);
     let draft = use_state(|| load_draft(&pane_id));
     let draft_current = use_mut_ref(|| load_draft(&pane_id));
+    let pending_text = use_state(|| load_pending_text(&pane_id));
     let suggestions = use_state(|| Vec::<Command>::new());
     let commands = use_state(|| None::<Vec<Command>>);
-    let models = use_state(|| None::<Vec<Model>>);
     let attachments = use_state(Vec::<Attachment>::new);
-    let next_attachment = use_state(|| 0_usize);
+    let attachments_current = use_mut_ref(Vec::<Attachment>::new);
+    let next_attachment = use_mut_ref(|| 0_usize);
     let uploading = use_state(|| 0_usize);
+    let uploading_current = use_mut_ref(|| 0_usize);
     let thinking_expanded = use_state(HashSet::<usize>::new);
     let tool_expanded = use_state(HashSet::<usize>::new);
     let thinking_override = use_state(|| None::<String>);
     let thinking_override_generation = use_state(|| 0_u64);
     let thinking_busy = use_state(|| false);
-    let model_override = use_state(|| None::<ModelOverride>);
+    let model_override = use_state({
+        let pane_id = pane_id.clone();
+        move || load_model_override(&pane_id)
+    });
     let model_busy = use_state(|| false);
     let live_thinking = use_state(|| None::<String>);
     let sheet = use_state(|| None::<Sheet>);
@@ -596,6 +613,40 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     let transcript_ref = use_node_ref();
     let textarea_ref = use_node_ref();
     let file_ref = use_node_ref();
+    {
+        let pending_text = pending_text.clone();
+        let pane_id = pane_id.clone();
+        let draft = draft.clone();
+        let draft_current = draft_current.clone();
+        let pending = pending_text.as_ref().cloned();
+        use_effect_with(pending, move |pending| {
+            if let Some(pending) = pending.clone() {
+                let pending_text = pending_text.clone();
+                let pane_id = pane_id.clone();
+                let draft = draft.clone();
+                let draft_current = draft_current.clone();
+                spawn_local(async move {
+                    if let Ok(receipt) = api::text_status(&pane_id, &pending.action_id).await {
+                        if receipt.phase == TextActionPhase::Confirmed {
+                            clear_draft_if_matches(&pane_id, &pending.submitted_draft);
+                            if *draft_current.borrow() == pending.submitted_draft {
+                                *draft_current.borrow_mut() = String::new();
+                                draft.set(String::new());
+                            }
+                        }
+                        if matches!(
+                            receipt.phase,
+                            TextActionPhase::Confirmed | TextActionPhase::FailedBeforeSubmit
+                        ) {
+                            clear_pending_text(&pane_id, &pending.action_id);
+                            pending_text.set(None);
+                        }
+                    }
+                });
+            }
+            || ()
+        });
+    }
     {
         let session_generation = session_generation.clone();
         let ask_poll_generation = ask_poll_generation.clone();
@@ -638,12 +689,11 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             ),
             move |_| {
                 let generation = {
+                    let mut gate = session_refresh_gate.borrow_mut();
                     let mut current = session_generation.borrow_mut();
-                    *current = current.wrapping_add(1);
-                    *current
+                    gate.begin(&pane_id, &mut current)
                 };
-                let should_fetch = session_refresh_gate.borrow_mut().begin();
-                if should_fetch {
+                if let Some(generation) = generation {
                     let have_data = matches!(
                         &*state,
                         SessionState::Ready { pane_id: loaded, .. } if loaded == &pane_id
@@ -749,17 +799,21 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let model_override = model_override.clone();
         let thinking_override = thinking_override.clone();
         let thinking_override_generation = thinking_override_generation.clone();
+        let pane_id = pane_id.clone();
         let applied_generation = *session_applied_generation;
         use_effect_with(
             (ready.clone(), applied_generation),
             move |(transcript, fetched_generation)| {
                 if let Some(transcript) = transcript {
                     if model_override.as_ref().is_some_and(|value| {
-                        value.min_generation < *fetched_generation
-                            && selector(transcript.model.as_ref(), None).as_deref()
-                                == Some(value.selector.as_str())
+                        model_override_superseded(
+                            value,
+                            transcript.model.as_ref(),
+                            *fetched_generation,
+                        )
                     }) {
                         model_override.set(None);
+                        clear_model_override(&pane_id);
                     }
                     if thinking_override.as_ref().is_some_and(|value| {
                         *thinking_override_generation < *fetched_generation
@@ -917,9 +971,14 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     } else {
         pane.as_ref().map(Pane::status).unwrap_or("unknown")
     };
-    let title = display_title(ready.as_ref(), pane.as_ref(), &pane_id);
+    let title = workspace.clone().unwrap_or_else(|| pane_id.clone());
+    let status_label = status_descriptor(status, pending).label.to_owned();
     let model = ready.as_ref().and_then(|data| data.model.clone());
-    let model_text = model_label(model.as_ref(), model_override.as_ref());
+    let model_text = model_label(
+        model.as_ref(),
+        model_override.as_ref(),
+        ctx.model_catalog.as_deref().map(Vec::as_slice),
+    );
     let thinking = thinking_override
         .as_ref()
         .cloned()
@@ -931,39 +990,31 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         && !*model_busy
         && !*sending
         && !*writer_busy
+        && pending_text.is_none()
         && !ask_write_blocked;
 
     let on_back = Callback::from(|_: MouseEvent| navigate(&Route::Inbox));
     let open_model = {
         let sheet = sheet.clone();
         let model_filter = model_filter.clone();
-        let models = models.clone();
-        let ctx = ctx.clone();
         let model_busy = model_busy.clone();
         let thinking_busy = thinking_busy.clone();
         let ask_write_blocked = ask_write_blocked;
+        let model_catalog_status = ctx.model_catalog_status;
+        let model_catalog_refresh = ctx.model_catalog_refresh.clone();
         Callback::from(move |_: MouseEvent| {
             if ask_write_blocked || *model_busy || *thinking_busy {
                 return;
             }
+            if model_catalog_status == ModelCatalogStatus::Unavailable {
+                model_catalog_refresh.emit(());
+            }
             model_filter.set(String::new());
             sheet.set(Some(Sheet::Models));
-            if models.is_none() {
-                let models = models.clone();
-                let ctx = ctx.clone();
-                spawn_local(async move {
-                    match api::models().await {
-                        Ok(items) => models.set(Some(items)),
-                        Err(_) => toast(&ctx, "Model list unavailable", ToastKind::Error),
-                    }
-                });
-            }
         })
     };
     let open_thinking = {
         let sheet = sheet.clone();
-        let ctx = ctx.clone();
-        let models = models.clone();
         let model_busy = model_busy.clone();
         let thinking_busy = thinking_busy.clone();
         let ask_write_blocked = ask_write_blocked;
@@ -972,17 +1023,6 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                 return;
             }
             sheet.set(Some(Sheet::Thinking));
-            if models.is_none() {
-                let models = models.clone();
-                let ctx = ctx.clone();
-                spawn_local(async move {
-                    if let Ok(items) = api::models().await {
-                        models.set(Some(items));
-                    } else {
-                        toast(&ctx, "Model list unavailable", ToastKind::Error);
-                    }
-                });
-            }
         })
     };
 
@@ -1053,6 +1093,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let draft = draft.clone();
         let draft_current = draft_current.clone();
         let attachments = attachments.clone();
+        let attachments_current = attachments_current.clone();
+        let pending_text = pending_text.clone();
+        let uploading_current = uploading_current.clone();
         let suggestions = suggestions.clone();
         let sending = sending.clone();
         let optimistic_working = optimistic_working.clone();
@@ -1062,12 +1105,19 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let ctx = ctx.clone();
         let ask_write_blocked = ask_write_blocked;
         Callback::from(move |_| {
-            if ask_write_blocked || *sending || *writer_busy || *writer_lock.borrow() {
+            if ask_write_blocked
+                || *sending
+                || *writer_busy
+                || *writer_lock.borrow()
+                || pending_text.is_some()
+                || *uploading_current.borrow() > 0
+            {
                 return;
             }
             let submitted_draft = draft_current.borrow().clone();
             let text = submitted_draft.trim().to_owned();
-            let paths = attachments
+            let paths = attachments_current
+                .borrow()
                 .iter()
                 .filter_map(|item| item.path.clone())
                 .collect::<Vec<_>>();
@@ -1085,6 +1135,19 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             } else {
                 format!("{text}\n\n{}", paths.join("\n"))
             };
+            let pending = PendingTextAction {
+                action_id: format!("text:{}:{}", pane_id, js_sys::Date::now() as u64),
+                submitted_draft: submitted_draft.clone(),
+            };
+            if !save_pending_text(&pane_id, &pending) {
+                toast(
+                    &ctx,
+                    "Cannot save a delivery receipt; message was not sent",
+                    ToastKind::Error,
+                );
+                return;
+            }
+            pending_text.set(Some(pending.clone()));
             *writer_lock.borrow_mut() = true;
             writer_busy.set(true);
             sending.set(true);
@@ -1098,25 +1161,41 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             let draft = draft.clone();
             let draft_current = draft_current.clone();
             let attachments = attachments.clone();
+            let attachments_current = attachments_current.clone();
             let suggestions = suggestions.clone();
             let ctx = ctx.clone();
+            let pending_text = pending_text.clone();
             spawn_local(async move {
-                match api::send_text(&pane_id, &body).await {
-                    Ok(_) => {
-                        if *draft_current.borrow() == submitted_draft {
-                            *draft_current.borrow_mut() = String::new();
-                            draft.set(String::new());
-                        }
-                        clear_draft_if_matches(&pane_id, &submitted_draft);
-                        attachments.set(Vec::new());
-                        suggestions.set(Vec::new());
-                        retry.set((*retry).wrapping_add(1));
-                        ctx.fleet_refresh.emit(());
+                let receipt = api::submit_text_action(&pane_id, &body, &pending.action_id).await;
+                if matches!(
+                    receipt.phase,
+                    TextActionPhase::Confirmed | TextActionPhase::FailedBeforeSubmit
+                ) {
+                    clear_pending_text(&pane_id, &pending.action_id);
+                    pending_text.set(None);
+                }
+                if text_receipt_confirmed(&receipt) {
+                    if *draft_current.borrow() == submitted_draft {
+                        *draft_current.borrow_mut() = String::new();
+                        draft.set(String::new());
                     }
-                    Err(_) => {
-                        optimistic_working.set(false);
-                        toast(&ctx, "Failed to send message", ToastKind::Error);
-                    }
+                    clear_draft_if_matches(&pane_id, &submitted_draft);
+                    attachments_current.borrow_mut().clear();
+                    attachments.set(Vec::new());
+                    suggestions.set(Vec::new());
+                    optimistic_working.set(false);
+                    // One retry epoch is the sole authoritative session refresh.
+                    retry.set((*retry).wrapping_add(1));
+                } else {
+                    optimistic_working.set(false);
+                    toast(
+                        &ctx,
+                        receipt
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "Message was not confirmed".to_owned()),
+                        ToastKind::Error,
+                    );
                 }
                 sending.set(false);
                 writer_busy.set(false);
@@ -1455,20 +1534,22 @@ pub fn session_view(props: &SessionViewProps) -> Html {
 
     let remove_attachment = {
         let attachments = attachments.clone();
+        let attachments_current = attachments_current.clone();
         Callback::from(move |id: usize| {
-            attachments.set(
-                attachments
-                    .iter()
-                    .filter(|item| item.id != id)
-                    .cloned()
-                    .collect(),
-            );
+            let next = {
+                let mut current = attachments_current.borrow_mut();
+                current.retain(|item| item.id != id);
+                current.clone()
+            };
+            attachments.set(next);
         })
     };
     let on_files = {
         let file_ref = file_ref.clone();
         let attachments = attachments.clone();
+        let attachments_current = attachments_current.clone();
         let next_attachment = next_attachment.clone();
+        let uploading_current = uploading_current.clone();
         let uploading = uploading.clone();
         let ctx = ctx.clone();
         let pane_id = pane_id.clone();
@@ -1476,17 +1557,20 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             let Some(input) = event.target_dyn_into::<HtmlInputElement>() else {
                 return;
             };
-            let files = input.files();
-            input.set_value("");
-            let Some(files) = files else {
+            let Some(file_list) = input.files() else {
                 return;
             };
-            for index in 0..files.length() {
-                let Some(file) = files.get(index) else {
-                    continue;
+            let files = (0..file_list.length())
+                .filter_map(|index| file_list.get(index))
+                .collect::<Vec<_>>();
+            input.set_value("");
+            for file in files {
+                let id = {
+                    let mut next = next_attachment.borrow_mut();
+                    let id = *next;
+                    *next = next.wrapping_add(1);
+                    id
                 };
-                let id = *next_attachment;
-                next_attachment.set(id.wrapping_add(1));
                 let item = Attachment {
                     id,
                     name: if file.name().is_empty() {
@@ -1497,36 +1581,55 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                     path: None,
                     pending: true,
                 };
-                let mut next = (*attachments).clone();
-                next.push(item.clone());
+                let next = {
+                    let mut current = attachments_current.borrow_mut();
+                    current.push(item.clone());
+                    current.clone()
+                };
                 attachments.set(next);
-                uploading.set(uploading.saturating_add(1));
+                let upload_count = {
+                    let mut current = uploading_current.borrow_mut();
+                    *current = current.saturating_add(1);
+                    *current
+                };
+                uploading.set(upload_count);
                 let attachments = attachments.clone();
+                let attachments_current = attachments_current.clone();
                 let uploading = uploading.clone();
+                let uploading_current = uploading_current.clone();
                 let pane_id = pane_id.clone();
                 let ctx = ctx.clone();
                 spawn_local(async move {
                     match api::upload(&pane_id, &file).await {
                         Ok(response) if response.path.is_some() => {
-                            let mut next = (*attachments).clone();
-                            if let Some(found) = next.iter_mut().find(|value| value.id == item.id) {
-                                found.path = response.path;
-                                found.pending = false;
-                            }
+                            let next = {
+                                let mut current = attachments_current.borrow_mut();
+                                if let Some(found) =
+                                    current.iter_mut().find(|value| value.id == item.id)
+                                {
+                                    found.path = response.path;
+                                    found.pending = false;
+                                }
+                                current.clone()
+                            };
                             attachments.set(next);
                         }
                         _ => {
-                            attachments.set(
-                                attachments
-                                    .iter()
-                                    .filter(|value| value.id != item.id)
-                                    .cloned()
-                                    .collect(),
-                            );
+                            let next = {
+                                let mut current = attachments_current.borrow_mut();
+                                current.retain(|value| value.id != item.id);
+                                current.clone()
+                            };
+                            attachments.set(next);
                             toast(&ctx, "Photo upload failed", ToastKind::Error);
                         }
                     }
-                    uploading.set(uploading.saturating_sub(1));
+                    let upload_count = {
+                        let mut current = uploading_current.borrow_mut();
+                        *current = current.saturating_sub(1);
+                        *current
+                    };
+                    uploading.set(upload_count);
                 });
             }
             let _ = file_ref;
@@ -1618,17 +1721,14 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             writer_busy.set(true);
             model_busy.set(true);
             sheet.set(None);
-            let display_name = if candidate.name.is_empty() {
-                candidate.id.clone()
-            } else {
-                candidate.name.clone()
-            };
-            let label = format!("{} · {}", candidate.provider, display_name);
-            model_override.set(Some(ModelOverride {
+            let label = candidate.canonical_label();
+            let next_override = ModelOverride {
                 selector: target.clone(),
                 label: label.clone(),
                 min_generation: confirmation_floor,
-            }));
+            };
+            save_model_override(&pane_id, &next_override);
+            model_override.set(Some(next_override));
             let pane_id = pane_id.clone();
             let ctx = ctx.clone();
             let levels = available_levels(Some(&candidate));
@@ -1660,28 +1760,37 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                             *current = current.wrapping_add(1);
                             *current
                         };
-                        model_override.set(Some(ModelOverride {
+                        let confirmed_override = ModelOverride {
                             selector: target.clone(),
                             label: label.clone(),
                             min_generation: confirmation_floor,
-                        }));
+                        };
+                        save_model_override(&pane_id, &confirmed_override);
+                        model_override.set(Some(confirmed_override));
                         if let Some(previous) = previous {
                             live_thinking.set(Some(previous.clone()));
                             thinking_override_generation.set(confirmation_floor);
                             thinking_override.set(Some(previous));
                         } else {
                             thinking_override.set(None);
-                            let live = async_session_thinking(&pane_id).await;
-                            live_thinking.set(live);
+                            live_thinking.set(
+                                response
+                                    .thinking
+                                    .as_deref()
+                                    .map(normalize_thinking)
+                                    .filter(|value| value != "unknown"),
+                            );
                         }
                         retry.set((*retry).wrapping_add(1));
-                        toast(&ctx, format!("Model: {display_name}"), ToastKind::Info);
+                        toast(&ctx, format!("Model: {label}"), ToastKind::Info);
                     }
                     Ok(_) => {
+                        clear_model_override(&pane_id);
                         model_override.set(None);
                         toast(&ctx, "Could not verify model switch", ToastKind::Error);
                     }
                     Err(error) => {
+                        clear_model_override(&pane_id);
                         model_override.set(None);
                         toast(&ctx, error.message, ToastKind::Error);
                     }
@@ -1771,14 +1880,10 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                     }
                     Ok(_) => {
                         thinking_override.set(None);
-                        let live = async_session_thinking(&pane_id).await;
-                        live_thinking.set(live);
                         toast(&ctx, "Could not verify reasoning effort", ToastKind::Error);
                     }
                     Err(error) => {
                         thinking_override.set(None);
-                        let live = async_session_thinking(&pane_id).await;
-                        live_thinking.set(live);
                         toast(&ctx, error.message, ToastKind::Error);
                     }
                 }
@@ -1905,17 +2010,12 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                     <span id="thinking-chip-label" class="sr-only">{thinking_label(&level)}</span>
                 </span>
             }
-            if let Some(pane) = pane.as_ref() {
-                if pane.title.as_deref().is_some_and(|value| Some(value) != workspace.as_deref()) {
-                    <span class="meta-chip meta-chip-static" id="pane-title-chip"><span class="meta-chip-text" id="pane-title-chip-label">{pane.title.clone().unwrap_or_default()}</span></span>
-                }
-            }
         </div>
     };
 
     let transcript = match &*state {
         SessionState::Loading => {
-            html! { <div class="loading-state" role="status">{"Loading session…"}</div> }
+            html! { <div class="session-skeleton" role="status" aria-label="Loading transcript"><span class="session-skeleton-line"></span><span class="session-skeleton-line short"></span><span class="session-skeleton-block"></span></div> }
         }
         SessionState::Error(message) => html! {
             <div class="error-state">
@@ -1928,7 +2028,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         SessionState::Ready {
             pane_id: loaded, ..
         } if loaded != &pane_id => {
-            html! { <div class="loading-state" role="status">{"Loading session…"}</div> }
+            html! { <div class="session-skeleton" role="status" aria-label="Loading transcript"><span class="session-skeleton-line"></span><span class="session-skeleton-line short"></span><span class="session-skeleton-block"></span></div> }
         }
         SessionState::Ready {
             pane_id: loaded,
@@ -1943,7 +2043,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             for data.entries.iter().enumerate().map(|(index, entry)| render_entry(entry, index, &thinking_expanded, &tool_expanded, &toggle_thinking, &toggle_tool))
         },
         SessionState::Ready { .. } => {
-            html! { <div class="loading-state" role="status">{"Loading session…"}</div> }
+            html! { <div class="session-skeleton" role="status" aria-label="Loading transcript"><span class="session-skeleton-line"></span><span class="session-skeleton-line short"></span><span class="session-skeleton-block"></span></div> }
         }
     };
 
@@ -1978,13 +2078,16 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let rows = models_for_render(
             &q,
             current.as_deref(),
-            (*models).clone().unwrap_or_default(),
+            ctx.model_catalog
+                .as_deref()
+                .map(|items| items.to_vec())
+                .unwrap_or_default(),
         );
         html! {
             <BottomSheet title={"Model".to_owned()} on_close={close_sheet.clone()}>
                 <input class="sheet-search" type="search" placeholder="Filter models…" value={(*model_filter).clone()} oninput={Callback::from(move |event: InputEvent| { if let Some(input) = event.target_dyn_into::<HtmlInputElement>() { filter.set(input.value()); } })} />
                 <div class="sheet-scroll">
-                    if rows.is_empty() { <div class="sheet-hint">{if models_for_render("", None, (*models).clone().unwrap_or_default()).is_empty() { "Model list unavailable." } else { "No models match." }}</div> }
+                    if rows.is_empty() { <div class="sheet-hint">{if ctx.model_catalog.is_none() { "Model list unavailable." } else { "No models match." }}</div> }
                     {{
                         let mut last_provider: Option<String> = None;
                         rows.into_iter().map(|(provider, item)| {
@@ -1995,7 +2098,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                             let candidate = item.clone();
                             html! { <>
                                 if show_header { <div class="sheet-group">{provider.clone()}</div> }
-                                <button class={classes!("sheet-row", is_current.then_some("current"))} onclick={Callback::from(move |_| click.emit(candidate.clone()))} disabled={*model_busy || *thinking_busy || *writer_busy || ask_write_blocked}><span class="sheet-row-copy"><span class="sheet-row-label">{if item.name.is_empty() { item.id.clone() } else { item.name.clone() }}</span><span class="sheet-row-sub">{format!("{} · {}", item.provider, item.id)}</span></span>{if is_current { icon("check", 18) } else { Html::default() }}</button>
+                                <button class={classes!("sheet-row", is_current.then_some("current"))} onclick={Callback::from(move |_| click.emit(candidate.clone()))} disabled={*model_busy || *thinking_busy || *writer_busy || ask_write_blocked}><span class="sheet-row-copy"><span class="sheet-row-label">{item.canonical_label()}</span><span class="sheet-row-sub">{item.selector()}</span>{format_model_pricing(item.cost.as_ref()).map(|price| html! { <span class="model-price-row">{price}</span> })}</span>{if is_current { icon("check", 18) } else { Html::default() }}</button>
                             </> }
                         }).collect::<Html>()
                     }}</div>
@@ -2007,9 +2110,9 @@ pub fn session_view(props: &SessionViewProps) -> Html {
 
     let thinking_sheet = if matches!(&*sheet, Some(Sheet::Thinking)) {
         let model_selector = selector(model.as_ref(), model_override.as_ref());
-        let catalog = (*models).as_deref();
+        let catalog = ctx.model_catalog.as_deref();
         let catalog_loaded = catalog.is_some();
-        let model_entry = active_model(catalog, model_selector.as_deref());
+        let model_entry = active_model(catalog.map(Vec::as_slice), model_selector.as_deref());
         let levels = available_levels(model_entry.as_ref());
         let current = thinking_override
             .as_ref()
@@ -2019,8 +2122,8 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             .unwrap_or_else(|| "unknown".into());
         html! {
             <BottomSheet title={"Reasoning effort".to_owned()} on_close={close_sheet.clone()}>
-                <div class="sheet-context">{model_label(model.as_ref(), model_override.as_ref())}</div>
-                if !catalog_loaded { <div class="sheet-hint">{"Loading model capabilities…"}</div> }
+                <div class="sheet-context">{model_label(model.as_ref(), model_override.as_ref(), ctx.model_catalog.as_deref().map(Vec::as_slice))}</div>
+                if !catalog_loaded { <div class="sheet-hint">{"Model capabilities are unavailable while the catalog warms in the background."}</div> }
                 else if model_entry.is_none() { <div class="sheet-hint">{"Current model is not in the model catalog."}</div> }
                 else if levels.is_empty() { <div class="sheet-hint">{"This model does not expose reasoning effort controls."}</div> }
                 {for levels.into_iter().map(|level| { let is_current = level == current; let click = thinking_click.clone(); let target_level = level.clone(); html! { <button class="sheet-row thinking-level-row" aria-pressed={is_current.to_string()} onclick={Callback::from(move |_| click.emit(target_level.clone()))} disabled={*thinking_busy || *model_busy || *writer_busy || ask_write_blocked}><span class="sheet-row-copy"><span class="sheet-row-label">{thinking_label(&level)}</span><span class="sheet-row-sub">{thinking_description(&level)}</span></span>{if is_current { icon("check",18) } else { Html::default() }}</button> } })}
@@ -2029,10 +2132,21 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     } else {
         Html::default()
     };
+    let unresolved_send = if pending_text.is_some() {
+        let pane_id = pane_id.clone();
+        html! {
+            <div class="delivery-warning" role="status">
+                <span>{"Delivery unconfirmed. Check the terminal before retrying."}</span>
+                <button type="button" onclick={Callback::from(move |_| navigate(&Route::Terminal(pane_id.clone())))}>{"Inspect"}</button>
+            </div>
+        }
+    } else {
+        Html::default()
+    };
     html! {
         <div class="view session-view">
-            <Header title={title} workspace={workspace.clone()} status={Some(status_label(status, pending))} pending={pending} connected={ctx.connected} on_back={Some(on_back)} />
-            <TabStrip pane_id={pane_id.clone()} />
+            <Header title={title} workspace={workspace.clone()} status={Some(status_label)} pending={pending} connected={ctx.connected} on_back={Some(on_back)} />
+            <TabStrip pane_id={pane_id.clone()} busy={pending_text.is_some() || *writer_busy || *sending || *model_busy || *thinking_busy || *uploading > 0} />
             <div class="session-scroll-wrap">
                 <div id="transcript" class="scroll transcript" ref={transcript_ref}>{transcript}</div>
                 if !*near_bottom { <button id="jump-pill" class="jump-pill" onclick={on_jump.clone()}><span class="jump-pill-ic">{icon("arrow-down", 13)}</span>{"Jump to latest"}</button> }
@@ -2040,6 +2154,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             <div id="ask-box" class="ask-box">{ask_html}</div>
             <div id="composer-wrap" class="composer-wrap kb-pin">
                 <div id="cmd-suggest" class="cmd-suggest" style={if suggestions.is_empty() { "display:none" } else { "display:block" }}>{for suggestions.iter().map(|command| { let draft = draft.clone(); let draft_current = draft_current.clone(); let pane_id = pane_id.clone(); let suggestions = suggestions.clone(); let textarea_ref = textarea_ref.clone(); let command = command.clone(); let command_name = command.name.clone(); html! { <button class="cmd-row" onclick={Callback::from(move |_| { *draft_current.borrow_mut() = format!("/{} ", command_name); draft.set(format!("/{} ", command_name)); save_draft(&pane_id, &format!("/{} ", command_name)); suggestions.set(Vec::new()); if let Some(input) = textarea_ref.cast::<HtmlTextAreaElement>() { input.focus().ok(); } })}><span class="cmd-name">{format!("/{}", command.name)}</span><span class="cmd-desc">{command.description.clone().unwrap_or_default()}</span></button> } })}</div>
+                {unresolved_send}
                 {attachments_html}
                 {meta}
                 <div class="composer-actions-row">{actions}<span class="action-spacer"></span><button id="send-btn" class="action-send-btn" aria-label="Send" onclick={Callback::from({ let send_message = send_message.clone(); move |_| send_message.emit(()) })} disabled={!can_send}>{icon("send", 18)}<span>{"Send"}</span></button></div>
@@ -2056,7 +2171,7 @@ fn models_for_render(
     current: Option<&str>,
     models: Vec<Model>,
 ) -> Vec<(String, Model)> {
-    let mut matches = models
+    let mut matches = dedupe_models(models)
         .into_iter()
         .filter(|model| {
             filter.is_empty()
@@ -2176,42 +2291,110 @@ fn render_entry(
     }
 }
 
-async fn async_session_thinking(pane_id: &str) -> Option<String> {
-    api::session(pane_id)
-        .await
-        .ok()
-        .and_then(|value| value.thinking)
-        .map(|value| normalize_thinking(&value))
-        .filter(|value| value != "unknown")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::SessionRefreshGate;
+    use super::{
+        decode_model_override, encode_model_override, model_override_superseded, ModelOverride,
+        SessionRefreshGate,
+    };
+    use crate::components::status_descriptor;
+    use crate::types::SessionModel;
 
     #[test]
-    fn refresh_gate_coalesces_bursts_into_one_follow_up() {
-        let mut gate = SessionRefreshGate::default();
+    fn status_descriptor_is_shared_for_pending_work_idle_and_done() {
+        assert_eq!(status_descriptor("working", false).class, "working");
+        assert_eq!(status_descriptor("idle", false).class, "idle");
+        assert_eq!(status_descriptor("done", false).class, "done");
+        assert_eq!(status_descriptor("blocked", false).label, "Needs input");
+        assert_eq!(status_descriptor("working", true).label, "Needs input");
+    }
 
-        assert!(gate.begin());
-        assert!(!gate.begin());
-        assert!(!gate.begin());
+    #[test]
+    fn model_override_storage_round_trips_canonical_identity() {
+        let value = ModelOverride {
+            selector: "openai-codex/gpt-5.6-luna".to_owned(),
+            label: "openai-codex · GPT-5.6-Luna".to_owned(),
+            min_generation: 9,
+        };
+        let decoded = decode_model_override(&encode_model_override(&value)).unwrap();
+        assert_eq!(decoded.selector, value.selector);
+        assert_eq!(decoded.label, value.label);
+        assert_eq!(decoded.min_generation, 0);
+        assert!(decode_model_override("missing delimiter").is_none());
+    }
+
+    #[test]
+    fn model_override_survives_matching_and_missing_refreshes() {
+        let override_model = ModelOverride {
+            selector: "openai-codex/gpt-5.6-luna".to_owned(),
+            label: "openai-codex · GPT-5.6-Luna".to_owned(),
+            min_generation: 3,
+        };
+        let matching = SessionModel {
+            provider: "openai-codex".to_owned(),
+            model: "gpt-5.6-luna".to_owned(),
+        };
+        assert!(!model_override_superseded(
+            &override_model,
+            Some(&matching),
+            4
+        ));
+        assert!(!model_override_superseded(&override_model, None, 4));
+
+        let external = SessionModel {
+            provider: "openai-codex".to_owned(),
+            model: "gpt-5.6-sol".to_owned(),
+        };
+        assert!(!model_override_superseded(
+            &override_model,
+            Some(&external),
+            4
+        ));
+        assert!(model_override_superseded(
+            &override_model,
+            Some(&external),
+            6
+        ));
+    }
+
+    #[test]
+    fn refresh_gate_does_not_invalidate_an_in_flight_response() {
+        let mut gate = SessionRefreshGate::default();
+        let mut generation = 0;
+
+        assert_eq!(gate.begin("pane-a", &mut generation), Some(1));
+        assert_eq!(gate.begin("pane-a", &mut generation), None);
+        assert_eq!(gate.begin("pane-a", &mut generation), None);
+        assert_eq!(generation, 1);
         assert_eq!(gate.finish(), Some(1));
 
-        assert!(gate.begin());
+        assert_eq!(gate.begin("pane-a", &mut generation), Some(2));
         assert_eq!(gate.finish(), None);
+    }
+
+    #[test]
+    fn refresh_gate_invalidates_a_response_when_the_pane_changes() {
+        let mut gate = SessionRefreshGate::default();
+        let mut generation = 0;
+
+        assert_eq!(gate.begin("pane-a", &mut generation), Some(1));
+        assert_eq!(gate.begin("pane-b", &mut generation), None);
+        assert_eq!(generation, 2);
+        assert_eq!(gate.finish(), Some(1));
+        assert_eq!(gate.begin("pane-b", &mut generation), Some(3));
     }
 
     #[test]
     fn refresh_gate_wake_epoch_never_reuses_a_stale_value() {
         let mut gate = SessionRefreshGate::default();
+        let mut generation = 0;
 
-        assert!(gate.begin());
-        assert!(!gate.begin());
+        assert_eq!(gate.begin("pane-a", &mut generation), Some(1));
+        assert_eq!(gate.begin("pane-a", &mut generation), None);
         assert_eq!(gate.finish(), Some(1));
 
-        assert!(gate.begin());
-        assert!(!gate.begin());
+        assert_eq!(gate.begin("pane-a", &mut generation), Some(2));
+        assert_eq!(gate.begin("pane-a", &mut generation), None);
         assert_eq!(gate.finish(), Some(2));
     }
 }

@@ -18,9 +18,13 @@ use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, watch, Mutex, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tower_http::services::ServeDir;
@@ -29,8 +33,15 @@ const BIND: &str = "127.0.0.1:8787";
 const POLL_MS: u64 = 600;
 const ASK_RECEIPT_TIMEOUT: Duration = Duration::from_secs(5);
 const ASK_DRIVER_TIMEOUT: Duration = Duration::from_secs(12);
+const OMP_VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+const CONTROL_DRIVER_TIMEOUT: Duration = Duration::from_secs(40);
+const MODEL_REFRESH_TIMEOUT: Duration = Duration::from_secs(40);
+const TEXT_ACTION_TERMINAL_CAP: usize = 256;
+const TEXT_ACTION_RETENTION_MS: u128 = 60_000;
+const TEXT_RECEIPT_POLL_MS: u64 = 100;
 const DUPLICATE_ASK_LABEL_ERROR: &str =
     "ask option labels are not unique; use the raw terminal to recover";
+static UPLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 // ---------------------------------------------------------------- fleet model
 
@@ -65,8 +76,24 @@ struct AppState {
     /// Panes with an in-flight TUI drive (reasoning cycle or model picker) —
     /// both steer the same terminal, so one guard covers both.
     pane_locks: Mutex<HashSet<String>>,
+    /// Workspaces with an in-flight tab/workspace lifecycle mutation.
+    workspace_locks: Mutex<HashSet<String>>,
     /// Stable pending-ask actions keyed by pane + OMP call + option index.
     ask_actions: Mutex<HashMap<AskIdentity, Arc<Mutex<AskAction>>>>,
+    /// Idempotent text actions keyed by pane + caller action id.
+    text_actions: Mutex<HashMap<TextActionKey, Arc<Mutex<TextAction>>>>,
+    /// Idempotent tab-creation actions keyed by workspace + caller action id.
+    tab_actions: Mutex<HashMap<(String, String), Arc<Mutex<TabAction>>>>,
+    /// Installed OMP version that produced or validated the model catalog.
+    omp_version: Option<String>,
+    /// Validated model catalog. None means no usable LKG has been loaded yet.
+    model_catalog: RwLock<Option<Value>>,
+    /// At most one initial/refresh model subprocess is active at a time.
+    model_refresh: Mutex<Option<watch::Receiver<bool>>>,
+}
+enum ModelRefreshRole {
+    Leader(watch::Sender<bool>),
+    Follower(watch::Receiver<bool>),
 }
 
 type Shared = Arc<AppState>;
@@ -107,6 +134,149 @@ enum ActionRegistration {
     Existing,
     RetryFailedBeforeSubmit,
     Conflict,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct TextActionKey {
+    pane_id: String,
+    action_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum TextPhase {
+    PreSubmit,
+    SubmittedAwaitingReceipt,
+    Confirmed,
+    FailedBeforeSubmit,
+    StaleAfterSubmit,
+}
+
+#[derive(Clone, Debug)]
+struct TextAction {
+    key: TextActionKey,
+    text: String,
+    phase: TextPhase,
+    accepted: bool,
+    retryable: bool,
+    error: Option<String>,
+    updated_at_ms: u128,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum TabActionPhase {
+    Pending,
+    Confirmed,
+    Failed,
+}
+
+#[derive(Clone, Debug)]
+struct TabAction {
+    workspace_id: String,
+    action_id: String,
+    phase: TabActionPhase,
+    pane_id: Option<String>,
+    error: Option<String>,
+}
+
+fn tab_action_json(action: &TabAction) -> Value {
+    json!({
+        "workspace_id": action.workspace_id,
+        "action_id": action.action_id,
+        "phase": action.phase,
+        "pane_id": action.pane_id,
+        "error": action.error,
+    })
+}
+
+fn text_action_json(action: &TextAction) -> Value {
+    json!({
+        "action_id": action.key.action_id,
+        "phase": action.phase,
+        "accepted": action.accepted,
+        "retryable": action.retryable,
+        "error": action.error,
+    })
+}
+
+async fn text_action_json_for(action: &Arc<Mutex<TextAction>>) -> Value {
+    let current = action.lock().await;
+    text_action_json(&current)
+}
+
+fn text_action_terminal(phase: &TextPhase) -> bool {
+    matches!(
+        phase,
+        TextPhase::Confirmed | TextPhase::FailedBeforeSubmit | TextPhase::StaleAfterSubmit
+    )
+}
+
+async fn prune_text_actions(
+    actions: &mut HashMap<TextActionKey, Arc<Mutex<TextAction>>>,
+    protected: Option<&TextActionKey>,
+) {
+    let now = now_ms();
+    let mut terminal = Vec::new();
+    for (key, action) in actions.iter() {
+        let current = action.lock().await;
+        if text_action_terminal(&current.phase) {
+            terminal.push((current.updated_at_ms, key.clone()));
+        }
+    }
+    terminal.sort_by(|(at_a, key_a), (at_b, key_b)| {
+        at_a.cmp(at_b)
+            .then_with(|| key_a.pane_id.cmp(&key_b.pane_id))
+            .then_with(|| key_a.action_id.cmp(&key_b.action_id))
+    });
+    let expired = terminal
+        .iter()
+        .take_while(|(updated_at, _)| now.saturating_sub(*updated_at) >= TEXT_ACTION_RETENTION_MS)
+        .count();
+    let retained = terminal.len() - expired;
+    let remove = expired.saturating_sub(TEXT_ACTION_TERMINAL_CAP.saturating_sub(retained));
+    for (_, key) in terminal
+        .into_iter()
+        .filter(|(_, key)| protected.is_none_or(|keep| keep != key))
+        .take(remove)
+    {
+        actions.remove(&key);
+    }
+}
+
+async fn register_text_action(
+    state: &Shared,
+    key: TextActionKey,
+    text: String,
+) -> (Arc<Mutex<TextAction>>, ActionRegistration) {
+    let mut actions = state.text_actions.lock().await;
+    prune_text_actions(&mut actions, None).await;
+    if let Some(action) = actions.get(&key).cloned() {
+        let mut current = action.lock().await;
+        if current.text != text {
+            return (action.clone(), ActionRegistration::Conflict);
+        }
+        if current.phase == TextPhase::FailedBeforeSubmit && current.retryable {
+            current.phase = TextPhase::PreSubmit;
+            current.retryable = false;
+            current.error = None;
+            current.updated_at_ms = now_ms();
+            return (action.clone(), ActionRegistration::RetryFailedBeforeSubmit);
+        }
+        return (action.clone(), ActionRegistration::Existing);
+    }
+    let now = now_ms();
+    let action = Arc::new(Mutex::new(TextAction {
+        key: key.clone(),
+        text,
+        phase: TextPhase::PreSubmit,
+        accepted: true,
+        retryable: false,
+        error: None,
+        updated_at_ms: now,
+    }));
+    actions.insert(key, action.clone());
+    (action, ActionRegistration::New)
 }
 
 fn now_ms() -> u128 {
@@ -428,10 +598,27 @@ async fn get_session(
 ) -> impl IntoResponse {
     match session_path_for(&state, &pane_id).await {
         Some(path) => {
-            let t = tokio::task::spawn_blocking(move || omp::parse_session(&path))
+            let mut transcript = tokio::task::spawn_blocking(move || omp::parse_session(&path))
                 .await
                 .unwrap_or_default();
-            Json(serde_json::to_value(t).unwrap_or(Value::Null)).into_response()
+            if transcript.model.is_none() || transcript.thinking.is_none() {
+                if let Ok(screen) = screen_text(&pane_id).await {
+                    if transcript.model.is_none() {
+                        if let Some(selector) = screen_model_selector(&screen) {
+                            if let Some((provider, model)) = selector.split_once('/') {
+                                transcript.model = Some(omp::ModelInfo {
+                                    provider: provider.to_owned(),
+                                    model: model.to_owned(),
+                                });
+                            }
+                        }
+                    }
+                    if transcript.thinking.is_none() {
+                        transcript.thinking = screen_thinking_level(&screen).map(str::to_owned);
+                    }
+                }
+            }
+            Json(serde_json::to_value(transcript).unwrap_or(Value::Null)).into_response()
         }
         None => (
             StatusCode::NOT_FOUND,
@@ -444,6 +631,7 @@ async fn get_session(
 #[derive(Deserialize)]
 struct TextBody {
     text: String,
+    action_id: String,
 }
 
 fn input_marker(text: &str) -> String {
@@ -452,9 +640,203 @@ fn input_marker(text: &str) -> String {
         .rev()
         .find(|line| !line.trim().is_empty())
         .unwrap_or(text);
-    let mut chars = line.chars().rev().take(18).collect::<Vec<_>>();
+    let mut chars = line
+        .chars()
+        .filter(|char| !char.is_whitespace())
+        .rev()
+        .take(18)
+        .collect::<Vec<_>>();
     chars.reverse();
     chars.into_iter().collect()
+}
+
+fn screen_contains_input(screen: &str, marker: &str) -> bool {
+    if marker.is_empty() {
+        return true;
+    }
+    let tail = screen.lines().rev().take(24).collect::<Vec<_>>();
+    let compact = tail
+        .iter()
+        .rev()
+        .flat_map(|line| line.chars())
+        .filter(|char| !char.is_whitespace())
+        .collect::<String>();
+    compact.contains(marker)
+}
+
+fn screen_composer_tail(screen: &str) -> Option<&str> {
+    screen.lines().rev().take(12).find_map(|line| {
+        let row = unframed_row(line);
+        row.strip_prefix('❯')
+            .or_else(|| row.strip_prefix('>'))
+            .or_else(|| row.strip_prefix('\u{f054}'))
+    })
+}
+
+fn screen_composer_occupied(screen: &str) -> Option<bool> {
+    screen_composer_tail(screen).map(|tail| !tail.trim().is_empty())
+}
+
+fn control_composer_requires_clear(screen: &str) -> bool {
+    screen_composer_tail(screen).is_some_and(|tail| {
+        let tail = tail.trim();
+        !tail.is_empty() && "/switch".starts_with(tail)
+    })
+}
+fn requires_user_message_receipt(text: &str) -> bool {
+    !matches!(
+        text.trim_start().chars().next(),
+        Some('/' | '!' | '$' | '#')
+    )
+}
+
+async fn update_text_action(
+    state: &Shared,
+    action: &Arc<Mutex<TextAction>>,
+    phase: TextPhase,
+    retryable: bool,
+    error: Option<String>,
+) {
+    let mut actions = state.text_actions.lock().await;
+    let key = {
+        let mut current = action.lock().await;
+        current.phase = phase;
+        current.retryable = retryable;
+        current.error = error;
+        current.updated_at_ms = now_ms();
+        current.key.clone()
+    };
+    prune_text_actions(&mut actions, Some(&key)).await;
+}
+
+async fn user_message_cursor(path: &str) -> u64 {
+    let path = path.to_string();
+    tokio::task::spawn_blocking(move || omp::user_message_cursor(&path))
+        .await
+        .unwrap_or_default()
+}
+
+async fn scan_new_user_message(path: &str, cursor: u64, expected: &str) -> (u64, bool) {
+    let path = path.to_string();
+    let expected = expected.to_string();
+    tokio::task::spawn_blocking(move || {
+        let mut cursor = cursor;
+        let matched = omp::scan_new_user_message(&path, &mut cursor, &expected);
+        (cursor, matched)
+    })
+    .await
+    .unwrap_or((cursor, false))
+}
+
+async fn drive_text(state: Shared, action: Arc<Mutex<TextAction>>) {
+    let (pane_id, text) = {
+        let current = action.lock().await;
+        (current.key.pane_id.clone(), current.text.clone())
+    };
+    let session_path = session_path_for(&state, &pane_id).await;
+    let guard_agent_composer = session_path.is_some();
+    let path = session_path.filter(|_| requires_user_message_receipt(&text));
+    let mut receipt_cursor = if let Some(path) = path.as_deref() {
+        user_message_cursor(path).await
+    } else {
+        0
+    };
+    let result = tokio::time::timeout(CONTROL_DRIVER_TIMEOUT, async {
+        let before_screen = screen_text(&pane_id)
+            .await
+            .map_err(|error| error.to_string())?;
+        if guard_agent_composer {
+            match screen_composer_occupied(&before_screen) {
+                Some(false) => {}
+                Some(true) => {
+                    return Err("composer contains unsent text; clear it before sending".into());
+                }
+                None => {
+                    return Err("could not verify that the terminal composer is empty".into());
+                }
+            }
+        }
+        let marker = input_marker(&text);
+        herdr::send_text(&pane_id, &text)
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut composer_ready = false;
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let screen = screen_text(&pane_id)
+                .await
+                .map_err(|error| error.to_string())?;
+            let marker_visible = screen_contains_input(&screen, &marker);
+            if screen != before_screen && marker_visible {
+                composer_ready = true;
+                break;
+            }
+        }
+        if !composer_ready {
+            return Err("composer did not accept text".into());
+        }
+        {
+            let mut current = action.lock().await;
+            current.phase = TextPhase::SubmittedAwaitingReceipt;
+            current.retryable = false;
+            current.error = None;
+            current.updated_at_ms = now_ms();
+        }
+        // Enter is the submit boundary. From this point a lost response is
+        // deliberately stale rather than retryable, because the text may run.
+        herdr::send_keys(&pane_id, &["Enter".to_string()])
+            .await
+            .map_err(|error| error.to_string())?;
+        if let Some(tx) = &state.pokes {
+            let _ = tx.send(json!({"type": "session", "pane_id": pane_id}).to_string());
+        }
+        if let Some(path) = path.as_deref() {
+            for _ in 0..(CONTROL_DRIVER_TIMEOUT.as_millis() as u64 / TEXT_RECEIPT_POLL_MS) {
+                let (next_cursor, matched) =
+                    scan_new_user_message(path, receipt_cursor, &text).await;
+                receipt_cursor = next_cursor;
+                if matched {
+                    update_text_action(&state, &action, TextPhase::Confirmed, false, None).await;
+                    return Ok::<(), String>(());
+                }
+                tokio::time::sleep(Duration::from_millis(TEXT_RECEIPT_POLL_MS)).await;
+            }
+            Err("submitted text was not recorded in the session transcript".into())
+        } else {
+            update_text_action(&state, &action, TextPhase::Confirmed, false, None).await;
+            Ok(())
+        }
+    })
+    .await;
+
+    let failure = match result {
+        Ok(Ok(())) => None,
+        Ok(Err(message)) => Some(message),
+        Err(_) => Some("text driver deadline expired".to_string()),
+    };
+    if let Some(message) = failure {
+        let entered = matches!(
+            action.lock().await.phase,
+            TextPhase::SubmittedAwaitingReceipt
+                | TextPhase::Confirmed
+                | TextPhase::StaleAfterSubmit
+        );
+        update_text_action(
+            &state,
+            &action,
+            if entered {
+                TextPhase::StaleAfterSubmit
+            } else {
+                TextPhase::FailedBeforeSubmit
+            },
+            !entered,
+            Some(message),
+        )
+        .await;
+    }
+    // The spawned task owns the claim and releases it regardless of how its
+    // bounded driver completes; the request handler never performs cleanup.
+    state.pane_locks.lock().await.remove(&pane_id);
 }
 
 async fn post_text(
@@ -462,58 +844,71 @@ async fn post_text(
     Path(pane_id): Path<String>,
     Json(body): Json<TextBody>,
 ) -> impl IntoResponse {
-    let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
-    if !claimed {
+    let action_id = body.action_id.trim().to_string();
+    if action_id.is_empty() || action_id.len() > 160 {
         return (
-            StatusCode::CONFLICT,
-            Json(json!({"error": "another pane write is in progress"})),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "action_id is required"})),
         )
             .into_response();
     }
-    let run = async {
-        let before = screen_text(&pane_id).await?;
-        let marker = input_marker(&body.text);
-        herdr::send_text(&pane_id, &body.text).await?;
-        let mut ready = false;
-        for _ in 0..30 {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let screen = screen_text(&pane_id).await?;
-            let marker_visible = marker.is_empty()
-                || screen
-                    .lines()
-                    .rev()
-                    .take(24)
-                    .any(|line| line.contains(&marker));
-            if screen != before && marker_visible {
-                ready = true;
-                break;
-            }
-        }
-        if !ready {
-            return Err(anyhow::anyhow!("composer did not accept text"));
-        }
-        tokio::time::sleep(Duration::from_millis(800)).await;
-        let before_submit = screen_text(&pane_id).await?;
-        herdr::send_keys(&pane_id, &["Enter".to_string()]).await?;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        for _ in 0..50 {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            if screen_text(&pane_id).await? != before_submit {
-                return Ok(());
-            }
-        }
-        Err(anyhow::anyhow!("composer did not submit text"))
-    };
-    let result = run.await;
-    state.pane_locks.lock().await.remove(&pane_id);
-    match result {
-        Ok(()) => Json(json!({"ok": true})).into_response(),
-        Err(err) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({"error": err.to_string()})),
+    let key = TextActionKey { pane_id, action_id };
+    let (action, registration) = register_text_action(&state, key, body.text).await;
+    if registration == ActionRegistration::Conflict {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "action_id is already registered with different text",
+                "receipt": text_action_json_for(&action).await,
+            })),
         )
-            .into_response(),
+            .into_response();
     }
+    let should_spawn = matches!(
+        registration,
+        ActionRegistration::New | ActionRegistration::RetryFailedBeforeSubmit
+    );
+    if should_spawn {
+        let pane_id = action.lock().await.key.pane_id.clone();
+        let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
+        if !claimed {
+            update_text_action(
+                &state,
+                &action,
+                TextPhase::FailedBeforeSubmit,
+                true,
+                Some("another pane write is in progress".into()),
+            )
+            .await;
+            return (
+                StatusCode::CONFLICT,
+                Json(text_action_json_for(&action).await),
+            )
+                .into_response();
+        }
+        tokio::spawn(drive_text(state.clone(), action.clone()));
+    }
+    (
+        StatusCode::ACCEPTED,
+        Json(text_action_json_for(&action).await),
+    )
+        .into_response()
+}
+
+async fn get_text_status(
+    State(state): State<Shared>,
+    Path((pane_id, action_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let key = TextActionKey { pane_id, action_id };
+    let action = state.text_actions.lock().await.get(&key).cloned();
+    let Some(action) = action else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "text action not found"})),
+        )
+            .into_response();
+    };
+    Json(text_action_json_for(&action).await).into_response()
 }
 
 /// Accept a raw image body, persist it to a temp uploads dir, and return the
@@ -550,10 +945,16 @@ async fn post_upload(
     }
     let stamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis())
+        .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    let path = dir.join(format!("img-{stamp}.{ext}"));
-    if let Err(err) = std::fs::write(&path, &body) {
+    let sequence = UPLOAD_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let path = dir.join(format!("img-{stamp}-{sequence}.{ext}"));
+    let write = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .and_then(|mut file| file.write_all(&body));
+    if let Err(err) = write {
         return err_json(err.into());
     }
     Json(json!({ "path": path.to_string_lossy() })).into_response()
@@ -661,89 +1062,104 @@ async fn latest_thinking_receipt(path: &str) -> Option<ThinkingReceipt> {
 
 fn screen_thinking_level(screen: &str) -> Option<&'static str> {
     screen.lines().rev().take(8).find_map(|line| {
-        if line.matches('·').count() < 3 {
+        let mut parts = line.split('·');
+        let selector = parts.next()?.trim();
+        if !selector.contains('/') {
             return None;
         }
-        line.split('·')
-            .nth(1)?
+        parts
+            .next()?
             .split(|c: char| !c.is_ascii_alphabetic())
             .find_map(canonical_thinking_level)
     })
 }
 
-fn has_new_auto_status(before: &str, after: &str) -> bool {
-    screen_thinking_level(before) != Some("auto") && screen_thinking_level(after) == Some("auto")
-}
-
-/// Select an exact reasoning effort through omp's cycle key, confirming each
-/// concrete transition from the session log. Auto may be logged directly; on
-/// older sessions the newly rendered status line is the fallback receipt.
+/// Select an exact reasoning effort by cycling until the rendered OMP status
+/// line confirms the requested level.
 async fn drive_thinking(
     pane_id: &str,
-    path: &str,
+    _path: &str,
     target: &'static str,
 ) -> std::result::Result<&'static str, (StatusCode, String)> {
     let screen = screen_text(pane_id)
         .await
         .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-    let live = screen_thinking_level(&screen);
-    let mut previous = latest_thinking_receipt(path).await;
-    let configured_auto = live == Some("auto")
-        || previous
-            .as_ref()
-            .is_some_and(|receipt| receipt.level == "auto");
-    if configured_auto && target == "auto" {
-        return Ok(target);
-    }
-    if !configured_auto
-        && live == Some(target)
-        && previous
-            .as_ref()
-            .is_some_and(|receipt| receipt.level == target)
-    {
+    let mut live = screen_thinking_level(&screen);
+    if live == Some(target) {
         return Ok(target);
     }
 
     for _ in 0..16 {
+        let previous = live;
         herdr::send_text(pane_id, "\x1b[Z")
             .await
             .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-        tokio::time::sleep(Duration::from_millis(800)).await;
-        let next = latest_thinking_receipt(path).await;
-        if next == previous {
-            continue;
-        }
-        let Some(receipt) = next else {
+        let changed = wait_screen(pane_id, 12, |screen| {
+            screen_thinking_level(screen).is_some_and(|level| Some(level) != previous)
+        })
+        .await
+        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+        let Some(screen) = changed else {
             continue;
         };
-        previous = Some(receipt.clone());
-        if receipt.level == target {
+        live = screen_thinking_level(&screen);
+        if live == Some(target) {
             return Ok(target);
-        }
-        if target == "auto" && receipt.level == "off" {
-            let before = screen_text(pane_id)
-                .await
-                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-            herdr::send_text(pane_id, "\x1b[Z")
-                .await
-                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-            let confirmed = wait_screen(pane_id, 20, |screen| has_new_auto_status(&before, screen))
-                .await
-                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-            let after = latest_thinking_receipt(path).await;
-            if confirmed.is_some() || after.as_ref().is_some_and(|value| value.level == target) {
-                return Ok(target);
-            }
-            return Err((
-                StatusCode::BAD_GATEWAY,
-                "auto was selected but the terminal did not expose a confirmation".to_string(),
-            ));
         }
     }
     Err((
         StatusCode::UNPROCESSABLE_ENTITY,
         format!("reasoning effort {target} is unavailable for this model"),
     ))
+}
+
+async fn unwind_control_driver(pane_id: &str) -> bool {
+    for _ in 0..2 {
+        let _ = key(pane_id, "Escape", 150).await;
+    }
+    if screen_text(pane_id)
+        .await
+        .is_ok_and(|screen| control_composer_requires_clear(&screen))
+    {
+        let _ = key(pane_id, "ctrl+u", 150).await;
+    }
+    for _ in 0..20 {
+        if screen_text(pane_id)
+            .await
+            .is_ok_and(|screen| screen_composer_occupied(&screen) == Some(false))
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+async fn run_locked_driver<T, F>(
+    state: Shared,
+    pane_id: String,
+    driver: F,
+) -> std::result::Result<T, (StatusCode, String)>
+where
+    F: Future<Output = std::result::Result<T, (StatusCode, String)>> + Send,
+    T: Send,
+{
+    let result = match tokio::time::timeout(CONTROL_DRIVER_TIMEOUT, driver).await {
+        Ok(result) => result,
+        Err(_) => {
+            let cleaned = unwind_control_driver(&pane_id).await;
+            Err((
+                StatusCode::GATEWAY_TIMEOUT,
+                if cleaned {
+                    "control driver deadline expired; terminal state restored".into()
+                } else {
+                    "control driver deadline expired; terminal cleanup could not be verified".into()
+                },
+            ))
+        }
+    };
+    state.pane_locks.lock().await.remove(&pane_id);
+    result
 }
 
 /// Select an exact reasoning effort through omp's runtime cycle key.
@@ -768,14 +1184,25 @@ async fn post_thinking(
             .into_response();
     }
 
-    let result = async {
-        let path = session_path_for(&state, &pane_id)
-            .await
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
-        drive_thinking(&pane_id, &path, target).await
-    }
-    .await;
-    state.pane_locks.lock().await.remove(&pane_id);
+    let task_state = state.clone();
+    let task_pane_id = pane_id.clone();
+    let task = tokio::spawn(async move {
+        let driver_state = task_state.clone();
+        let driver_pane_id = task_pane_id.clone();
+        run_locked_driver(task_state, task_pane_id, async move {
+            let path = session_path_for(&driver_state, &driver_pane_id)
+                .await
+                .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
+            drive_thinking(&driver_pane_id, &path, target).await
+        })
+        .await
+    });
+    let result = task.await.unwrap_or_else(|_| {
+        Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "thinking driver task failed".to_string(),
+        ))
+    });
     match result {
         Ok(thinking) => Json(json!({"ok": true, "thinking": thinking})).into_response(),
         Err((status, message)) => (status, Json(json!({"error": message}))).into_response(),
@@ -938,49 +1365,71 @@ async fn post_model(
         )
             .into_response();
     }
-    let result = async {
-        let path = session_path_for(&state, &pane_id)
-            .await
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
-        let previous_model = latest_model_receipt(&path).await;
-        let previous_thinking = latest_thinking_receipt(&path).await;
-        let screen = screen_text(&pane_id)
-            .await
-            .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-        let preserved_thinking = requested_thinking.or_else(|| {
-            if screen_thinking_level(&screen) == Some("auto") {
-                Some("auto")
-            } else {
-                previous_thinking.as_ref().map(|receipt| receipt.level)
+    let task_state = state.clone();
+    let task_pane_id = pane_id.clone();
+    let task_selector = selector.clone();
+    let task = tokio::spawn(async move {
+        let driver_state = task_state.clone();
+        let driver_pane_id = task_pane_id.clone();
+        run_locked_driver(task_state, task_pane_id, async move {
+            let path = session_path_for(&driver_state, &driver_pane_id)
+                .await
+                .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
+            let previous_model = latest_model_receipt(&path).await;
+            let previous_thinking = latest_thinking_receipt(&path).await;
+            let screen = screen_text(&driver_pane_id)
+                .await
+                .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+            let preserved_thinking = requested_thinking
+                .or_else(|| screen_thinking_level(&screen))
+                .or_else(|| previous_thinking.as_ref().map(|receipt| receipt.level));
+            if previous_model
+                .as_ref()
+                .is_some_and(|receipt| receipt.selector == task_selector)
+                || screen_has_model_selector(&screen, &task_selector)
+            {
+                return Ok(preserved_thinking);
             }
-        });
-        drive_model_picker(&pane_id, &selector).await?;
-        wait_model_receipt(&path, previous_model.as_ref(), &selector)
-            .await
-            .ok_or_else(|| {
-                (
-                    StatusCode::BAD_GATEWAY,
-                    "switch sent but no matching session receipt was recorded".to_string(),
-                )
-            })?;
-        // Omp re-applies a model-specific thinking setting immediately after
-        // `model_change`. Wait for that receipt before restoring the caller's
-        // prior configured level, or a late reapply can overwrite our restore.
-        if preserved_thinking.is_some() {
-            for _ in 0..15 {
-                if latest_thinking_receipt(&path).await != previous_thinking {
-                    break;
+            drive_model_picker(&driver_pane_id, &task_selector).await?;
+            if wait_model_receipt(&path, previous_model.as_ref(), &task_selector)
+                .await
+                .is_none()
+            {
+                let screen = screen_text(&driver_pane_id)
+                    .await
+                    .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+                if !screen_has_model_selector(&screen, &task_selector) {
+                    return Err((
+                        StatusCode::BAD_GATEWAY,
+                        "switch sent but neither the session receipt nor live screen confirmed it"
+                            .to_string(),
+                    ));
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
-        }
-        if let Some(thinking) = preserved_thinking {
-            drive_thinking(&pane_id, &path, thinking).await?;
-        }
-        Ok(preserved_thinking)
-    }
-    .await;
-    state.pane_locks.lock().await.remove(&pane_id);
+            // Omp re-applies a model-specific thinking setting immediately after
+            // model_change. Wait for that receipt before restoring the caller's
+            // prior configured level, or a late reapply can overwrite our restore.
+            if preserved_thinking.is_some() {
+                for _ in 0..15 {
+                    if latest_thinking_receipt(&path).await != previous_thinking {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+            if let Some(thinking) = preserved_thinking {
+                drive_thinking(&driver_pane_id, &path, thinking).await?;
+            }
+            Ok(preserved_thinking)
+        })
+        .await
+    });
+    let result = task.await.unwrap_or_else(|_| {
+        Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "model driver task failed".to_string(),
+        ))
+    });
     match result {
         Ok(thinking) => {
             Json(json!({"ok": true, "model": selector, "thinking": thinking})).into_response()
@@ -1000,6 +1449,21 @@ fn unframed_row(line: &str) -> &str {
         .or_else(|| row.strip_suffix('|'))
         .unwrap_or(row)
         .trim_end()
+}
+
+fn screen_model_selector(screen: &str) -> Option<String> {
+    screen.lines().find_map(|line| {
+        let (_, tail) = line.split_once("Session-only model: ")?;
+        let selector = tail
+            .split_whitespace()
+            .next()?
+            .trim_end_matches(['.', ',', ';']);
+        selector.contains('/').then(|| selector.to_owned())
+    })
+}
+
+fn screen_has_model_selector(screen: &str, selector: &str) -> bool {
+    screen_model_selector(screen).as_deref() == Some(selector)
 }
 
 fn selected_model_row(screen: &str, selector: &str) -> bool {
@@ -1639,35 +2103,223 @@ async fn get_commands() -> impl IntoResponse {
     )
 }
 
-/// Available models from `omp models --json` (registry of authenticated
-/// providers). Slow (~2-3s subprocess), so cached for the bridge lifetime —
-/// the catalog only changes with omp upgrades or new provider auth.
-async fn get_models() -> impl IntoResponse {
-    use tokio::sync::OnceCell;
-    static MODELS: OnceCell<Option<String>> = OnceCell::const_new();
-    let cached = MODELS
-        .get_or_init(|| async {
-            let out = tokio::process::Command::new("omp")
-                .args(["models", "--json"])
-                .output()
-                .await
-                .ok()?;
-            if !out.status.success() {
-                return None;
+fn model_cache_path() -> PathBuf {
+    if let Ok(path) = std::env::var("KELPIE_MODEL_CACHE") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join(".cache/kelpie/models.json"))
+        .unwrap_or_else(|| PathBuf::from(".cache/kelpie/models.json"))
+}
+
+fn first_numeric_version(value: &str) -> Option<String> {
+    let chars: Vec<char> = value.chars().collect();
+    let mut index = chars.iter().position(|char| char.is_ascii_digit())?;
+    let mut token = String::new();
+    while index < chars.len() {
+        if chars[index].is_ascii_digit() {
+            token.push(chars[index]);
+            index += 1;
+            continue;
+        }
+        if matches!(chars[index], '.' | '-')
+            && chars.get(index + 1).is_some_and(char::is_ascii_digit)
+        {
+            token.push('.');
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    (!token.is_empty()).then_some(token)
+}
+
+fn humanize_model_id(id: &str) -> String {
+    id.split(|c: char| matches!(c, '-' | '_' | ':' | '/'))
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
             }
-            let body = String::from_utf8(out.stdout).ok()?;
-            // sanity: must parse as JSON with a models array
-            let v: Value = serde_json::from_str(&body).ok()?;
-            v.get("models")?.as_array()?;
-            Some(body)
         })
-        .await;
-    match cached {
-        Some(body) => (
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            body.clone(),
-        )
-            .into_response(),
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn normalize_model_catalog(raw: Value) -> Option<Value> {
+    let mut root = raw.as_object()?.clone();
+    let models = root.remove("models")?.as_array()?.clone();
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::with_capacity(models.len());
+    for row in models {
+        let Some(mut row) = row.as_object().cloned() else {
+            continue;
+        };
+        let Some(provider) = row
+            .get("provider")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.chars().any(char::is_control))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let Some(id) = row
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.chars().any(char::is_control))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let selector = format!("{provider}/{id}");
+        if !seen.insert(selector) {
+            continue;
+        }
+        let name = row
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let name = match (name, first_numeric_version(&id)) {
+            (Some(name), Some(id_version))
+                if first_numeric_version(&name)
+                    .is_some_and(|name_version| name_version != id_version) =>
+            {
+                humanize_model_id(&id)
+            }
+            (Some(name), _) => name,
+            (None, _) => humanize_model_id(&id),
+        };
+        row.insert("provider".into(), Value::String(provider));
+        row.insert("id".into(), Value::String(id));
+        row.insert("name".into(), Value::String(name));
+        normalized.push(Value::Object(row));
+    }
+    if normalized.is_empty() {
+        return None;
+    }
+    root.insert("models".into(), Value::Array(normalized));
+    Some(Value::Object(root))
+}
+
+fn normalize_cached_model_catalog(
+    parsed: Value,
+    expected_omp_version: Option<&str>,
+) -> Option<Value> {
+    if expected_omp_version.is_some_and(|expected| {
+        parsed.get("_kelpie_omp_version").and_then(Value::as_str) != Some(expected)
+    }) {
+        return None;
+    }
+    normalize_model_catalog(parsed)
+}
+
+fn load_model_cache(expected_omp_version: Option<&str>) -> Option<Value> {
+    let raw = std::fs::read_to_string(model_cache_path()).ok()?;
+    let parsed = serde_json::from_str::<Value>(&raw).ok()?;
+    normalize_cached_model_catalog(parsed, expected_omp_version)
+}
+
+fn persist_model_cache(catalog: &Value) -> std::io::Result<()> {
+    let path = model_cache_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension(format!("json.tmp-{}", now_ms()));
+    let bytes = serde_json::to_vec(catalog).map_err(std::io::Error::other)?;
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(temporary, path)
+}
+
+async fn fetch_omp_version() -> Option<String> {
+    let mut command = tokio::process::Command::new("omp");
+    command.arg("--version").kill_on_drop(true);
+    let output = tokio::time::timeout(OMP_VERSION_TIMEOUT, command.output())
+        .await
+        .ok()?
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|version| !version.is_empty())
+}
+
+async fn fetch_model_catalog(omp_version: Option<&str>) -> Option<Value> {
+    let mut command = tokio::process::Command::new("omp");
+    command.args(["models", "--json"]).kill_on_drop(true);
+    let output = tokio::time::timeout(MODEL_REFRESH_TIMEOUT, command.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let mut catalog = normalize_model_catalog(serde_json::from_slice(&output.stdout).ok()?)?;
+    if let (Some(version), Some(root)) = (omp_version, catalog.as_object_mut()) {
+        root.insert(
+            "_kelpie_omp_version".into(),
+            Value::String(version.to_owned()),
+        );
+    }
+    Some(catalog)
+}
+
+async fn begin_model_refresh(state: &Shared) -> ModelRefreshRole {
+    let mut refresh = state.model_refresh.lock().await;
+    if let Some(receiver) = refresh.as_ref() {
+        ModelRefreshRole::Follower(receiver.clone())
+    } else {
+        let (sender, receiver) = watch::channel(false);
+        *refresh = Some(receiver);
+        ModelRefreshRole::Leader(sender)
+    }
+}
+
+async fn refresh_model_catalog(state: Shared) -> Option<Value> {
+    let sender = match begin_model_refresh(&state).await {
+        ModelRefreshRole::Follower(mut receiver) => {
+            let _ = receiver.changed().await;
+            return state.model_catalog.read().await.clone();
+        }
+        ModelRefreshRole::Leader(sender) => sender,
+    };
+
+    let fresh = fetch_model_catalog(state.omp_version.as_deref()).await;
+    if let Some(catalog) = fresh.clone() {
+        *state.model_catalog.write().await = Some(catalog.clone());
+        let _ = tokio::task::spawn_blocking(move || persist_model_cache(&catalog)).await;
+    }
+    {
+        let mut refresh = state.model_refresh.lock().await;
+        *refresh = None;
+    }
+    let _ = sender.send(true);
+    if fresh.is_some() {
+        fresh
+    } else {
+        state.model_catalog.read().await.clone()
+    }
+}
+
+/// Available models from omp models --json. A validated persistent LKG serves
+/// immediately; the first miss coalesces callers behind one bounded refresh.
+async fn get_models(State(state): State<Shared>) -> impl IntoResponse {
+    let cached = state.model_catalog.read().await.clone();
+    let catalog = match cached {
+        Some(catalog) => Some(catalog),
+        None => refresh_model_catalog(state).await,
+    };
+    match catalog {
+        Some(catalog) => Json(catalog).into_response(),
         None => (
             StatusCode::BAD_GATEWAY,
             Json(json!({"error": "omp models unavailable"})),
@@ -1773,45 +2425,216 @@ async fn post_workspace(Json(body): Json<WorkspaceBody>) -> impl IntoResponse {
     }
 }
 
-async fn post_workspace_close(Path(id): Path<String>) -> impl IntoResponse {
-    match herdr::rpc("workspace.close", json!({ "workspace_id": id })).await {
+async fn post_workspace_close(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let pane_ids = state
+        .fleet
+        .read()
+        .await
+        .panes
+        .iter()
+        .filter(|pane| pane.workspace_id == id)
+        .map(|pane| pane.pane_id.clone())
+        .collect::<HashSet<_>>();
+    if !state.workspace_locks.lock().await.insert(id.clone()) {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "another workspace lifecycle change is in progress"})),
+        )
+            .into_response();
+    }
+    let locks = state.pane_locks.lock().await;
+    if pane_ids.iter().any(|pane_id| locks.contains(pane_id)) {
+        drop(locks);
+        state.workspace_locks.lock().await.remove(&id);
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "a pane write is still in progress"})),
+        )
+            .into_response();
+    }
+    let response = match herdr::rpc("workspace.close", json!({ "workspace_id": id.clone() })).await
+    {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(err) => err_json(err),
-    }
+    };
+    drop(locks);
+    state.workspace_locks.lock().await.remove(&id);
+    response
 }
 
 #[derive(Deserialize)]
 struct TabBody {
     workspace_id: String,
+    action_id: String,
 }
 
-async fn post_tab(Json(body): Json<TabBody>) -> impl IntoResponse {
-    match herdr::rpc("tab.create", json!({ "workspace_id": body.workspace_id })).await {
-        Ok(res) => {
-            let tab_id = res
-                .get("tab")
-                .and_then(|t| t.get("tab_id"))
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            let pane_id = res
-                .get("root_pane")
-                .or_else(|| res.get("pane"))
-                .and_then(|p| p.get("pane_id"))
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            Json(json!({ "tab_id": tab_id, "pane_id": pane_id })).into_response()
+async fn tab_action_response(action: &Arc<Mutex<TabAction>>) -> axum::response::Response {
+    let current = action.lock().await;
+    let status = match current.phase {
+        TabActionPhase::Pending => StatusCode::ACCEPTED,
+        TabActionPhase::Confirmed => StatusCode::OK,
+        TabActionPhase::Failed => StatusCode::OK,
+    };
+    (status, Json(tab_action_json(&current))).into_response()
+}
+
+async fn post_tab(State(state): State<Shared>, Json(body): Json<TabBody>) -> impl IntoResponse {
+    let workspace_id = body.workspace_id.trim().to_owned();
+    let action_id = body.action_id.trim().to_owned();
+    if workspace_id.is_empty() || action_id.is_empty() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "workspace_id and action_id are required"})),
+        )
+            .into_response();
+    }
+    let key = (workspace_id.clone(), action_id.clone());
+    let action = {
+        let mut actions = state.tab_actions.lock().await;
+        if let Some(action) = actions.get(&key) {
+            return tab_action_response(action).await;
         }
-        Err(err) => err_json(err),
+        if !state
+            .workspace_locks
+            .lock()
+            .await
+            .insert(workspace_id.clone())
+        {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "another workspace lifecycle change is in progress"})),
+            )
+                .into_response();
+        }
+        let action = Arc::new(Mutex::new(TabAction {
+            workspace_id: workspace_id.clone(),
+            action_id,
+            phase: TabActionPhase::Pending,
+            pane_id: None,
+            error: None,
+        }));
+        actions.insert(key, action.clone());
+        action
+    };
+    let task_state = state.clone();
+    let task_action = action.clone();
+    tokio::spawn(async move {
+        let result = herdr::rpc(
+            "tab.create",
+            json!({ "workspace_id": workspace_id.clone() }),
+        )
+        .await;
+        task_state
+            .workspace_locks
+            .lock()
+            .await
+            .remove(&workspace_id);
+        let mut current = task_action.lock().await;
+        match result {
+            Ok(response) => {
+                let pane_id = response
+                    .get("root_pane")
+                    .or_else(|| response.get("pane"))
+                    .and_then(|pane| pane.get("pane_id"))
+                    .and_then(Value::as_str)
+                    .filter(|pane_id| !pane_id.is_empty())
+                    .map(str::to_owned);
+                if let Some(pane_id) = pane_id {
+                    current.phase = TabActionPhase::Confirmed;
+                    current.pane_id = Some(pane_id);
+                } else {
+                    current.phase = TabActionPhase::Failed;
+                    current.error = Some("tab create returned no pane".into());
+                }
+            }
+            Err(error) => {
+                current.phase = TabActionPhase::Failed;
+                current.error = Some(error.to_string());
+            }
+        }
+        drop(current);
+        if let Some(tx) = &task_state.pokes {
+            let _ = tx.send(json!({"type": "fleet"}).to_string());
+        }
+    });
+    tab_action_response(&action).await
+}
+
+async fn get_tab_status(
+    State(state): State<Shared>,
+    Path((workspace_id, action_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let action = state
+        .tab_actions
+        .lock()
+        .await
+        .get(&(workspace_id, action_id))
+        .cloned();
+    match action {
+        Some(action) => tab_action_response(&action).await,
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "tab action not found"})),
+        )
+            .into_response(),
     }
 }
 
-async fn post_tab_close(Path(id): Path<String>) -> impl IntoResponse {
-    match herdr::rpc("tab.close", json!({ "tab_id": id })).await {
+async fn post_tab_close(State(state): State<Shared>, Path(id): Path<String>) -> impl IntoResponse {
+    let (workspace_id, pane_ids) = {
+        let fleet = state.fleet.read().await;
+        let workspace_id = fleet
+            .panes
+            .iter()
+            .find(|pane| pane.tab_id == id)
+            .map(|pane| pane.workspace_id.clone());
+        let pane_ids = fleet
+            .panes
+            .iter()
+            .filter(|pane| pane.tab_id == id)
+            .map(|pane| pane.pane_id.clone())
+            .collect::<HashSet<_>>();
+        (workspace_id, pane_ids)
+    };
+    let Some(workspace_id) = workspace_id else {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "tab workspace is not available yet"})),
+        )
+            .into_response();
+    };
+    if !state
+        .workspace_locks
+        .lock()
+        .await
+        .insert(workspace_id.clone())
+    {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "another workspace lifecycle change is in progress"})),
+        )
+            .into_response();
+    }
+    let locks = state.pane_locks.lock().await;
+    if pane_ids.iter().any(|pane_id| locks.contains(pane_id)) {
+        drop(locks);
+        state.workspace_locks.lock().await.remove(&workspace_id);
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "a pane write is still in progress"})),
+        )
+            .into_response();
+    }
+    let response = match herdr::rpc("tab.close", json!({ "tab_id": id })).await {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
         Err(err) => err_json(err),
-    }
+    };
+    drop(locks);
+    state.workspace_locks.lock().await.remove(&workspace_id);
+    response
 }
 
 #[derive(Deserialize)]
@@ -1845,11 +2668,18 @@ async fn no_cache(mut res: axum::response::Response) -> axum::response::Response
 #[tokio::main]
 async fn main() -> Result<()> {
     let (tx, _) = broadcast::channel(64);
+    let omp_version = fetch_omp_version().await;
     let state: Shared = Arc::new(AppState {
         fleet: RwLock::new(Fleet::default()),
         pokes: Some(tx),
         pane_locks: Mutex::new(HashSet::new()),
+        workspace_locks: Mutex::new(HashSet::new()),
         ask_actions: Mutex::new(HashMap::new()),
+        text_actions: Mutex::new(HashMap::new()),
+        tab_actions: Mutex::new(HashMap::new()),
+        model_catalog: RwLock::new(load_model_cache(omp_version.as_deref())),
+        model_refresh: Mutex::new(None),
+        omp_version,
     });
 
     // Prime the fleet once before serving so first paint isn't empty.
@@ -1857,6 +2687,8 @@ async fn main() -> Result<()> {
         *state.fleet.write().await = f;
     }
     tokio::spawn(refresher(state.clone()));
+    // Refresh in the background so a validated LKG can serve immediately.
+    tokio::spawn(refresh_model_catalog(state.clone()));
 
     // Static assets live next to the binary's project root by default; run
     // from the repo root or point KELPIE_STATIC anywhere else.
@@ -1866,6 +2698,7 @@ async fn main() -> Result<()> {
         .route("/api/fleet", get(get_fleet))
         .route("/api/session/{pane_id}", get(get_session))
         .route("/api/pane/{pane_id}/text", post(post_text))
+        .route("/api/pane/{pane_id}/text/{action_id}", get(get_text_status))
         .route("/api/pane/{pane_id}/keys", post(post_keys))
         .route("/api/pane/{pane_id}/thinking", post(post_thinking))
         .route("/api/pane/{pane_id}/model", post(post_model))
@@ -1885,6 +2718,10 @@ async fn main() -> Result<()> {
         .route("/api/workspace", post(post_workspace))
         .route("/api/workspace/{id}/close", post(post_workspace_close))
         .route("/api/tab", post(post_tab))
+        .route(
+            "/api/tab/{workspace_id}/action/{action_id}",
+            get(get_tab_status),
+        )
         .route("/api/tab/{id}/close", post(post_tab_close))
         .route("/api/tab/{id}/rename", post(post_tab_rename))
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))
@@ -1973,5 +2810,192 @@ mod tests {
         .await;
         assert_eq!(different_registration, ActionRegistration::Conflict);
         assert!(Arc::ptr_eq(&first, &different));
+    }
+
+    #[tokio::test]
+    async fn model_catalog_followers_cannot_miss_refresh_completion() {
+        let state = Arc::new(AppState::default());
+        let sender = match begin_model_refresh(&state).await {
+            ModelRefreshRole::Leader(sender) => sender,
+            ModelRefreshRole::Follower(_) => panic!("first caller must lead"),
+        };
+        let follower = match begin_model_refresh(&state).await {
+            ModelRefreshRole::Follower(receiver) => receiver,
+            ModelRefreshRole::Leader(_) => panic!("second caller must follow"),
+        };
+
+        *state.model_refresh.lock().await = None;
+        let _ = sender.send(true);
+
+        tokio::time::timeout(Duration::from_millis(50), async move {
+            let mut follower = follower;
+            follower.changed().await.expect("leader remains alive");
+        })
+        .await
+        .expect("completion sent before await must still wake the follower");
+    }
+
+    #[test]
+    fn model_catalog_normalization_dedupes_exact_selectors_and_repairs_names() {
+        let raw = json!({
+            "models": [
+                {"provider": "openai", "id": "gpt-4o", "name": "GPT 3 Turbo"},
+                {"provider": "openai", "id": "gpt-4o", "name": "duplicate"},
+                {"provider": "openai", "id": "gpt-4o-mini", "name": "GPT 4o Mini"},
+                {"name": "orphan"},
+                {"provider": "anthropic", "id": "claude-3-5-sonnet", "name": "Claude 3.5 Sonnet"}
+            ]
+        });
+        let normalized = normalize_model_catalog(raw).expect("valid catalog");
+        let models = normalized.get("models").and_then(Value::as_array).unwrap();
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0]["provider"], "openai");
+        assert_eq!(models[0]["id"], "gpt-4o");
+        assert_eq!(models[0]["name"], "Gpt 4o");
+        assert_eq!(models[1]["id"], "gpt-4o-mini");
+        assert_eq!(models[2]["id"], "claude-3-5-sonnet");
+        assert_eq!(models[2]["name"], "Claude 3.5 Sonnet");
+    }
+
+    #[test]
+    fn model_catalog_normalization_rejects_missing_identity() {
+        assert!(normalize_model_catalog(json!({"models": [{"name": "orphan"}]})).is_none());
+    }
+
+    #[test]
+    fn model_cache_rejects_only_a_known_version_mismatch() {
+        let cached = json!({
+            "_kelpie_omp_version": "omp v17.0.5",
+            "models": [{"provider": "openai", "id": "gpt-5.6-sol", "name": "GPT-5.6-Sol"}]
+        });
+        assert!(normalize_cached_model_catalog(cached.clone(), Some("omp v17.0.5")).is_some());
+        assert!(normalize_cached_model_catalog(cached.clone(), Some("omp v18.0.0")).is_none());
+        assert!(normalize_cached_model_catalog(cached, None).is_some());
+    }
+
+    #[test]
+    fn agent_text_driver_requires_a_recognized_empty_composer() {
+        assert_eq!(
+            screen_composer_occupied("/private/tmp/project                    20:19\n❯\n"),
+            Some(false)
+        );
+        assert_eq!(
+            screen_composer_occupied(
+                "/private/tmp/project                    20:19\n❯ unsent draft\n"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            screen_composer_occupied("shell output without prompt"),
+            None
+        );
+        assert_eq!(screen_composer_occupied("$ "), None);
+        assert!(control_composer_requires_clear("❯ /switch"));
+        assert!(control_composer_requires_clear("❯ /sw"));
+        assert!(!control_composer_requires_clear("❯ operator draft"));
+        assert!(!control_composer_requires_clear("❯ /switchboard notes"));
+        assert!(!control_composer_requires_clear("❯ /switch provider/model"));
+    }
+
+    #[test]
+    fn current_reasoning_is_detected_on_empty_sessions() {
+        let screen = "openai-codex/GPT-5.6-Luna · low · kelpie · master ctx 14%";
+        assert_eq!(screen_thinking_level(screen), Some("low"));
+        assert_eq!(
+            screen_thinking_level("openai-codex/GPT-5.6-Luna · high"),
+            Some("high")
+        );
+    }
+
+    #[test]
+    fn current_model_selector_is_detected_on_empty_sessions() {
+        let screen =
+            "Session-only model: openai-codex/gpt-5.6-luna. Use alt+m or /model for roles.";
+        assert_eq!(
+            screen_model_selector(screen).as_deref(),
+            Some("openai-codex/gpt-5.6-luna")
+        );
+        assert!(screen_has_model_selector(
+            screen,
+            "openai-codex/gpt-5.6-luna"
+        ));
+        assert!(!screen_has_model_selector(
+            screen,
+            "openai-codex/gpt-5.6-sol"
+        ));
+    }
+
+    #[test]
+    fn text_input_marker_survives_terminal_line_wrapping() {
+        let text = "omp --no-session --model openai-codex/gpt-5.6-luna --thinking low";
+        let screen = "❯ omp --no-session --model openai-codex/gpt-5.6-luna --thinking lo\nw";
+        let marker = input_marker(text);
+        assert_eq!(marker, "-luna--thinkinglow");
+        assert!(screen_contains_input(screen, &marker));
+    }
+
+    #[test]
+    fn omp_control_inputs_confirm_at_the_terminal_boundary() {
+        assert!(!requires_user_message_receipt("/exit"));
+        assert!(!requires_user_message_receipt("!echo ok"));
+        assert!(!requires_user_message_receipt("$ 2 + 2"));
+        assert!(!requires_user_message_receipt("# action"));
+        assert!(requires_user_message_receipt("Reply with OK"));
+    }
+
+    #[tokio::test]
+    async fn text_action_registration_is_idempotent_conflicting_and_bounded() {
+        let state = Arc::new(AppState::default());
+        let key = TextActionKey {
+            pane_id: "pane".into(),
+            action_id: "same".into(),
+        };
+        let (first, first_registration) =
+            register_text_action(&state, key.clone(), "hello".into()).await;
+        let (same, same_registration) =
+            register_text_action(&state, key.clone(), "hello".into()).await;
+        assert_eq!(first_registration, ActionRegistration::New);
+        assert_eq!(same_registration, ActionRegistration::Existing);
+        assert!(Arc::ptr_eq(&first, &same));
+        let (_, conflict_registration) =
+            register_text_action(&state, key, "different".into()).await;
+        assert_eq!(conflict_registration, ActionRegistration::Conflict);
+
+        for index in 0..=TEXT_ACTION_TERMINAL_CAP {
+            let key = TextActionKey {
+                pane_id: "pane".into(),
+                action_id: format!("terminal-{index:03}"),
+            };
+            let (action, _) = register_text_action(&state, key, "text".into()).await;
+            update_text_action(&state, &action, TextPhase::Confirmed, false, None).await;
+        }
+        let terminal_actions = {
+            let actions = state.text_actions.lock().await;
+            let mut terminal = Vec::new();
+            for action in actions.values() {
+                if text_action_terminal(&action.lock().await.phase) {
+                    terminal.push(action.clone());
+                }
+            }
+            terminal
+        };
+        assert_eq!(terminal_actions.len(), TEXT_ACTION_TERMINAL_CAP + 1);
+        for action in terminal_actions {
+            action.lock().await.updated_at_ms =
+                now_ms().saturating_sub(TEXT_ACTION_RETENTION_MS + 1);
+        }
+        let key = TextActionKey {
+            pane_id: "pane".into(),
+            action_id: "trigger-prune".into(),
+        };
+        let _ = register_text_action(&state, key, "text".into()).await;
+        let actions = state.text_actions.lock().await;
+        let mut terminal = 0;
+        for action in actions.values() {
+            if text_action_terminal(&action.lock().await.phase) {
+                terminal += 1;
+            }
+        }
+        assert_eq!(terminal, TEXT_ACTION_TERMINAL_CAP);
     }
 }

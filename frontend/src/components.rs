@@ -1,5 +1,4 @@
 use gloo_events::EventListener;
-use gloo_timers::callback::Timeout;
 use js_sys::{Function, Reflect};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -9,6 +8,67 @@ use yew::prelude::*;
 use crate::api;
 use crate::icons::{avatar, icon};
 use crate::{navigate, AppContext, Route, ToastKind, ToastMessage};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatusDescriptor {
+    pub class: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+/// Map raw pane state to the vocabulary shared by headers, inbox cards, and terminals.
+pub fn status_descriptor(status: &str, pending: bool) -> StatusDescriptor {
+    let normalized = status.trim();
+    if pending
+        || normalized.eq_ignore_ascii_case("pending")
+        || normalized.eq_ignore_ascii_case("blocked")
+        || normalized.eq_ignore_ascii_case("needs input")
+        || normalized.eq_ignore_ascii_case("needs-input")
+        || normalized.eq_ignore_ascii_case("waiting")
+        || normalized.eq_ignore_ascii_case("awaiting input")
+    {
+        return StatusDescriptor {
+            class: "needs-input",
+            label: "Needs input",
+            description: "This workspace needs your input before it can continue.",
+        };
+    }
+    if ["working", "running", "active"]
+        .iter()
+        .any(|value| normalized.eq_ignore_ascii_case(value))
+    {
+        return StatusDescriptor {
+            class: "working",
+            label: "Working",
+            description: "This workspace is actively working.",
+        };
+    }
+    if ["idle", "ready"]
+        .iter()
+        .any(|value| normalized.eq_ignore_ascii_case(value))
+    {
+        return StatusDescriptor {
+            class: "idle",
+            label: "Idle",
+            description: "This workspace is waiting for work.",
+        };
+    }
+    if ["done", "completed", "complete"]
+        .iter()
+        .any(|value| normalized.eq_ignore_ascii_case(value))
+    {
+        return StatusDescriptor {
+            class: "done",
+            label: "Done",
+            description: "This workspace finished successfully.",
+        };
+    }
+    StatusDescriptor {
+        class: "unknown",
+        label: "Unknown",
+        description: "This workspace status is unavailable.",
+    }
+}
 
 #[derive(Clone, Properties, PartialEq)]
 pub struct HeaderProps {
@@ -31,12 +91,7 @@ pub fn header(props: &HeaderProps) -> Html {
         Callback::from(move |_| status_open.set(!*status_open))
     };
     let status_value = props.status.as_deref().unwrap_or("unknown");
-    let status_class = status_value.to_ascii_lowercase().replace(' ', "-");
-    let status_label = if props.pending {
-        "Pending".to_owned()
-    } else {
-        status_value.to_owned()
-    };
+    let status = status_descriptor(status_value, props.pending);
     let connectivity = if props.connected {
         "Connected"
     } else {
@@ -54,7 +109,7 @@ pub fn header(props: &HeaderProps) -> Html {
             <span class="hdr-avatar" aria-hidden="true">{avatar(workspace, true)}</span>
         }
     });
-    let status_button_label = format!("Status: {status_label}. {connectivity}");
+    let status_button_label = format!("Status: {}. {}", status.label, status.description);
     html! {
         <header class="hdr">
             {back.unwrap_or_else(|| html! { <span class="hdr-leading" aria-hidden="true" /> })}
@@ -71,11 +126,12 @@ pub fn header(props: &HeaderProps) -> Html {
                     aria-controls="header-status-popover"
                     onclick={toggle_status}
                 >
-                    <span class={classes!("status-dot", status_class.clone(), props.pending.then_some("pending"))} />
+                    <span class={classes!("status-dot", status.class)} />
                 </button>
                 if *status_open {
                     <div id="header-status-popover" class="hdr-status-popover" role="status">
-                        <strong>{status_label}</strong>
+                        <strong>{status.label}</strong>
+                        <span>{status.description}</span>
                         <span>{connectivity}</span>
                     </div>
                 }
@@ -248,6 +304,8 @@ pub fn bottom_sheet(props: &BottomSheetProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct TabStripProps {
     pub pane_id: String,
+    #[prop_or(false)]
+    pub busy: bool,
 }
 
 fn tab_label(tab: &crate::types::Tab, fleet: &crate::types::Fleet) -> String {
@@ -293,7 +351,13 @@ fn pane_route(pane_id: String) -> Route {
 #[function_component(TabStrip)]
 pub fn tab_strip(props: &TabStripProps) -> Html {
     let context = use_context::<AppContext>();
-    let pending_close = use_state(|| None::<String>);
+    let close_request = use_state(|| None::<String>);
+    let creating_tab = use_state(|| false);
+    let tab_closing = use_state(|| false);
+    let workspace_close_open = use_state(|| false);
+    let workspace_closing = use_state(|| false);
+    let lifecycle_lock = use_mut_ref(|| false);
+    let tab_action_id = use_mut_ref(|| None::<String>);
     let fleet = context.as_ref().and_then(|context| context.fleet.clone());
     let pane = fleet.as_ref().and_then(|fleet| {
         fleet
@@ -317,114 +381,292 @@ pub fn tab_strip(props: &TabStripProps) -> Html {
         })
         .unwrap_or_default();
     let current_tab = pane.map(|pane| pane.tab_id.clone());
+    let lifecycle_busy = *creating_tab || *tab_closing || *workspace_closing;
     let new_tab = {
         let context = context.clone();
         let workspace_id = workspace_id.clone();
+        let creating_tab = creating_tab.clone();
+        let lifecycle_lock = lifecycle_lock.clone();
+        let tab_action_id = tab_action_id.clone();
+        let parent_busy = props.busy;
         Callback::from(move |_| {
+            if parent_busy || *lifecycle_lock.borrow() {
+                return;
+            }
             let Some(workspace_id) = workspace_id.clone() else {
                 return;
             };
             let Some(context) = context.clone() else {
                 return;
             };
+            *lifecycle_lock.borrow_mut() = true;
+            let action_id = tab_action_id
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| format!("tab:{}:{}", workspace_id, js_sys::Date::now() as u64));
+            *tab_action_id.borrow_mut() = Some(action_id.clone());
+            creating_tab.set(true);
+            let creating_tab = creating_tab.clone();
+            let lifecycle_lock = lifecycle_lock.clone();
+            let tab_action_id = tab_action_id.clone();
             spawn_local(async move {
-                match api::create_tab(&workspace_id).await {
+                match api::create_tab(&workspace_id, &action_id).await {
                     Ok(response) => {
+                        *tab_action_id.borrow_mut() = None;
                         context.fleet_refresh.emit(());
                         if let Some(pane_id) = response.pane_id {
-                            navigate(&pane_route(pane_id));
+                            navigate(&Route::Terminal(pane_id));
                         }
                     }
-                    Err(error) => context.toast.emit(ToastMessage {
-                        text: error.message,
-                        kind: ToastKind::Error,
-                    }),
+                    Err(error) => {
+                        if !error.timed_out && error.status != 0 {
+                            *tab_action_id.borrow_mut() = None;
+                        }
+                        context.toast.emit(ToastMessage {
+                            text: error.message,
+                            kind: ToastKind::Error,
+                        });
+                    }
                 }
+                *lifecycle_lock.borrow_mut() = false;
+                creating_tab.set(false);
+            });
+        })
+    };
+    let close_dialog = {
+        let close_request = close_request.clone();
+        let lifecycle_lock = lifecycle_lock.clone();
+        Callback::from(move |_| {
+            if !*lifecycle_lock.borrow() {
+                close_request.set(None);
+            }
+        })
+    };
+    let confirm_close = {
+        let close_request = close_request.clone();
+        let context = context.clone();
+        let tab_closing = tab_closing.clone();
+        let lifecycle_lock = lifecycle_lock.clone();
+        Callback::from(move |_| {
+            if *lifecycle_lock.borrow() {
+                return;
+            }
+            let Some(tab_id) = (*close_request).clone() else {
+                return;
+            };
+            *lifecycle_lock.borrow_mut() = true;
+            tab_closing.set(true);
+            let close_request = close_request.clone();
+            let context = context.clone();
+            let tab_closing = tab_closing.clone();
+            let lifecycle_lock = lifecycle_lock.clone();
+            spawn_local(async move {
+                match api::close_tab(&tab_id).await {
+                    Ok(_) => {
+                        close_request.set(None);
+                        if let Some(context) = context {
+                            context.fleet_refresh.emit(());
+                        }
+                        navigate(&Route::Inbox);
+                    }
+                    Err(error) => {
+                        if let Some(context) = context {
+                            context.toast.emit(ToastMessage {
+                                text: error.message,
+                                kind: ToastKind::Error,
+                            });
+                        }
+                    }
+                }
+                *lifecycle_lock.borrow_mut() = false;
+                tab_closing.set(false);
+            });
+        })
+    };
+    let close_target = (*close_request).clone();
+    let close_label = close_target
+        .as_ref()
+        .and_then(|target| {
+            tabs.iter()
+                .find(|tab| &tab.tab_id == target)
+                .and_then(|tab| fleet.as_ref().map(|fleet| tab_label(tab, fleet)))
+        })
+        .or_else(|| close_target.clone());
+    let workspace_label = workspace_id.as_ref().map(|id| {
+        fleet
+            .as_ref()
+            .and_then(|fleet| {
+                fleet
+                    .workspaces
+                    .iter()
+                    .find(|workspace| workspace.id == *id)
+                    .and_then(|workspace| workspace.label.clone())
+            })
+            .filter(|label| !label.trim().is_empty())
+            .unwrap_or_else(|| id.clone())
+    });
+    let open_workspace_close = {
+        let workspace_close_open = workspace_close_open.clone();
+        let lifecycle_lock = lifecycle_lock.clone();
+        let parent_busy = props.busy;
+        Callback::from(move |_| {
+            if !parent_busy && !*lifecycle_lock.borrow() {
+                workspace_close_open.set(true);
+            }
+        })
+    };
+    let close_workspace_dialog = {
+        let workspace_close_open = workspace_close_open.clone();
+        let lifecycle_lock = lifecycle_lock.clone();
+        Callback::from(move |_| {
+            if !*lifecycle_lock.borrow() {
+                workspace_close_open.set(false);
+            }
+        })
+    };
+    let confirm_workspace_close = {
+        let context = context.clone();
+        let workspace_id = workspace_id.clone();
+        let workspace_close_open = workspace_close_open.clone();
+        let workspace_closing = workspace_closing.clone();
+        let lifecycle_lock = lifecycle_lock.clone();
+        Callback::from(move |_| {
+            if *lifecycle_lock.borrow() {
+                return;
+            }
+            let Some(workspace_id) = workspace_id.clone() else {
+                return;
+            };
+            *lifecycle_lock.borrow_mut() = true;
+            workspace_closing.set(true);
+            let context = context.clone();
+            let workspace_close_open = workspace_close_open.clone();
+            let workspace_closing = workspace_closing.clone();
+            let lifecycle_lock = lifecycle_lock.clone();
+            spawn_local(async move {
+                match api::close_workspace(&workspace_id).await {
+                    Ok(_) => {
+                        workspace_close_open.set(false);
+                        if let Some(context) = context {
+                            context.fleet_refresh.emit(());
+                        }
+                        navigate(&Route::Inbox);
+                    }
+                    Err(error) => {
+                        if let Some(context) = context {
+                            context.toast.emit(ToastMessage {
+                                text: error.message,
+                                kind: ToastKind::Error,
+                            });
+                        }
+                    }
+                }
+                *lifecycle_lock.borrow_mut() = false;
+                workspace_closing.set(false);
             });
         })
     };
     html! {
-        <nav class="tabstrip-wrap" aria-label="Workspace tabs">
-            <div class="tabstrip">
-                {for tabs.iter().map(|tab| {
-                    let active = current_tab.as_deref() == Some(tab.tab_id.as_str());
-                    let confirming = *pending_close == Some(tab.tab_id.clone());
-                    let label = fleet.as_ref().map(|fleet| tab_label(tab, fleet)).unwrap_or_else(|| tab.tab_id.clone());
-                    let target = tab.pane_ids.first().cloned();
-                    let on_switch = {
-                        let target = target.clone();
-                        Callback::from(move |_| {
-                            if !active {
-                                if let Some(target) = target.clone() { navigate(&pane_route(target)); }
-                            }
-                        })
-                    };
-                    let on_switch_key = {
-                        let target = target.clone();
-                        Callback::from(move |event: KeyboardEvent| {
-                            if event.key() == "Enter" || event.key() == " " {
-                                event.prevent_default();
-                                if !active {
-                                    if let Some(target) = target.clone() { navigate(&pane_route(target)); }
-                                }
-                            }
-                        })
-                    };
-                    let on_close = {
-                        let tab_id = tab.tab_id.clone();
-                        let pending_close = pending_close.clone();
-                        let context = context.clone();
-                        Callback::from(move |event: MouseEvent| {
-                            event.stop_propagation();
-                            if *pending_close == Some(tab_id.clone()) {
-                                pending_close.set(None);
-                                let context = context.clone();
-                                let close_id = tab_id.clone();
-                                spawn_local(async move {
-                                    match api::close_tab(&close_id).await {
-                                        Ok(_) => {
-                                            if let Some(context) = context { context.fleet_refresh.emit(()); }
-                                            navigate(&Route::Inbox);
-                                        }
-                                        Err(error) => {
-                                            if let Some(context) = context { context.toast.emit(ToastMessage { text: error.message, kind: ToastKind::Error }); }
-                                        }
+        <>
+            <nav class="tabstrip-wrap" aria-label="Workspace tabs">
+                <div class="tabstrip">
+                    {for tabs.iter().map(|tab| {
+                        let active = current_tab.as_deref() == Some(tab.tab_id.as_str());
+                        let label = fleet.as_ref().map(|fleet| tab_label(tab, fleet)).unwrap_or_else(|| tab.tab_id.clone());
+                        let target = tab.pane_ids.first().cloned();
+                        let on_switch = {
+                            let target = target.clone();
+                            let lifecycle_busy = lifecycle_busy;
+                            Callback::from(move |_| {
+                                if !active && !lifecycle_busy {
+                                    if let Some(target) = target.clone() {
+                                        navigate(&pane_route(target));
                                     }
-                                });
-                            } else {
-                                pending_close.set(Some(tab_id.clone()));
-                                let pending_close = pending_close.clone();
-                                let timeout_tab_id = tab_id.clone();
-                                Timeout::new(3000, move || {
-                                    if *pending_close == Some(timeout_tab_id) { pending_close.set(None); }
-                                }).forget();
-                            }
-                        })
-                    };
-                    html! {
-                        <div
-                            class={classes!("tab-chip", active.then_some("active"))}
-                            role="button"
-                            tabindex="0"
-                            aria-current={active.then_some("page")}
-                            onclick={on_switch.clone()}
-                            onkeydown={on_switch_key}
-                        >
-                            <span class="tab-chip-label">{label}</span>
-                            if active {
-                                <span class="tab-chip-close-wrap">
-                                    <button type="button" class={classes!("tab-chip-x", confirming.then_some("confirm"))} aria-label={if confirming { "Confirm close tab" } else { "Close tab" }} onclick={on_close}>
-                                        {if confirming { "confirm?" } else { "×" }}
+                                }
+                            })
+                        };
+                        let on_close = {
+                            let tab_id = tab.tab_id.clone();
+                            let close_request = close_request.clone();
+                            let lifecycle_busy = lifecycle_busy;
+                            let parent_busy = props.busy;
+                            Callback::from(move |event: MouseEvent| {
+                                event.stop_propagation();
+                                if !parent_busy && !lifecycle_busy {
+                                    close_request.set(Some(tab_id.clone()));
+                                }
+                            })
+                        };
+                        html! {
+                            <div class={classes!("tab-chip-group", active.then_some("active"))}>
+                                <button
+                                    type="button"
+                                    class={classes!("tab-chip", "tab-chip-switch", active.then_some("active"))}
+                                    aria-current={active.then_some("page")}
+                                    aria-label={format!("Switch to tab {label}")}
+                                    onclick={on_switch}
+                                    disabled={lifecycle_busy}
+                                >
+                                    <span class="tab-chip-label">{label.clone()}</span>
+                                </button>
+                                if active {
+                                    <button
+                                        type="button"
+                                        class="tab-chip-x"
+                                        aria-label={format!("Close tab {label}")}
+                                        title={format!("Close tab {label}")}
+                                        disabled={props.busy || lifecycle_busy}
+                                        onclick={on_close}
+                                    >
+                                        {icon("x", 16)}
                                     </button>
-                                </span>
-                            }
-                        </div>
-                    }
-                })}
-                <button type="button" class="tab-chip tab-chip-add" aria-label="New tab" disabled={workspace_id.is_none()} onclick={new_tab}>
-                    {icon("plus", 18)}
-                </button>
-            </div>
-        </nav>
+                                }
+                            </div>
+                        }
+                    })}
+                    <button
+                        type="button"
+                        class="tab-chip tab-chip-add"
+                        aria-label={if *creating_tab { "Creating tab" } else { "New tab" }}
+                        disabled={workspace_id.is_none() || props.busy || lifecycle_busy}
+                        onclick={new_tab}
+                    >
+                        if *creating_tab { <span>{"Adding…"}</span> } else { {icon("plus", 18)} }
+                    </button>
+                    <button
+                        type="button"
+                        class="tab-chip tab-chip-workspace-close"
+                        aria-label="Close workspace"
+                        title="Close workspace"
+                        disabled={workspace_id.is_none() || props.busy || lifecycle_busy}
+                        onclick={open_workspace_close}
+                    >
+                        {icon("trash-2", 17)}
+                    </button>
+                </div>
+            </nav>
+            if let Some(label) = close_label {
+                <BottomSheet title={format!("Close tab {label}")} on_close={close_dialog.clone()}>
+                    <p class="sheet-confirm-copy">{format!("Close the tab \"{label}\"? This removes it from the workspace.")}</p>
+                    <div class="sheet-action-row sheet-confirm-actions">
+                        <button type="button" class="sheet-confirm-cancel" onclick={close_dialog} disabled={*tab_closing}>{"Cancel"}</button>
+                        <button type="button" class="sheet-confirm-close" onclick={confirm_close} disabled={*tab_closing}>
+                            {if *tab_closing { "Closing…" } else { "Close tab" }}
+                        </button>
+                    </div>
+                </BottomSheet>
+            }
+            if *workspace_close_open {
+                <BottomSheet title={format!("Close workspace {}", workspace_label.clone().unwrap_or_default())} on_close={close_workspace_dialog.clone()}>
+                    <p class="sheet-confirm-copy">{"Close this workspace and every tab in it? Running processes will be stopped."}</p>
+                    <div class="sheet-action-row sheet-confirm-actions">
+                        <button type="button" class="sheet-confirm-cancel" onclick={close_workspace_dialog} disabled={*workspace_closing}>{"Cancel"}</button>
+                        <button type="button" class="sheet-confirm-close" onclick={confirm_workspace_close} disabled={*workspace_closing}>
+                            {if *workspace_closing { "Closing…" } else { "Close workspace" }}
+                        </button>
+                    </div>
+                </BottomSheet>
+            }
+        </>
     }
 }

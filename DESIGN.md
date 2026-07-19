@@ -6,26 +6,26 @@ colors:
   hairline: "#d8d5d0"
   foreground: "#1c1b1a"
   muted: "#6b6862"
-  faint: "#9b9893"
+  faint: "#706c66"
   accent: "#0f6e6e"
   accentText: "#0a5252"
-  working: "#945500"
+  working: "#1f6a3a"
   blocked: "#b8332a"
   idle: "#6b6862"
-  done: "#2e6b3e"
+  done: "#45637a"
   backgroundDark: "#14130f"
   surfaceDark: "#1e1d1a"
   overlayDark: "#2a2824"
   hairlineDark: "#383631"
   foregroundDark: "#e8e6e1"
   mutedDark: "#9a968e"
-  faintDark: "#6b6862"
+  faintDark: "#8a8680"
   accentDark: "#2dd4cf"
   accentTextDark: "#5ee5e0"
-  workingDark: "#f0a030"
-  blockedDark: "#f0625a"
+  workingDark: "#65c97b"
+  blockedDark: "#ff7a72"
   idleDark: "#9a968e"
-  doneDark: "#5eb872"
+  doneDark: "#82a8c4"
 typography:
   fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
   monoFamily: "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace"
@@ -99,23 +99,23 @@ vernacular.
 
 ### Status semantics — four states
 
-Each status has a text color and a soft background color (for chips). The
-text colors are darkened from their saturated counterparts to pass AA contrast
-on the light cream background. Raw amber/orange fails AA on light; a darkened
-amber (`#945500`) passes AA at 4.5:1 on white.
+Each status has a text color and a soft background color (for chips). Active
+work is green: it means the current task is moving. A pending ask is red because
+it requires the operator. Completed work moves to blue-gray so success never
+competes with the active-work signal. All text variants pass AA contrast in
+their theme.
 
 | Status   | Light text  | Dark text  | Meaning                    |
 |----------|-------------|------------|----------------------------|
-| working  | `#945500`   | `#f0a030`  | agent actively executing   |
-| blocked  | `#b8332a`   | `#f0625a`  | pending ask, needs input    |
+| working  | `#1f6a3a`   | `#65c97b`  | current task is executing  |
+| blocked  | `#b8332a`   | `#ff7a72`  | pending ask, needs input    |
 | idle     | `#6b6862`   | `#9a968e`  | alive but not working       |
-| done     | `#2e6b3e`   | `#5eb872`  | completed                   |
+| done     | `#45637a`   | `#82a8c4`  | completed                   |
 | unknown  | `#6b6862`   | `#9a968e`  | status not reported         |
 
-Blocked is the highest-attention state and its chip dot pulses (1.4s
-ease-in-out) to draw the eye. Working is static — it doesn't need to pulse
-because the inbox sort already puts it at the top. This is the only ambient
-motion in the system.
+Blocked is the highest-attention state and uses an attention pulse. Working
+uses a slower breathing pulse. Both are opacity-only and disabled under
+reduced motion.
 
 ## Workspace identity
 
@@ -202,10 +202,15 @@ term headers use the status dot instead.
 
 ### Tab strip
 
-Pill chips; close requires a second confirming tap (tap shows "confirm?",
-3s timeout resets). Active tab gets accent border + soft accent background.
-"+" button at the end. The strip only renders with 2+ tabs — a lone tab is
-noise; "New tab" lives in the composer's ⋯ sheet, so nothing is lost.
+Pill chips remain visible even in one-tab workspaces so lifecycle controls
+never disappear. The active tab gets an accent border and its own 44px close
+target. New-tab and workspace-close controls follow the chips. Both destructive
+actions use explicit bottom-sheet confirmation; create/close requests take
+synchronous locks, disable repeat input, and show `Adding…` or `Closing…`.
+Tab creation carries a stable action id: the bridge accepts once, serializes
+all lifecycle mutations per workspace, and exposes status readback so a lost
+POST response cannot create a duplicate tab. Tab/workspace close also refuses
+while an affected pane write is active.
 
 ### Session/term header
 
@@ -213,8 +218,8 @@ Single compact row: back chevron (44px), workspace avatar (28px), workspace
 name as the primary text, and a status dot on the right. The pane title lives
 in the composer's meta row, not the header. The dot is 12px inside a 44px
 tappable button (tap toasts the status word; the button carries the
-aria-label): blocked = red attention pulse, working = amber breathing pulse,
-idle = static gray, done = static green with an inset check (non-color cue),
+aria-label): blocked = red attention pulse, working = green breathing pulse,
+idle = static gray, done = static blue-gray with an inset check (non-color cue),
 unknown = hollow ring. Each state adds a faint status-tinted ring. Pulses are
 the sanctioned ambient motion and are disabled under reduced motion. A 1px
 workspace-hue edge underlines the header. When SSE drops, a tappable amber
@@ -257,6 +262,17 @@ SSE refreshes therefore cannot replace or clear text. Send captures the exact
 submitted value, disables conflicting actions, and clears storage only when
 the confirmed response returns and the current textarea still equals that
 submitted value; edits made while a request is in flight win.
+The action id is persisted beside the draft before submission; if that durable
+write fails, no terminal input is sent. If Enter crossed the terminal boundary
+but receipt readback stays ambiguous, every fresh send and
+pane lifecycle action remains blocked across navigation and reload. The session
+links to the raw terminal; only an explicit “I checked” acknowledgement there
+releases the unresolved action, so an unchanged draft cannot silently execute
+twice under a new id.
+For agent panes, the bridge verifies the visible `❯` composer is present and
+empty before typing. Raw shell panes do not require omp-specific chrome, but
+still require the typed marker to appear before Enter crosses the submit
+boundary. Kelpie never clears text entered from another control surface.
 
 ### Bottom sheets
 
@@ -264,9 +280,11 @@ One generic sheet primitive (scrim + bottom panel, 70dvh max, iOS drawer
 curve `cubic-bezier(0.32, 0.72, 0, 1)`, `@starting-style` rise; scrim tap
 dismisses).
 
-- **Model sheet** (tap model chip): full catalog from `/api/models` (the
-  bridge shells `omp models --json` once and caches — the catalog is static
-  per omp version). Grouped by provider, current provider first, current
+- **Model sheet** (tap model chip): full catalog from `/api/models`. The
+  bridge serves a validated persistent last-known-good immediately, tags it
+  with the producing OMP version, rejects it on a known version mismatch, and
+  coalesces one bounded background `omp models --json` refresh. Timed-out
+  subprocesses are killed. Grouped by provider, current provider first, current
   model highlighted; provider headers stay sticky while scrolling and every
   model row repeats `provider · id`, so same-named models from Anthropic,
   Cursor, OpenRouter, etc. cannot be confused. Filter field on top; 60-row
@@ -275,13 +293,17 @@ dismisses).
   picker rather than `/model`, because `/model` mutates role assignments.
   It opens `/switch`, searches by the complete `provider/model` selector,
   confirms the selected row, and waits for omp's printed
-  `Session-only model: <selector>` receipt. Picker input is paced to respect
-  omp's debounce, Nerd Font glyphs are stripped before screen matching, and
-  failures unwind the picker with Escape. Model and effort changes share the
-  same per-pane lock. The chip shows the confirmed selector as an override
-  until the session file catches up. A provider without credentials fails
-  cleanly; the catalog remains a superset of the providers configured in the
-  current session.
+  `Session-only model: <selector>` receipt. Empty sessions that do not persist
+  a model-change receipt are confirmed against the live selector instead.
+  Picker input is paced to respect omp's debounce, Nerd Font glyphs are
+  stripped before screen matching, and failures unwind the picker with Escape.
+  Model and effort changes share the same per-pane lock. The chip shows the
+  confirmed selector as an override until the session file catches up. A
+  provider without credentials fails cleanly; the catalog remains a superset
+  of the providers configured in the current session. If a control-driver
+  deadline expires mid-picker, the pane lock remains held while Kelpie sends
+  bounded Escape cleanup, clears only its own partial `/switch` command, and
+  verifies the empty composer before unlocking.
 - **Actions sheet** (tap ⋯): Open terminal, New tab, Jump to latest,
   Send Enter, Send Ctrl+C, Back to inbox. Every action has a Lucide icon.
 
@@ -308,12 +330,13 @@ plain text.
 ### Photo attachments
 
 The attach button opens the system photo picker (`<input type=file
-accept=image/*>`). Each photo is POSTed raw to
-`/api/pane/{id}/upload` (32 MB limit); the bridge writes it to a temp
-uploads dir and returns the absolute path. Pending attachments render as
-removable chips above the status row. On send, the file paths are appended
-to the message body — omp's read tool decodes images natively, so the agent
-can open them directly.
+accept=image/* multiple>`). Each photo is POSTed raw to
+`/api/pane/{id}/upload` (32 MB limit); the bridge atomically writes it to a
+unique temp path and returns that absolute path. Concurrent uploads cannot
+overwrite one another. Pending attachments render as removable chips above the
+status row. Send and lifecycle controls remain disabled until every upload
+settles. On send, the file paths are appended to the message body — omp's read
+tool decodes images natively, so the agent can open them directly.
 
 ### Terminal composer
 
@@ -381,8 +404,8 @@ group headers are opaque (no backdrop blur). The bridge polls herdr every
 ## Accessibility
 
 - **WCAG AA contrast** in both light and dark themes. Status text colors are
-  darkened from their saturated counterparts to pass AA on the light
-  background (e.g., working text is `#945500`, not `#ea9d34`).
+  theme-specific: green marks active work, red marks required operator input,
+  and blue-gray marks completion without competing with either.
 - **44px touch targets** minimum on all interactive elements.
 - **Color + shape redundancy:** status uses both color (chip color) and shape
   (dot, uppercase label) so colorblind users can distinguish states.

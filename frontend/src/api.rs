@@ -10,6 +10,9 @@ use web_sys::{AbortController, Headers, Request, RequestInit, Response};
 use crate::types::*;
 
 const DEFAULT_DEADLINE_MS: u32 = 5_000;
+const MODEL_CATALOG_DEADLINE_MS: u32 = 35_000;
+const MODEL_THINKING_POST_DEADLINE_MS: u32 = 45_000;
+const TEXT_POST_DEADLINE_MS: u32 = 2_000;
 const ASK_POST_DEADLINE_MS: u32 = 2_000;
 const ASK_STATUS_DEADLINE_MS: u32 = 1_500;
 
@@ -264,21 +267,100 @@ pub async fn commands() -> Result<Vec<Command>, ApiError> {
 }
 
 pub async fn models() -> Result<Vec<Model>, ApiError> {
-    Ok(
-        get_json::<ModelsResponse>("/api/models", "models fetch failed")
-            .await?
-            .models,
+    Ok(get_json_with_deadline::<ModelsResponse>(
+        "/api/models",
+        "models fetch failed",
+        MODEL_CATALOG_DEADLINE_MS,
     )
+    .await?
+    .models)
 }
 
-pub async fn send_text(pane_id: &str, text: &str) -> Result<serde_json::Value, ApiError> {
+pub async fn send_text(
+    pane_id: &str,
+    text: &str,
+    action_id: &str,
+) -> Result<TextActionReceipt, ApiError> {
     post_json(
         &format!("/api/pane/{}/text", enc(pane_id)),
-        &TextBody { text },
+        &TextBody { text, action_id },
         "send failed",
+        TEXT_POST_DEADLINE_MS,
+    )
+    .await
+}
+
+pub async fn text_status(pane_id: &str, action_id: &str) -> Result<TextActionReceipt, ApiError> {
+    get_json_with_deadline(
+        &format!("/api/pane/{}/text/{}", enc(pane_id), enc(action_id)),
+        "send status read failed",
         DEFAULT_DEADLINE_MS,
     )
     .await
+}
+fn synthetic_text_receipt(
+    action_id: &str,
+    phase: TextActionPhase,
+    retryable: bool,
+    error: Option<String>,
+) -> TextActionReceipt {
+    TextActionReceipt {
+        action_id: action_id.to_owned(),
+        phase,
+        accepted: false,
+        retryable,
+        error,
+    }
+}
+
+async fn poll_text_action(pane_id: &str, action_id: &str) -> TextActionReceipt {
+    let deadline = js_sys::Date::now() + 45_000.0;
+    loop {
+        if js_sys::Date::now() >= deadline {
+            return synthetic_text_receipt(
+                action_id,
+                TextActionPhase::StaleAfterSubmit,
+                false,
+                Some("send status readback window elapsed".to_owned()),
+            );
+        }
+        match text_status(pane_id, action_id).await {
+            Ok(receipt) if receipt.action_id.is_empty() || receipt.action_id == action_id => {
+                if receipt.phase.is_terminal() {
+                    return receipt;
+                }
+            }
+            Ok(_) => {}
+            Err(error) if error.timed_out || error.status == 0 || error.status == 404 => {}
+            Err(error) => {
+                return synthetic_text_receipt(
+                    action_id,
+                    TextActionPhase::StaleAfterSubmit,
+                    false,
+                    Some(error.message),
+                );
+            }
+        }
+        TimeoutFuture::new(500).await;
+    }
+}
+
+/// Submit once, then reconcile the idempotent action through status reads.
+/// Ambiguous POST failures never become a resend.
+pub async fn submit_text_action(pane_id: &str, text: &str, action_id: &str) -> TextActionReceipt {
+    match send_text(pane_id, text, action_id).await {
+        Ok(receipt) if receipt.phase.is_terminal() => receipt,
+        Ok(_) => poll_text_action(pane_id, action_id).await,
+        Err(error) if error.timed_out || error.status == 0 => {
+            poll_text_action(pane_id, action_id).await
+        }
+        Err(error) => synthetic_text_receipt(
+            action_id,
+            TextActionPhase::FailedBeforeSubmit,
+            error.status >= 500,
+            Some(error.message),
+        ),
+    }
 }
 
 pub async fn send_keys(pane_id: &str, keys: &[String]) -> Result<serde_json::Value, ApiError> {
@@ -326,7 +408,7 @@ pub async fn set_thinking(pane_id: &str, thinking: &str) -> Result<ThinkingRespo
         &format!("/api/pane/{}/thinking", enc(pane_id)),
         &ThinkingBody { thinking },
         "thinking change failed",
-        DEFAULT_DEADLINE_MS,
+        MODEL_THINKING_POST_DEADLINE_MS,
     )
     .await
 }
@@ -340,7 +422,7 @@ pub async fn set_model(
         &format!("/api/pane/{}/model", enc(pane_id)),
         &ModelBody { model, thinking },
         "model change failed",
-        DEFAULT_DEADLINE_MS,
+        MODEL_THINKING_POST_DEADLINE_MS,
     )
     .await
 }
@@ -377,14 +459,76 @@ pub async fn create_workspace(cwd: &str) -> Result<CreateResponse, ApiError> {
     .await
 }
 
-pub async fn create_tab(workspace_id: &str) -> Result<CreateResponse, ApiError> {
-    post_json(
-        "/api/tab",
-        &TabBody { workspace_id },
-        "tab create failed",
+async fn tab_status(workspace_id: &str, action_id: &str) -> Result<CreateResponse, ApiError> {
+    get_json_with_deadline(
+        &format!("/api/tab/{}/action/{}", enc(workspace_id), enc(action_id)),
+        "tab create status read failed",
         DEFAULT_DEADLINE_MS,
     )
     .await
+}
+
+async fn poll_tab_action(workspace_id: &str, action_id: &str) -> Result<CreateResponse, ApiError> {
+    let deadline = js_sys::Date::now() + 45_000.0;
+    loop {
+        if js_sys::Date::now() >= deadline {
+            return Err(ApiError::timeout(45_000));
+        }
+        match tab_status(workspace_id, action_id).await {
+            Ok(response) if response.phase == TabActionPhase::Confirmed => return Ok(response),
+            Ok(response) if response.phase == TabActionPhase::Failed => {
+                return Err(ApiError::new(
+                    502,
+                    response
+                        .error
+                        .unwrap_or_else(|| "tab create failed".to_owned()),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.timed_out || error.status == 0 || error.status == 404 => {}
+            Err(error) => return Err(error),
+        }
+        TimeoutFuture::new(150).await;
+    }
+}
+
+pub async fn create_tab(workspace_id: &str, action_id: &str) -> Result<CreateResponse, ApiError> {
+    let submitted: Result<CreateResponse, ApiError> = post_json(
+        "/api/tab",
+        &TabBody {
+            workspace_id,
+            action_id,
+        },
+        "tab create failed",
+        TEXT_POST_DEADLINE_MS,
+    )
+    .await;
+    match submitted {
+        Ok(response) if response.phase == TabActionPhase::Confirmed => Ok(response),
+        Ok(response) if response.phase == TabActionPhase::Failed => Err(ApiError::new(
+            502,
+            response
+                .error
+                .unwrap_or_else(|| "tab create failed".to_owned()),
+        )),
+        Ok(_) => poll_tab_action(workspace_id, action_id).await,
+        Err(error) if error.timed_out || error.status == 0 => {
+            poll_tab_action(workspace_id, action_id).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+pub async fn close_workspace(workspace_id: &str) -> Result<serde_json::Value, ApiError> {
+    let response = request(
+        "POST",
+        &format!("/api/workspace/{}/close", enc(workspace_id)),
+        None,
+        None,
+        DEFAULT_DEADLINE_MS,
+    )
+    .await?;
+    decode(response, "workspace close failed").await
 }
 
 pub async fn close_tab(tab_id: &str) -> Result<serde_json::Value, ApiError> {

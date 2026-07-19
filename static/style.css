@@ -21,13 +21,13 @@
   --accent-text: #0a5252;
 
   /* ── Status ── */
-  --st-working: #945500;
+  --st-working: #1f6a3a;
   --st-working-bg: color-mix(in srgb, var(--st-working) 10%, transparent);
   --st-blocked: #b8332a;
   --st-blocked-bg: color-mix(in srgb, var(--st-blocked) 10%, transparent);
   --st-idle: #6b6862;
   --st-idle-bg: color-mix(in srgb, var(--st-idle) 10%, transparent);
-  --st-done: #2e6b3e;
+  --st-done: #45637a;
   --st-done-bg: color-mix(in srgb, var(--st-done) 10%, transparent);
 
   /* ── Workspace hue vocabulary (18-step, derived at runtime) ── */
@@ -84,14 +84,14 @@
     --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
     --accent-text: #5ee5e0;
 
-    --st-working: #f0a030;
-    --st-working-bg: color-mix(in srgb, #f0a030 16%, transparent);
+    --st-working: #65c97b;
+    --st-working-bg: color-mix(in srgb, #65c97b 16%, transparent);
     --st-blocked: #ff7a72;
     --st-blocked-bg: color-mix(in srgb, #ff7a72 16%, transparent);
     --st-idle: #9a968e;
     --st-idle-bg: color-mix(in srgb, #9a968e 10%, transparent);
-    --st-done: #5eb872;
-    --st-done-bg: color-mix(in srgb, #5eb872 14%, transparent);
+    --st-done: #82a8c4;
+    --st-done-bg: color-mix(in srgb, #82a8c4 14%, transparent);
   }
 }
 
@@ -388,7 +388,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 
 /* ── Status chip: label + small status glyph (masked lucide icon, so it
-   inherits the chip's status color in both themes). ── */
+   inherits the chip's status color in both themes). Done stays a plain dot. ── */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -410,16 +410,16 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   -webkit-mask: var(--chip-ic, var(--ic-dot)) center / contain no-repeat;
   mask: var(--chip-ic, var(--ic-dot)) center / contain no-repeat;
 }
-.chip.blocked { color: var(--st-blocked); background: var(--st-blocked-bg); --chip-ic: var(--ic-ask); }
-.chip.blocked::before { animation: pulse 1.4s ease-in-out infinite; }
+.chip.needs-input { color: var(--st-blocked); background: var(--st-blocked-bg); --chip-ic: var(--ic-ask); }
+.chip.needs-input::before { animation: pulse 1.4s ease-in-out infinite; }
 .chip.working { color: var(--st-working); background: var(--st-working-bg); --chip-ic: var(--ic-activity); }
 .chip.idle { color: var(--st-idle); background: var(--st-idle-bg); --chip-ic: var(--ic-clock); }
-.chip.done { color: var(--st-done); background: var(--st-done-bg); --chip-ic: var(--ic-check); }
+.chip.done { color: var(--st-done); background: var(--st-done-bg); }
 .chip.unknown { color: var(--muted); background: var(--st-idle-bg); }
 
 /* ── Header status dot: replaces the wordy status chip. Blocked pulses
    attention (fast, sharp); working breathes (slow, gentle) — the only
-   two ambient motions in the system besides the inbox blocked chip.
+   two ambient motions in the system besides the inbox needs-input chip.
    Idle/done are static; unknown is a hollow ring. Reduced motion drops
    both animations to a flat color. ── */
 .status-dot-btn {
@@ -443,20 +443,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   background: var(--muted);
   position: relative;
 }
-.status-dot.blocked { background: var(--st-blocked); box-shadow: 0 0 0 4px var(--st-blocked-bg); animation: dot-pulse-attention 1.2s ease-in-out infinite; }
+.status-dot.needs-input { background: var(--st-blocked); box-shadow: 0 0 0 4px var(--st-blocked-bg); animation: dot-pulse-attention 1.2s ease-in-out infinite; }
 .status-dot.working { background: var(--st-working); box-shadow: 0 0 0 4px var(--st-working-bg); animation: dot-pulse-breathe 2.6s ease-in-out infinite; }
 .status-dot.idle { background: var(--st-idle); box-shadow: 0 0 0 4px var(--st-idle-bg); }
 .status-dot.done { background: var(--st-done); box-shadow: 0 0 0 4px var(--st-done-bg); }
-.status-dot.done::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 8px; height: 8px;
-  background: var(--surface);
-  -webkit-mask: var(--ic-check) center / contain no-repeat;
-  mask: var(--ic-check) center / contain no-repeat;
-}
 .status-dot.unknown { background: transparent; border: 1.5px solid var(--muted); }
 
 @keyframes pulse {
@@ -472,7 +462,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   50% { opacity: 0.6; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .chip.blocked::before, .status-dot.blocked, .status-dot.working { animation: none; }
+  .chip.needs-input::before, .status-dot.needs-input, .status-dot.working { animation: none; }
 }
 
 /* ── Empty / error / skeleton ── */
@@ -601,10 +591,18 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* Tab strips stay visible for one-tab workspaces. */
 .tabstrip {
   display: flex;
+  align-items: center;
   gap: 6px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   padding: 5px calc(var(--safe-right) + 10px) 6px calc(var(--safe-left) + 10px);
+}
+.tab-chip-group {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  max-width: 208px;
 }
 .tab-chip {
   flex-shrink: 0;
@@ -618,10 +616,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   padding: 3px 10px;
   font-size: 12px;
   cursor: pointer;
-  min-height: 28px;
+  min-height: 44px;
   white-space: nowrap;
   max-width: 160px;
 }
+.tab-chip-switch { min-width: 0; }
 .tab-chip .tab-chip-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -634,18 +633,32 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color: var(--accent-text);
   font-weight: 600;
 }
-/* Close affordance stays quiet until armed — red is reserved for the
-   confirm state so the strip isn't a row of alarms. */
-.tab-chip-x { color: var(--faint); font-weight: 600; padding: 0 2px; font-size: 14px; }
-.tab-chip-x.confirm {
-  background: var(--st-blocked);
-  color: #fff;
+.tab-chip-x {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--hairline);
   border-radius: var(--r-pill);
-  padding: 1px 6px;
-  font-weight: 600;
-  font-size: 11px;
+  background: var(--surface);
+  color: var(--faint);
+  cursor: pointer;
+  padding: 0;
 }
+.tab-chip-x:active { background: var(--st-blocked-bg); color: var(--st-blocked); }
 .tab-chip-add { color: var(--accent); font-weight: 600; padding: 3px 12px; }
+.tab-chip-workspace-close {
+  min-width: 44px;
+  justify-content: center;
+  color: var(--faint);
+  padding: 3px 12px;
+}
+.tab-chip-workspace-close:active {
+  color: var(--st-blocked);
+  background: var(--st-blocked-bg);
+}
 
 /* ============================================================
    Session view
@@ -818,7 +831,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  min-height: 28px;
+  min-height: 44px;
   width: 100%;
   padding: 0;
   border: none;
@@ -1004,6 +1017,39 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   flex-shrink: 0;
   background: var(--surface);
   border-top: 1px solid var(--hairline);
+}
+
+.delivery-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px calc(var(--safe-right) + 12px) 6px calc(var(--safe-left) + 12px);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--st-blocked-bg);
+  color: var(--st-blocked);
+  font-size: 12px;
+  font-weight: 600;
+}
+.delivery-warning span { flex: 1; }
+.delivery-warning button {
+  flex-shrink: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 0 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.delivery-warning button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+.term-composer .delivery-warning {
+  margin: -8px calc(0px - var(--safe-right) - 12px) 0 calc(0px - var(--safe-left) - 12px);
 }
 
 .cmd-suggest {
@@ -1452,6 +1498,101 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   background: var(--accent-soft);
 }
 
+/* ── Close confirmation sheet ── */
+.sheet-confirm-copy {
+  margin: 0;
+  padding: 16px 16px 8px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.sheet-confirm-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+.sheet-confirm-cancel, .sheet-confirm-close {
+  flex: 1;
+  min-height: 44px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sheet-confirm-cancel {
+  background: var(--bg);
+  color: var(--text);
+}
+.sheet-confirm-close {
+  border-color: var(--st-blocked);
+  background: var(--st-blocked);
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .sheet-confirm-close { color: #1c1b1a; }
+}
+.sheet-confirm-cancel:active, .sheet-confirm-close:active { transform: var(--press); }
+
+/* ── Model catalog pricing hooks ── */
+.model-row {
+  position: relative;
+}
+.model-price-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  width: 100%;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.model-price-input, .model-price-output {
+  white-space: nowrap;
+}
+.model-price-label {
+  color: var(--faint);
+  font-family: var(--font);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.model-price-value { color: var(--text); }
+
+/* ── Compact initial session transcript skeleton ── */
+.session-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px calc(var(--safe-right) + 12px);
+}
+.session-skeleton-line, .session-skeleton-block {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--overlay);
+}
+.session-skeleton-line { height: 12px; width: 72%; }
+.session-skeleton-line.short { width: 42%; }
+.session-skeleton-block { height: 68px; width: 100%; }
+.session-skeleton-line::after, .session-skeleton-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 25%, var(--surface) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-confirm-cancel:active, .sheet-confirm-close:active { transform: none; }
+  .session-skeleton-line::after, .session-skeleton-block::after { animation: none; }
+}
+
 /* ── Toast ── */
 .toast {
   position: fixed;
@@ -1585,10 +1726,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   gap: 2px;
   flex-shrink: 0;
 }
-.status-dot.pending {
-  background: var(--st-working);
-  box-shadow: 0 0 0 4px var(--st-working-bg);
-}
 
 /* Shared metadata badges: the tinted visual carries its own icon and text
    contrast, while the outer button supplies the complete 44px hit target. */
@@ -1657,17 +1794,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .tabstrip { min-height: 54px; align-items: center; }
 .tab-chip { min-height: 44px; }
 .tab-chip-add { min-width: 44px; justify-content: center; gap: 3px; }
-.tab-chip-x {
-  min-width: 36px;
-  min-height: 36px;
-  display: inline-grid;
-  place-items: center;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: transparent;
-  cursor: pointer;
-}
-.tab-chip-close-wrap { display: inline-flex; align-items: center; }
+.tab-chip-x { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
 
 /* Bottom-sheet close row and dialog focus affordance. */
 .sheet-head {
@@ -1710,7 +1837,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
   .hdr-status-popover, .sheet-overlay, .sheet { transition: none; }
-  .status-dot.pending { animation: none; }
+  .status-dot.needs-input { animation: none; }
 }
 
 /* ── Rust port utilities ── */

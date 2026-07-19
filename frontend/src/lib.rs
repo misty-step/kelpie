@@ -2,6 +2,7 @@ mod api;
 mod components;
 mod icons;
 mod markdown;
+mod storage;
 mod types;
 mod viewport;
 mod views;
@@ -15,7 +16,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{Event, EventSource, MessageEvent};
 use yew::prelude::*;
 
-use types::Fleet;
+use types::{dedupe_models, Fleet, Model, ModelCatalogStatus};
 use views::{InboxView, SessionView, TermView};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -71,6 +72,9 @@ impl Reducible for SessionEvents {
 #[derive(Clone, PartialEq)]
 pub struct AppContext {
     pub fleet: Option<Rc<Fleet>>,
+    pub model_catalog: Option<Rc<Vec<Model>>>,
+    pub model_catalog_status: ModelCatalogStatus,
+    pub model_catalog_refresh: Callback<()>,
     pub connected: bool,
     pub fleet_refresh: Callback<()>,
     pub toast: Callback<ToastMessage>,
@@ -117,6 +121,13 @@ fn app() -> Html {
     viewport::use_viewport_fix();
     let route = use_state(current_route);
     let fleet = use_state(|| None::<Rc<Fleet>>);
+    let model_catalog = use_state(|| None::<Rc<Vec<Model>>>);
+    let model_catalog_status = use_state(ModelCatalogStatus::default);
+    let model_catalog_seq = use_state(|| 0_u64);
+    let model_catalog_seq_counter = use_mut_ref(|| 0_u64);
+    let model_catalog_in_flight = use_mut_ref(|| false);
+    let model_catalog_attempts = use_mut_ref(|| 0_u8);
+    let model_catalog_retry_timer = use_mut_ref(|| None::<Timeout>);
     let fleet_seq = use_state(|| 0_u64);
     let fleet_seq_counter = use_mut_ref(|| 0_u64);
     let fleet_request = use_mut_ref(|| FleetRefresh {
@@ -128,6 +139,23 @@ fn app() -> Html {
     let session_refresh_counter = use_mut_ref(|| 0_u64);
     let session_events = use_reducer(|| SessionEvents(HashMap::new()));
     let toast_state = use_state(|| None::<ToastMessage>);
+
+    let refresh_model_catalog = {
+        let model_catalog_seq = model_catalog_seq.clone();
+        let model_catalog_seq_counter = model_catalog_seq_counter.clone();
+        let model_catalog_retry_timer = model_catalog_retry_timer.clone();
+        let model_catalog_attempts = model_catalog_attempts.clone();
+        Callback::from(move |_| {
+            model_catalog_retry_timer.borrow_mut().take();
+            *model_catalog_attempts.borrow_mut() = 0;
+            let next = {
+                let mut current = model_catalog_seq_counter.borrow_mut();
+                *current = current.wrapping_add(1);
+                *current
+            };
+            model_catalog_seq.set(next);
+        })
+    };
 
     let refresh_fleet = {
         let fleet_seq = fleet_seq.clone();
@@ -157,6 +185,62 @@ fn app() -> Html {
         })
     };
 
+    {
+        let model_catalog_seq = model_catalog_seq.clone();
+        let model_catalog_in_flight = model_catalog_in_flight.clone();
+        let model_catalog = model_catalog.clone();
+        let model_catalog_status = model_catalog_status.clone();
+        let model_catalog_attempts = model_catalog_attempts.clone();
+        let model_catalog_retry_timer = model_catalog_retry_timer.clone();
+        let model_catalog_seq_counter = model_catalog_seq_counter.clone();
+        let seq = *model_catalog_seq;
+        use_effect_with(seq, move |_| {
+            if *model_catalog_in_flight.borrow() {
+                return ();
+            }
+            *model_catalog_in_flight.borrow_mut() = true;
+            if model_catalog.is_none() {
+                model_catalog_status.set(ModelCatalogStatus::Loading);
+            }
+            let model_catalog = model_catalog.clone();
+            let model_catalog_status = model_catalog_status.clone();
+            let model_catalog_in_flight = model_catalog_in_flight.clone();
+            spawn_local(async move {
+                match api::models().await {
+                    Ok(items) => {
+                        *model_catalog_attempts.borrow_mut() = 0;
+                        model_catalog_retry_timer.borrow_mut().take();
+                        model_catalog.set(Some(Rc::new(dedupe_models(items))));
+                        model_catalog_status.set(ModelCatalogStatus::Ready);
+                    }
+                    Err(_) => {
+                        if model_catalog.is_none() {
+                            model_catalog_status.set(ModelCatalogStatus::Unavailable);
+                            let mut attempts = model_catalog_attempts.borrow_mut();
+                            if *attempts < 3 {
+                                *attempts += 1;
+                                let retry_timer = model_catalog_retry_timer.clone();
+                                let retry_timer_for_callback = retry_timer.clone();
+                                let seq = model_catalog_seq.clone();
+                                let seq_counter = model_catalog_seq_counter.clone();
+                                *retry_timer.borrow_mut() = Some(Timeout::new(5_000, move || {
+                                    retry_timer_for_callback.borrow_mut().take();
+                                    let next = {
+                                        let mut current = seq_counter.borrow_mut();
+                                        *current = current.wrapping_add(1);
+                                        *current
+                                    };
+                                    seq.set(next);
+                                }));
+                            }
+                        }
+                    }
+                }
+                *model_catalog_in_flight.borrow_mut() = false;
+            });
+            ()
+        });
+    }
     {
         let fleet = fleet.clone();
         let fleet_request = fleet_request.clone();
@@ -317,6 +401,9 @@ fn app() -> Html {
 
     let context = AppContext {
         fleet: (*fleet).clone(),
+        model_catalog: (*model_catalog).clone(),
+        model_catalog_status: *model_catalog_status,
+        model_catalog_refresh: refresh_model_catalog,
         connected: *connected,
         fleet_refresh: refresh_fleet,
         toast,
