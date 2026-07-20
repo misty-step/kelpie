@@ -159,8 +159,13 @@ pub fn term_view(props: &TermViewProps) -> Html {
 
     let pane = pane_for(ctx.fleet.as_ref(), &pane_id);
     let workspace = workspace_label(&ctx, pane.as_ref());
-    let title = workspace.clone().unwrap_or_else(|| basename(&pane_id));
-    let header_workspace = Some(title.clone());
+    let title = pane
+        .as_ref()
+        .and_then(|value| value.title.clone())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| workspace.clone())
+        .unwrap_or_else(|| basename(&pane_id));
+    let header_workspace = workspace.clone().or_else(|| Some(title.clone()));
     let pending = pane.as_ref().is_some_and(|value| value.pending_ask);
     let status = pane.as_ref().map(Pane::status).unwrap_or("unknown");
     let status = status_descriptor(status, pending);
@@ -499,16 +504,6 @@ pub fn term_view(props: &TermViewProps) -> Html {
             </button>
         }
     };
-    let reconnect = if !ctx.connected {
-        let ctx = ctx.clone();
-        html! {
-            <button type="button" class="reconnect-pill" aria-label="Reconnecting" onclick={Callback::from(move |_| toast(&ctx, "Live updates reconnecting — data may be stale", ToastKind::Info))}>
-                <span class="reconnect-ic">{icon("wifi-off", 13)}</span><span>{"Reconnecting"}</span>
-            </button>
-        }
-    } else {
-        Html::default()
-    };
 
     let chat = if is_agent {
         let pane_id = pane_id.clone();
@@ -544,7 +539,6 @@ pub fn term_view(props: &TermViewProps) -> Html {
     html! {
         <div class="view term-view">
             <Header title={title} workspace={header_workspace} status={Some(status.label.to_owned())} pending={pending} connected={ctx.connected} on_back={Some(on_back)}>
-                {reconnect}
                 {chat}
             </Header>
             <TabStrip pane_id={pane_id.clone()} busy={*writer_busy || pending_text.is_some()} />

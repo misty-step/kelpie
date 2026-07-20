@@ -1187,6 +1187,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         .and_then(|page| page.title.clone())
         .or(workspace.clone())
         .unwrap_or_else(|| pane_id.clone());
+    let header_workspace = workspace.clone().or_else(|| Some(title.clone()));
     let status_label = status_descriptor(status, pending).label.to_owned();
     let model = ready.as_ref().and_then(|data| data.model.clone());
     let model_text = model_label(
@@ -2583,7 +2584,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
     };
     html! {
         <div class="view session-view">
-            <Header title={title} workspace={workspace.clone()} status={Some(status_label)} pending={pending} connected={ctx.connected} on_back={Some(on_back)} />
+            <Header title={title} workspace={header_workspace} status={Some(status_label)} pending={pending} connected={ctx.connected} on_back={Some(on_back)} />
             <TabStrip pane_id={pane_id.clone()} busy={pending_text.is_some() || *writer_busy || *sending || *model_busy || *thinking_busy || *uploading > 0} />
             <div class="session-scroll-wrap">
                 <div id="transcript" class="scroll transcript" ref={transcript_ref}>

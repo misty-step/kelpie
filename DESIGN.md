@@ -220,29 +220,43 @@ term headers use the status dot instead.
 
 ### Tab strip
 
-Pill chips remain visible even in one-tab workspaces so lifecycle controls
-never disappear. The active tab gets an accent border and its own 44px close
-target. New-tab and workspace-close controls follow the chips. Both destructive
-actions use explicit bottom-sheet confirmation; create/close requests take
-synchronous locks, disable repeat input, and show `Adding…` or `Closing…`.
-Tab creation carries a stable action id: the bridge accepts once, serializes
-all lifecycle mutations per workspace, and exposes status readback so a lost
-POST response cannot create a duplicate tab. Tab/workspace close also refuses
-while an affected pane write is active.
+The strip follows a standard shadcn-style Tabs grammar within The Well:
+one muted recessed container, rectangular 44px triggers, and a raised panel
+for the active tab. The active trigger and its separate 44px close control
+read as one grouped unit; new-tab and workspace-delete are standard icon
+buttons in the same container. The strip stays visible for one-tab workspaces
+and scrolls horizontally when needed.
 
-### Session/term header
+Both destructive actions use explicit bottom-sheet confirmation; create/close
+requests take synchronous locks, disable repeat input, and show `Adding…` or
+`Closing…`. Tab creation carries a stable action id: the bridge accepts once,
+serializes all lifecycle mutations per workspace, and exposes status readback
+so a lost POST response cannot create a duplicate tab. Tab/workspace close
+also refuses while an affected pane write is active.
 
-Single compact row: back chevron (44px), workspace avatar (28px), workspace
-name as the primary text, and a status dot on the right. The pane title lives
-in the composer's meta row, not the header. The dot is 12px inside a 44px
-tappable button (tap toasts the status word; the button carries the
-aria-label): blocked = red diamond with attention pulse, working = teal
-rounded-square with breathing pulse, idle = static amber circle, done = green
-ring with an inset non-color cue, unknown = hollow ring. Pulses are
-the sanctioned ambient motion and are disabled under reduced motion. A 1px
-workspace-hue edge underlines the header. When SSE drops, a tappable amber
-"Reconnecting" pill appears beside the dot (nothing is shown while
-connected — calm default; tap explains "data may be stale").
+### Shared headers
+
+The inbox uses a conventional left-aligned product bar: Kelpie mark, wordmark,
+and the new-workspace action. It does not render a meaningless workspace
+status when no workspace is selected.
+
+Session and terminal headers use a two-level identity: back chevron (44px),
+workspace avatar (28px), workspace name as the primary title, and the current
+task as a quiet one-line subtitle. The status dot remains a separate 44px
+button on the right. Blocked is a red diamond with attention pulse, working a
+teal rounded-square with breathing pulse, idle a static amber circle, done a
+green ring with an inset non-color cue, and unknown a hollow ring. Pulses are
+disabled under reduced motion. A 1px workspace-hue edge underlines detail
+headers. When SSE drops, an explicit amber “Reconnecting” label appears;
+nothing is shown while connected.
+
+### Transcript content rhythm
+
+Assistant and thinking entries render Markdown with normal whitespace and
+explicit compact block margins. Paragraphs, headings, lists, quotes, tables,
+and code define their own rhythm; source-file newlines between Markdown nodes
+never become extra visual blank lines. Raw user messages keep `pre-wrap` so
+intentional line breaks survive exactly.
 
 ### Agent composer
 
@@ -251,10 +265,8 @@ hairline):
 
 1. **Meta row** — horizontally scrollable (edge-fade mask, no scrollbar),
    hairline underneath: the model chip (cpu icon + full model id — never
-   ellipsized, the whole id is readable at 390px; opens the model picker),
-   the thinking chip (brain icon; opens an exact effort picker), and a
-   non-tappable pane-title chip (max-width 140px) when the title adds info
-   beyond the workspace name.
+   ellipsized, the whole id is readable at 390px; opens the model picker) and
+   the thinking chip (brain icon; opens an exact effort picker).
 2. **Actions row** — tight (4px gaps, 44px targets): attach, back-to-inbox,
    terminal toggle, Ctrl+C, Esc (text-only red — quiet, reads "careful"),
    ⋯ (rare actions; currently just New tab), spacer, Send — the ONE filled

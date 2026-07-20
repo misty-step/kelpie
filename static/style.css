@@ -171,14 +171,14 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    prefers-reduced-motion; the background change still gives feedback. ── */
 .back-btn, .hdr-icon-btn, .tab-chip, .action-btn, .action-esc, .action-send-btn,
 .term-key-btn, .jump-pill, .ask-option, .cmd-row,
-.meta-chip, .sheet-row, .status-dot-btn, .reconnect-pill {
+.meta-chip, .sheet-row, .status-dot-btn {
   transition: transform 160ms var(--ease-out);
 }
 .back-btn:active, .hdr-icon-btn:active, .tab-chip:active,
 .action-btn:active, .action-esc:active, .action-send-btn:not(:disabled):active,
 .term-key-btn:active, .jump-pill:active,
 .ask-option:active, .cmd-row:active,
-.meta-chip:active, .sheet-row:active, .status-dot-btn:active, .reconnect-pill:active {
+.meta-chip:active, .sheet-row:active, .status-dot-btn:active {
   transform: var(--press);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -186,7 +186,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   .action-btn:active, .action-esc:active, .action-send-btn:active,
   .term-key-btn:active, .jump-pill:active, .ask-option:active,
   .cmd-row:active, .card:active,
-  .meta-chip:active, .sheet-row:active, .status-dot-btn:active, .reconnect-pill:active {
+  .meta-chip:active, .sheet-row:active, .status-dot-btn:active {
     transform: none;
   }
 }
@@ -335,26 +335,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .hdr-icon-btn:active { background: var(--overlay); }
 .hdr-add-btn { font-family: var(--font); font-size: 20px; font-weight: 600; }
 
-/* ── Reconnect pill: calm default when SSE is connected (nothing shown);
-   an amber pill appears only while disconnected/reconnecting, and taps
-   toast an explanation. Never animated — state color only. ── */
-.reconnect-pill {
-  display: none;
-  align-items: center;
-  gap: 5px;
-  border: none;
-  background: var(--st-idle-bg);
-  color: var(--st-idle);
-  border-radius: var(--r-pill);
-  font-size: 11px;
-  font-weight: 600;
-  padding: 0 10px;
-  min-height: 44px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.reconnect-pill:active { background: color-mix(in srgb, var(--st-idle) 22%, transparent); }
-.reconnect-ic { display: flex; flex-shrink: 0; }
 
 /* ── Workspace hue accent: a 1px edge under session/terminal headers in
    the pane's deterministic hue (matches the avatar). Quiet default until
@@ -643,42 +623,50 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    ============================================================ */
 .tabstrip-wrap {
   flex-shrink: 0;
-  background: var(--surface);
+  background: var(--bg);
+  padding: 8px 0;
   border-bottom: 1px solid var(--hairline);
 }
 /* Tab strips stay visible for one-tab workspaces. */
 .tabstrip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 5px calc(var(--safe-right) + 10px) 6px calc(var(--safe-left) + 10px);
+  background: var(--well);
+  border-radius: 8px;
+  padding: 4px;
+  margin: 0 calc(var(--safe-right) + 12px) 0 calc(var(--safe-left) + 12px);
 }
 .tab-chip-group {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
   gap: 2px;
-  max-width: 208px;
+  border-radius: 6px;
+}
+.tab-chip-group.active {
+  background: var(--panel);
+  box-shadow: var(--lift);
 }
 .tab-chip {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--hairline);
-  background: var(--bg);
-  color: var(--text);
-  border-radius: var(--r-pill);
-  padding: 3px 10px;
-  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0 12px;
+  font-size: 13px;
   cursor: pointer;
   min-height: 44px;
   white-space: nowrap;
   max-width: 160px;
 }
-.tab-chip-switch { min-width: 0; }
+.tab-chip-switch { min-width: 44px; }
 .tab-chip .tab-chip-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -686,9 +674,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   max-width: 120px;
 }
 .tab-chip.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  color: var(--text);
   font-weight: 600;
 }
 .tab-chip-x {
@@ -698,26 +684,31 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   min-height: 44px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-pill);
-  background: var(--surface);
+  border: none;
+  background: transparent;
+  border-radius: 6px;
   color: var(--faint);
   cursor: pointer;
   padding: 0;
 }
-.tab-chip-x:active { background: var(--st-blocked-bg); color: var(--st-blocked); }
-.tab-chip-add { color: var(--accent); font-weight: 600; padding: 3px 12px; }
-.tab-chip-workspace-close {
+.tab-chip-x:active { color: var(--st-blocked); }
+.tab-chip-add {
+  color: var(--muted);
+  font-weight: 600;
   min-width: 44px;
   justify-content: center;
-  color: var(--faint);
-  padding: 3px 12px;
+}
+.tab-chip-add:active { color: var(--text); }
+.tab-chip-workspace-close {
+  min-width: 44px;
+  width: 44px;
+  justify-content: center;
+  color: var(--muted);
+  padding: 0;
 }
 .tab-chip-workspace-close:active {
   color: var(--st-blocked);
-  background: var(--st-blocked-bg);
 }
-
 /* ============================================================
    Session view
    ============================================================ */
@@ -772,10 +763,22 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   border-radius: var(--r-lg) var(--r-lg) var(--r-lg) 4px;
   padding: 10px 13px;
   max-width: 100%;
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
   font-size: 15px;
   line-height: 1.45;
+}
+.entry-assistant .bubble p,
+.entry-thinking .bubble p {
+  margin: 8px 0;
+}
+.entry-assistant .bubble > :first-child,
+.entry-thinking .bubble > :first-child {
+  margin-top: 0;
+}
+.entry-assistant .bubble > :last-child,
+.entry-thinking .bubble > :last-child {
+  margin-bottom: 0;
 }
 .entry-assistant .bubble a { color: var(--signal-text); }
 .entry-assistant .bubble code {
@@ -801,18 +804,32 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .entry-assistant .bubble pre code { background: none; padding: 0; }
 .entry-assistant .bubble h1,
 .entry-assistant .bubble h2,
-.entry-assistant .bubble h3 {
+.entry-assistant .bubble h3,
+.entry-assistant .bubble h4,
+.entry-assistant .bubble h5,
+.entry-assistant .bubble h6,
+.entry-thinking .bubble h1,
+.entry-thinking .bubble h2,
+.entry-thinking .bubble h3,
+.entry-thinking .bubble h4,
+.entry-thinking .bubble h5,
+.entry-thinking .bubble h6 {
   margin: 10px 0 4px;
   font-weight: 700;
   line-height: 1.25;
 }
-.entry-assistant .bubble h1 { font-size: 1.15em; }
-.entry-assistant .bubble h2 { font-size: 1.05em; }
-.entry-assistant .bubble h3 { font-size: 1em; }
+.entry-assistant .bubble h1, .entry-thinking .bubble h1 { font-size: 1.15em; }
+.entry-assistant .bubble h2, .entry-thinking .bubble h2 { font-size: 1.05em; }
+.entry-assistant .bubble h3, .entry-thinking .bubble h3 { font-size: 1em; }
+.entry-assistant .bubble h4, .entry-thinking .bubble h4 { font-size: 0.95em; }
+.entry-assistant .bubble h5, .entry-assistant .bubble h6,
+.entry-thinking .bubble h5, .entry-thinking .bubble h6 { font-size: 0.9em; }
 .entry-assistant .bubble ul,
-.entry-assistant .bubble ol { margin: 4px 0; padding-left: 20px; }
-.entry-assistant .bubble li { margin: 2px 0; }
-.entry-assistant .bubble h4 { font-size: 0.95em; }
+.entry-assistant .bubble ol,
+.entry-thinking .bubble ul,
+.entry-thinking .bubble ol { margin: 4px 0; padding-left: 20px; }
+.entry-assistant .bubble li,
+.entry-thinking .bubble li { margin: 2px 0; }
 .entry-assistant .bubble blockquote,
 .entry-thinking .bubble blockquote {
   margin: 4px 0;
@@ -873,7 +890,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-style: italic;
   font-size: 13px;
   padding: 8px 12px;
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
 }
 .entry-thinking.collapsed .bubble {
@@ -1773,8 +1790,40 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   width: 28px;
   height: 28px;
 }
-.hdr-avatar-empty {
-  visibility: hidden;
+.hdr-title-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.hdr-title-stack h1 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hdr-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.hdr-connection {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--st-idle);
+  background: var(--st-idle-bg);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 .hdr-identity h1 {
   flex: 1;
@@ -1874,12 +1923,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   .meta-badge-reasoning .meta-badge-visual { background: #2a2008; }
 }
 
-/* One obvious add affordance and 44px tab targets, including close. */
-.tabstrip-wrap { display: block; }
-.tabstrip { min-height: 54px; align-items: center; }
-.tab-chip { min-height: 44px; }
-.tab-chip-add { min-width: 44px; justify-content: center; gap: 3px; }
-.tab-chip-x { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
 
 /* Bottom-sheet close row and dialog focus affordance. */
 .sheet-head {

@@ -104,40 +104,65 @@ pub fn header(props: &HeaderProps) -> Html {
             </button>
         }
     });
-    let identity = props.workspace.as_ref().map(|workspace| {
-        html! {
-            <span class="hdr-avatar" aria-hidden="true">{avatar(workspace, true)}</span>
-        }
-    });
     let status_button_label = format!("Status: {}. {}", status.label, status.description);
-    html! {
-        <header class="hdr">
-            {back.unwrap_or_else(|| html! { <span class="hdr-leading" aria-hidden="true" /> })}
-            <span class="hdr-identity">
-                {identity.unwrap_or_else(|| html! { <span class="hdr-avatar hdr-avatar-empty" aria-hidden="true" /> })}
-                <h1>{props.title.clone()}</h1>
-            </span>
-            <span class="hdr-status-wrap">
-                <button
-                    type="button"
-                    class="status-dot-btn hdr-status-btn"
-                    aria-label={status_button_label}
-                    aria-expanded={status_open.to_string()}
-                    aria-controls="header-status-popover"
-                    onclick={toggle_status}
-                >
-                    <span class={classes!("status-dot", status.class)} />
-                </button>
-                if *status_open {
-                    <div id="header-status-popover" class="hdr-status-popover" role="status">
-                        <strong>{status.label}</strong>
-                        <span>{status.description}</span>
-                        <span>{connectivity}</span>
-                    </div>
+
+    if let Some(ws) = props.workspace.as_ref() {
+        html! {
+            <header class="hdr">
+                {back.unwrap_or_else(|| html! { <span class="hdr-leading" aria-hidden="true" /> })}
+                <span class="hdr-identity">
+                    <span class="hdr-avatar" aria-hidden="true">{avatar(ws, true)}</span>
+                    <span class="hdr-title-stack">
+                        <h1>{ws.clone()}</h1>
+                        if !props.title.trim().is_empty() && props.title.trim() != ws.trim() {
+                            <span class="hdr-subtitle">{props.title.clone()}</span>
+                        }
+                    </span>
+                </span>
+                if !props.connected {
+                    <span class="hdr-connection" role="status">
+                        {icon("wifi-off", 13)}
+                        <span>{"Reconnecting"}</span>
+                    </span>
                 }
-            </span>
-            <span class="hdr-trailing">{for props.children.iter()}</span>
-        </header>
+                <span class="hdr-status-wrap">
+                    <button
+                        type="button"
+                        class="status-dot-btn hdr-status-btn"
+                        aria-label={status_button_label}
+                        aria-expanded={status_open.to_string()}
+                        aria-controls="header-status-popover"
+                        onclick={toggle_status}
+                    >
+                        <span class={classes!("status-dot", status.class)} />
+                    </button>
+                    if *status_open {
+                        <div id="header-status-popover" class="hdr-status-popover" role="status">
+                            <strong>{status.label}</strong>
+                            <span>{status.description}</span>
+                            <span>{connectivity}</span>
+                        </div>
+                    }
+                </span>
+                <span class="hdr-trailing">{for props.children.iter()}</span>
+            </header>
+        }
+    } else {
+        html! {
+            <header class="hdr hdr-inbox">
+                <span class="hdr-identity kelpie-brand">
+                    <span class="kelpie-mark" aria-hidden="true"><img src="/kelpie-mark.png" alt="" /></span>
+                    <h1>{props.title.clone()}</h1>
+                </span>
+                if !props.connected {
+                    <span class="hdr-connection" role="status">
+                        {icon("wifi-off", 13)}
+                        <span>{"Reconnecting"}</span>
+                    </span>
+                }
+                <span class="hdr-trailing">{for props.children.iter()}</span>
+            </header>
+        }
     }
 }
 
