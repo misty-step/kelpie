@@ -1853,9 +1853,15 @@ fn screen_model_matches_session(screen: &str, selector: &str) -> Option<bool> {
     let (status_model, _) = screen_status_fields(screen)?;
     let status_model = status_model.rsplit('/').next().unwrap_or(status_model);
     let selector_model = selector.rsplit('/').next().unwrap_or(selector);
-    Some(model_identity_key(status_model) == model_identity_key(selector_model))
+    let status_key = model_identity_key(status_model);
+    let selector_key = model_identity_key(selector_model);
+    Some(
+        status_key == selector_key
+            || (status_key.len() >= 2
+                && selector_key.len() >= 2
+                && (selector_key.ends_with(&status_key) || status_key.ends_with(&selector_key))),
+    )
 }
-
 fn selected_model_row(screen: &str, selector: &str) -> bool {
     screen.lines().any(|line| {
         let row = unframed_row(line);
@@ -3426,6 +3432,27 @@ mod tests {
                 "openai-codex/gpt-5.6-sol"
             ),
             None
+        );
+        // OMP status lines shorten some display names by dropping the vendor
+        // prefix: `anthropic/claude-fable-5` renders as `anthropic/Fable 5`.
+        assert_eq!(
+            screen_model_matches_session(
+                "  anthropic/Fable 5 · low · kelpie-busy-ack       ctx 8%",
+                "anthropic/claude-fable-5"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            screen_model_matches_session(
+                "  anthropic/Fable 5 · low · kelpie-busy-ack       ctx 8%",
+                "anthropic/claude-sonnet-5"
+            ),
+            Some(false)
+        );
+        // Suffix tolerance must not let degenerate short keys match.
+        assert_eq!(
+            screen_model_matches_session("  K3 5 · high · ws", "kimi-code/k3"),
+            Some(false)
         );
     }
 
