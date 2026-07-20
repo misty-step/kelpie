@@ -892,7 +892,7 @@ mod tests {
             .append(true)
             .open(&path)
             .unwrap();
-        file.write_all(partial[..split].as_bytes()).unwrap();
+        file.write_all(&partial.as_bytes()[..split]).unwrap();
         drop(file);
         projection.refresh(path.to_str().unwrap()).unwrap();
         assert_eq!(projection.entry_count(), 1);

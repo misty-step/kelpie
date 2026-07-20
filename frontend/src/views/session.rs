@@ -646,13 +646,24 @@ fn available_levels(model: Option<&Model>) -> Vec<String> {
     let Some(model) = model.filter(|model| model.reasoning) else {
         return Vec::new();
     };
-    let mut levels = vec!["off".to_owned(), "auto".to_owned()];
+    let mut efforts = Vec::new();
     for value in model.thinking.as_deref().unwrap_or_default() {
         let value = normalize_thinking(value);
-        if !levels.contains(&value) {
-            levels.push(value);
+        if !matches!(
+            value.as_str(),
+            "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+        ) {
+            continue;
+        }
+        if !efforts.contains(&value) {
+            efforts.push(value);
         }
     }
+    if efforts.is_empty() {
+        return efforts;
+    }
+    let mut levels = vec!["off".to_owned(), "auto".to_owned()];
+    levels.extend(efforts);
     levels
 }
 
@@ -1183,6 +1194,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         model_override.as_ref(),
         ctx.model_catalog.as_deref().map(Vec::as_slice),
     );
+    let reasoning_model_selector = selector(model.as_ref(), model_override.as_ref());
     let thinking = thinking_override
         .as_ref()
         .cloned()
@@ -1190,7 +1202,6 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         .map(|value| normalize_thinking(&value));
     let can_send = (!draft.trim().is_empty() || attachments.iter().any(|item| item.path.is_some()))
         && *uploading == 0
-        && !*thinking_busy
         && !*model_busy
         && !*sending
         && !*writer_busy
@@ -2112,12 +2123,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
             let live_thinking = live_thinking.clone();
             spawn_local(async move {
                 match api::set_model(&pane_id, &target, previous.as_deref()).await {
-                    Ok(response)
-                        if response.model.as_deref() == Some(target.as_str())
-                            && previous.as_ref().is_none_or(|value| {
-                                response.thinking.as_deref() == Some(value.as_str())
-                            }) =>
-                    {
+                    Ok(response) if response.model.as_deref() == Some(target.as_str()) => {
                         let confirmation_floor = {
                             let mut current = session_generation.borrow_mut();
                             *current = current.wrapping_add(1);
@@ -2130,20 +2136,16 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                         };
                         save_model_override(&pane_id, &confirmed_override);
                         model_override.set(Some(confirmed_override));
-                        if let Some(previous) = previous {
-                            live_thinking.set(Some(previous.clone()));
+                        let confirmed_thinking = response
+                            .thinking
+                            .as_deref()
+                            .map(normalize_thinking)
+                            .filter(|value| value != "unknown");
+                        live_thinking.set(confirmed_thinking.clone());
+                        if confirmed_thinking.is_some() {
                             thinking_override_generation.set(confirmation_floor);
-                            thinking_override.set(Some(previous));
-                        } else {
-                            thinking_override.set(None);
-                            live_thinking.set(
-                                response
-                                    .thinking
-                                    .as_deref()
-                                    .map(normalize_thinking)
-                                    .filter(|value| value != "unknown"),
-                            );
                         }
+                        thinking_override.set(confirmed_thinking);
                         retry.set((*retry).wrapping_add(1));
                         toast(&ctx, format!("Model: {label}"), ToastKind::Info);
                     }
@@ -2180,6 +2182,7 @@ pub fn session_view(props: &SessionViewProps) -> Html {
         let ctx = ctx.clone();
         let ready = ready.clone();
         let ask_write_blocked = ask_write_blocked;
+        let reasoning_model_selector = reasoning_model_selector.clone();
         Callback::from(move |target: String| {
             if ask_write_blocked
                 || *thinking_busy
@@ -2203,29 +2206,42 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                 sheet.set(None);
                 return;
             }
-            {
-                let mut current = session_generation.borrow_mut();
-                *current = current.wrapping_add(1);
-            };
-            *writer_lock.borrow_mut() = true;
-            writer_busy.set(true);
-            thinking_busy.set(true);
-            thinking_override_generation.set(u64::MAX);
-            thinking_override.set(Some(target.clone()));
             sheet.set(None);
+            let Some(expected_model) = reasoning_model_selector.clone() else {
+                toast(
+                    &ctx,
+                    "Current model is unavailable; reopen reasoning effort",
+                    ToastKind::Error,
+                );
+                return;
+            };
+            thinking_busy.set(true);
+            let action_id = format!("thinking:{}:{}", pane_id, js_sys::Date::now() as u64);
             let pane_id = pane_id.clone();
             let ctx = ctx.clone();
             let thinking_busy = thinking_busy.clone();
-            let writer_busy = writer_busy.clone();
-            let writer_lock = writer_lock.clone();
+            let action_id_for_request = action_id.clone();
+            let expected_model_for_request = expected_model.clone();
             let retry = retry.clone();
             let thinking_override = thinking_override.clone();
             let session_generation = session_generation.clone();
             let thinking_override_generation = thinking_override_generation.clone();
             let live_thinking = live_thinking.clone();
             spawn_local(async move {
-                match api::set_thinking(&pane_id, &target).await {
-                    Ok(response) if response.thinking.as_deref() == Some(target.as_str()) => {
+                match api::set_thinking(
+                    &pane_id,
+                    &target,
+                    &expected_model_for_request,
+                    &action_id_for_request,
+                )
+                .await
+                {
+                    Ok(response)
+                        if response.ok
+                            && response.action_id == action_id_for_request
+                            && response.model == expected_model_for_request
+                            && response.thinking == target =>
+                    {
                         let confirmation_floor = {
                             let mut current = session_generation.borrow_mut();
                             *current = current.wrapping_add(1);
@@ -2242,17 +2258,13 @@ pub fn session_view(props: &SessionViewProps) -> Html {
                         );
                     }
                     Ok(_) => {
-                        thinking_override.set(None);
-                        toast(&ctx, "Could not verify reasoning effort", ToastKind::Error);
+                        toast(&ctx, "Ignored stale reasoning response", ToastKind::Error);
                     }
                     Err(error) => {
-                        thinking_override.set(None);
                         toast(&ctx, error.message, ToastKind::Error);
                     }
                 }
                 thinking_busy.set(false);
-                writer_busy.set(false);
-                *writer_lock.borrow_mut() = false;
             });
         })
     };
@@ -2725,12 +2737,12 @@ fn render_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_model_override, encode_model_override, merge_session_page,
+        available_levels, decode_model_override, encode_model_override, merge_session_page,
         model_override_superseded, with_session_error, ModelOverride, PageDirection, SessionMode,
         SessionPage, SessionRefreshGate, SessionState, MAX_RENDERED_ENTRIES,
     };
     use crate::components::status_descriptor;
-    use crate::types::{Entry, IndexedEntry, SessionModel};
+    use crate::types::{Entry, IndexedEntry, Model, SessionModel};
 
     #[test]
     fn status_descriptor_is_shared_for_pending_work_idle_and_done() {
@@ -2739,6 +2751,27 @@ mod tests {
         assert_eq!(status_descriptor("done", false).class, "done");
         assert_eq!(status_descriptor("blocked", false).label, "Needs input");
         assert_eq!(status_descriptor("working", true).label, "Needs input");
+    }
+
+    #[test]
+    fn reasoning_picker_offers_selector_modes_then_model_efforts() {
+        let model = Model {
+            reasoning: true,
+            thinking: Some(vec![
+                "low".into(),
+                "future".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+                "max".into(),
+            ]),
+            ..Model::default()
+        };
+
+        assert_eq!(
+            available_levels(Some(&model)),
+            ["off", "auto", "low", "medium", "high", "xhigh", "max"]
+        );
     }
 
     #[test]

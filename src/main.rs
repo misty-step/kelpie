@@ -69,6 +69,8 @@ struct Fleet {
     panes: Vec<FleetPane>,
 }
 
+type TabActions = HashMap<(String, String), Arc<Mutex<TabAction>>>;
+
 #[derive(Default)]
 struct AppState {
     fleet: RwLock<Fleet>,
@@ -85,7 +87,7 @@ struct AppState {
     /// Idempotent text actions keyed by pane + caller action id.
     text_actions: Mutex<HashMap<TextActionKey, Arc<Mutex<TextAction>>>>,
     /// Idempotent tab-creation actions keyed by workspace + caller action id.
-    tab_actions: Mutex<HashMap<(String, String), Arc<Mutex<TabAction>>>>,
+    tab_actions: Mutex<TabActions>,
     /// Installed OMP version that produced or validated the model catalog.
     omp_version: Option<String>,
     /// Validated model catalog. None means no usable LKG has been loaded yet.
@@ -1131,6 +1133,8 @@ async fn post_keys(
 #[derive(Deserialize)]
 struct ThinkingBody {
     thinking: String,
+    model: String,
+    action_id: String,
 }
 
 fn canonical_thinking_level(raw: &str) -> Option<&'static str> {
@@ -1145,6 +1149,142 @@ fn canonical_thinking_level(raw: &str) -> Option<&'static str> {
         "max" => Some("max"),
         _ => None,
     }
+}
+
+fn model_thinking_levels<'a>(catalog: &'a Value, selector: &str) -> Option<Vec<&'a str>> {
+    let (provider, id) = selector.split_once('/')?;
+    let model = catalog.get("models")?.as_array()?.iter().find(|model| {
+        model.get("provider").and_then(Value::as_str) == Some(provider)
+            && model.get("id").and_then(Value::as_str) == Some(id)
+    })?;
+    if model.get("reasoning").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    let mut efforts = Vec::new();
+    for raw in model.get("thinking")?.as_array()? {
+        let Some(level) = raw.as_str().and_then(canonical_thinking_level) else {
+            continue;
+        };
+        if !efforts.contains(&level) {
+            efforts.push(level);
+        }
+    }
+    if efforts.is_empty() {
+        return None;
+    }
+    let mut levels = vec!["off", "auto"];
+    levels.extend(efforts);
+    Some(levels)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ThinkingState {
+    selector: String,
+    level: String,
+    generation: u64,
+    revision: u64,
+}
+
+fn fresh_thinking_step(previous: &ThinkingState, current: &ThinkingState) -> bool {
+    current.selector == previous.selector
+        && current.generation == previous.generation
+        && current.revision > previous.revision
+        && current.level != previous.level
+}
+
+async fn read_thinking_state(
+    state: &Shared,
+    pane_id: &str,
+    path: &str,
+) -> std::result::Result<ThinkingState, (StatusCode, String)> {
+    let projection = session_projection_for(state, path).await;
+    let path = path.to_owned();
+    let page = tokio::task::spawn_blocking(move || {
+        let mut projection = projection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        projection.refresh(&path)?;
+        Ok::<_, std::io::Error>(projection.page(None, 0))
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "session projection task failed".to_owned(),
+        )
+    })?
+    .map_err(|error| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("session projection refresh failed: {error}"),
+        )
+    })?;
+
+    let screen = screen_text(pane_id)
+        .await
+        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
+    let selector = page
+        .model
+        .map(|model| {
+            if model.model.contains('/') {
+                model.model
+            } else {
+                format!("{}/{}", model.provider, model.model)
+            }
+        })
+        .or_else(|| screen_model_selector(&screen))
+        .ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "current session model is not yet available".to_owned(),
+            )
+        })?;
+    if screen_model_matches_session(&screen, &selector) == Some(false) {
+        return Err((
+            StatusCode::CONFLICT,
+            "live pane model does not match the session; reopen this pane".to_owned(),
+        ));
+    }
+    let level = page
+        .thinking
+        .as_deref()
+        .and_then(canonical_thinking_level)
+        .map(str::to_owned)
+        .or_else(|| screen_thinking_level(&screen).map(str::to_owned))
+        .ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "current reasoning effort is not yet available".to_owned(),
+            )
+        })?;
+    Ok(ThinkingState {
+        selector,
+        level,
+        generation: page.generation,
+        revision: page.revision,
+    })
+}
+
+async fn wait_thinking_step(
+    state: &Shared,
+    pane_id: &str,
+    path: &str,
+    previous: &ThinkingState,
+) -> std::result::Result<Option<ThinkingState>, (StatusCode, String)> {
+    for _ in 0..20 {
+        let current = read_thinking_state(state, pane_id, path).await?;
+        if current.selector != previous.selector || current.generation != previous.generation {
+            return Err((
+                StatusCode::CONFLICT,
+                "session model changed while applying reasoning effort".to_owned(),
+            ));
+        }
+        if fresh_thinking_step(previous, &current) {
+            return Ok(Some(current));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Ok(None)
 }
 
 #[derive(Clone, PartialEq)]
@@ -1184,56 +1324,69 @@ async fn latest_thinking_receipt(path: &str) -> Option<ThinkingReceipt> {
     .flatten()
 }
 
-fn screen_thinking_level(screen: &str) -> Option<&'static str> {
-    screen.lines().rev().take(8).find_map(|line| {
-        let mut parts = line.split('·');
-        let selector = parts.next()?.trim();
-        if !selector.contains('/') {
-            return None;
-        }
-        parts
-            .next()?
-            .split(|c: char| !c.is_ascii_alphabetic())
-            .find_map(canonical_thinking_level)
-    })
+fn screen_status_fields(screen: &str) -> Option<(&str, &'static str)> {
+    let line = screen.lines().rev().find(|line| !line.trim().is_empty())?;
+    let mut parts = line.split('·');
+    let model = parts.next()?.trim();
+    if !model.contains('/') && !model.chars().any(|character| character.is_ascii_digit()) {
+        return None;
+    }
+    let level = parts
+        .next()?
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .find_map(canonical_thinking_level)?;
+    Some((model, level))
 }
 
-/// Select an exact reasoning effort by cycling until the rendered OMP status
-/// line confirms the requested level.
+fn screen_thinking_level(screen: &str) -> Option<&'static str> {
+    screen_status_fields(screen).map(|(_, level)| level)
+}
+
+/// Select one exact reasoning effort. The terminal key is only transport:
+/// every step waits for a fresh append-only session receipt from OMP.
 async fn drive_thinking(
+    state: &Shared,
     pane_id: &str,
-    _path: &str,
+    path: &str,
     target: &'static str,
-) -> std::result::Result<&'static str, (StatusCode, String)> {
-    let screen = screen_text(pane_id)
-        .await
-        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-    let mut live = screen_thinking_level(&screen);
-    if live == Some(target) {
-        return Ok(target);
+    expected_selector: &str,
+) -> std::result::Result<ThinkingState, (StatusCode, String)> {
+    let mut live = read_thinking_state(state, pane_id, path).await?;
+    if live.selector != expected_selector {
+        return Err((
+            StatusCode::CONFLICT,
+            "session model changed; reopen reasoning effort".to_owned(),
+        ));
+    }
+    if live.level == target {
+        return Ok(live);
     }
 
-    for _ in 0..16 {
-        let previous = live;
+    let mut seen = HashSet::from([live.level.clone()]);
+    for _ in 0..10 {
         herdr::send_text(pane_id, "\x1b[Z")
             .await
             .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-        let changed = wait_screen(pane_id, 12, |screen| {
-            screen_thinking_level(screen).is_some_and(|level| Some(level) != previous)
-        })
-        .await
-        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
-        let Some(screen) = changed else {
-            continue;
+        let Some(next) = wait_thinking_step(state, pane_id, path, &live).await? else {
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "OMP did not acknowledge the reasoning change".to_owned(),
+            ));
         };
-        live = screen_thinking_level(&screen);
-        if live == Some(target) {
-            return Ok(target);
+        live = next;
+        if live.level == target {
+            return Ok(live);
+        }
+        if !seen.insert(live.level.clone()) {
+            return Err((
+                StatusCode::CONFLICT,
+                "model reasoning capabilities changed; reopen reasoning effort".to_owned(),
+            ));
         }
     }
     Err((
-        StatusCode::UNPROCESSABLE_ENTITY,
-        format!("reasoning effort {target} is unavailable for this model"),
+        StatusCode::BAD_GATEWAY,
+        "reasoning change exceeded the model's advertised effort ladder".to_owned(),
     ))
 }
 
@@ -1286,7 +1439,9 @@ where
     result
 }
 
-/// Select an exact reasoning effort through omp's runtime cycle key.
+/// Select one exact reasoning effort against the active model's advertised
+/// capability set. The request model and action id make stale UI selections
+/// rejectable before any terminal input is sent.
 async fn post_thinking(
     State(state): State<Shared>,
     Path(pane_id): Path<String>,
@@ -1295,21 +1450,71 @@ async fn post_thinking(
     let Some(target) = canonical_thinking_level(&body.thinking) else {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "unknown reasoning effort"})),
+            Json(json!({"error": "unknown reasoning effort", "action_id": body.action_id})),
         )
             .into_response();
     };
+    let expected_selector = body.model.trim().to_owned();
+    let action_id = body.action_id.trim().to_owned();
+    if action_id.is_empty() || action_id.len() > 160 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "action_id is required"})),
+        )
+            .into_response();
+    }
+    if expected_selector.len() > 160
+        || expected_selector.split_once('/').is_none()
+        || expected_selector
+            .chars()
+            .any(|character| character.is_whitespace() || character.is_control())
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "model must be the active provider/id selector", "action_id": action_id})),
+        )
+            .into_response();
+    }
+    let catalog = state.model_catalog.read().await.clone();
+    let Some(levels) = catalog
+        .as_ref()
+        .and_then(|catalog| model_thinking_levels(catalog, &expected_selector))
+    else {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "model capabilities changed; reopen reasoning effort",
+                "action_id": action_id,
+            })),
+        )
+            .into_response();
+    };
+    if !levels.contains(&target) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "error": format!("reasoning effort {target} is not supported by {expected_selector}"),
+                "action_id": action_id,
+            })),
+        )
+            .into_response();
+    }
+
     let claimed = state.pane_locks.lock().await.insert(pane_id.clone());
     if !claimed {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": "another pane write is in progress"})),
+            Json(json!({
+                "error": "another pane write is in progress",
+                "action_id": action_id,
+            })),
         )
             .into_response();
     }
 
     let task_state = state.clone();
     let task_pane_id = pane_id.clone();
+    let task_selector = expected_selector.clone();
     let task = tokio::spawn(async move {
         let driver_state = task_state.clone();
         let driver_pane_id = task_pane_id.clone();
@@ -1317,7 +1522,14 @@ async fn post_thinking(
             let path = session_path_for(&driver_state, &driver_pane_id)
                 .await
                 .ok_or_else(|| (StatusCode::NOT_FOUND, "no transcript for pane".to_string()))?;
-            drive_thinking(&driver_pane_id, &path, target).await
+            drive_thinking(
+                &driver_state,
+                &driver_pane_id,
+                &path,
+                target,
+                &task_selector,
+            )
+            .await
         })
         .await
     });
@@ -1328,8 +1540,20 @@ async fn post_thinking(
         ))
     });
     match result {
-        Ok(thinking) => Json(json!({"ok": true, "thinking": thinking})).into_response(),
-        Err((status, message)) => (status, Json(json!({"error": message}))).into_response(),
+        Ok(receipt) => Json(json!({
+            "ok": true,
+            "action_id": action_id,
+            "model": receipt.selector,
+            "thinking": receipt.level,
+            "generation": receipt.generation,
+            "revision": receipt.revision,
+        }))
+        .into_response(),
+        Err((status, message)) => (
+            status,
+            Json(json!({"error": message, "action_id": action_id})),
+        )
+            .into_response(),
     }
 }
 
@@ -1467,6 +1691,16 @@ async fn post_model(
         },
         None => None,
     };
+    let target_levels = state
+        .model_catalog
+        .read()
+        .await
+        .as_ref()
+        .and_then(|catalog| model_thinking_levels(catalog, &selector))
+        .unwrap_or_default()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
     let is_omp_pane = state
         .fleet
         .read()
@@ -1492,6 +1726,7 @@ async fn post_model(
     let task_state = state.clone();
     let task_pane_id = pane_id.clone();
     let task_selector = selector.clone();
+    let task_levels = target_levels.clone();
     let task = tokio::spawn(async move {
         let driver_state = task_state.clone();
         let driver_pane_id = task_pane_id.clone();
@@ -1506,13 +1741,17 @@ async fn post_model(
                 .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))?;
             let preserved_thinking = requested_thinking
                 .or_else(|| screen_thinking_level(&screen))
-                .or_else(|| previous_thinking.as_ref().map(|receipt| receipt.level));
+                .or_else(|| previous_thinking.as_ref().map(|receipt| receipt.level))
+                .filter(|level| task_levels.iter().any(|supported| supported == level));
             if previous_model
                 .as_ref()
                 .is_some_and(|receipt| receipt.selector == task_selector)
                 || screen_has_model_selector(&screen, &task_selector)
             {
-                return Ok(preserved_thinking);
+                return Ok(read_thinking_state(&driver_state, &driver_pane_id, &path)
+                    .await
+                    .ok()
+                    .map(|state| state.level));
             }
             drive_model_picker(&driver_pane_id, &task_selector).await?;
             if wait_model_receipt(&path, previous_model.as_ref(), &task_selector)
@@ -1533,18 +1772,27 @@ async fn post_model(
             // Omp re-applies a model-specific thinking setting immediately after
             // model_change. Wait for that receipt before restoring the caller's
             // prior configured level, or a late reapply can overwrite our restore.
-            if preserved_thinking.is_some() {
-                for _ in 0..15 {
-                    if latest_thinking_receipt(&path).await != previous_thinking {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+            for _ in 0..15 {
+                if latest_thinking_receipt(&path).await != previous_thinking {
+                    break;
                 }
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
             if let Some(thinking) = preserved_thinking {
-                drive_thinking(&driver_pane_id, &path, thinking).await?;
+                let receipt = drive_thinking(
+                    &driver_state,
+                    &driver_pane_id,
+                    &path,
+                    thinking,
+                    &task_selector,
+                )
+                .await?;
+                return Ok(Some(receipt.level));
             }
-            Ok(preserved_thinking)
+            Ok(read_thinking_state(&driver_state, &driver_pane_id, &path)
+                .await
+                .ok()
+                .map(|state| state.level))
         })
         .await
     });
@@ -1586,8 +1834,26 @@ fn screen_model_selector(screen: &str) -> Option<String> {
     })
 }
 
+fn model_identity_key(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 fn screen_has_model_selector(screen: &str, selector: &str) -> bool {
     screen_model_selector(screen).as_deref() == Some(selector)
+}
+
+fn screen_model_matches_session(screen: &str, selector: &str) -> Option<bool> {
+    if let Some(screen_selector) = screen_model_selector(screen) {
+        return Some(screen_selector == selector);
+    }
+    let (status_model, _) = screen_status_fields(screen)?;
+    let status_model = status_model.rsplit('/').next().unwrap_or(status_model);
+    let selector_model = selector.rsplit('/').next().unwrap_or(selector);
+    Some(model_identity_key(status_model) == model_identity_key(selector_model))
 }
 
 fn selected_model_row(screen: &str, selector: &str) -> bool {
@@ -1669,12 +1935,7 @@ async fn drive_model_picker(
 
 fn duplicate_ask_option_label<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let mut seen = HashSet::new();
-    for label in labels {
-        if !seen.insert(label) {
-            return Some(label);
-        }
-    }
-    None
+    labels.into_iter().find(|label| !seen.insert(*label))
 }
 
 fn focused_ask_index(screen: &str, ask: &omp::Ask) -> Option<usize> {
@@ -2269,7 +2530,7 @@ fn first_numeric_version(value: &str) -> Option<String> {
 }
 
 fn humanize_model_id(id: &str) -> String {
-    id.split(|c: char| matches!(c, '-' | '_' | ':' | '/'))
+    id.split(['-', '_', ':', '/'])
         .filter(|part| !part.is_empty())
         .map(|part| {
             let mut chars = part.chars();
@@ -2924,7 +3185,7 @@ mod tests {
 
     #[test]
     fn duplicate_ask_option_labels_are_rejected_without_rejecting_unique_labels() {
-        let unique = vec![
+        let unique = [
             omp::AskOption {
                 label: "first".into(),
                 description: None,
@@ -2939,7 +3200,7 @@ mod tests {
             None
         );
 
-        let duplicate = vec![
+        let duplicate = [
             omp::AskOption {
                 label: "first".into(),
                 description: None,
@@ -3044,6 +3305,61 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_control_adds_selector_modes_to_advertised_efforts() {
+        let catalog = json!({
+            "models": [
+                {
+                    "provider": "openai-codex",
+                    "id": "gpt-5.6-sol",
+                    "reasoning": true,
+                    "thinking": ["low", "future", "medium", "high", "xhigh", "max"]
+                },
+                {
+                    "provider": "anthropic",
+                    "id": "claude-fable-5",
+                    "reasoning": true,
+                    "thinking": ["low", "medium", "high"]
+                }
+            ]
+        });
+
+        assert_eq!(
+            model_thinking_levels(&catalog, "openai-codex/gpt-5.6-sol"),
+            Some(vec!["off", "auto", "low", "medium", "high", "xhigh", "max"])
+        );
+        assert_eq!(model_thinking_levels(&catalog, "missing/model"), None);
+    }
+
+    #[test]
+    fn reasoning_step_requires_a_fresh_same_session_receipt() {
+        let previous = ThinkingState {
+            selector: "openai-codex/gpt-5.6-sol".into(),
+            level: "xhigh".into(),
+            generation: 7,
+            revision: 40,
+        };
+        let stale = ThinkingState {
+            level: "max".into(),
+            ..previous.clone()
+        };
+        let reset = ThinkingState {
+            level: "max".into(),
+            generation: 8,
+            revision: 41,
+            ..previous.clone()
+        };
+        let confirmed = ThinkingState {
+            level: "max".into(),
+            revision: 41,
+            ..previous.clone()
+        };
+
+        assert!(!fresh_thinking_step(&previous, &stale));
+        assert!(!fresh_thinking_step(&previous, &reset));
+        assert!(fresh_thinking_step(&previous, &confirmed));
+    }
+
+    #[test]
     fn agent_text_driver_requires_a_recognized_empty_composer() {
         assert_eq!(
             screen_composer_occupied("/private/tmp/project                    20:19\n❯\n"),
@@ -3072,9 +3388,10 @@ mod tests {
         let screen = "openai-codex/GPT-5.6-Luna · low · kelpie · master ctx 14%";
         assert_eq!(screen_thinking_level(screen), Some("low"));
         assert_eq!(
-            screen_thinking_level("openai-codex/GPT-5.6-Luna · high"),
+            screen_thinking_level("openai-codex/GPT-5.6-Luna · high · kelpie"),
             Some("high")
         );
+        assert_eq!(screen_thinking_level("operator note · high"), None);
     }
 
     #[test]
@@ -3093,6 +3410,23 @@ mod tests {
             screen,
             "openai-codex/gpt-5.6-sol"
         ));
+        let status = "  GPT-5.6-Sol · high · kelpie · master ctx 66%";
+        assert_eq!(
+            screen_model_matches_session(status, "openai-codex/gpt-5.6-sol"),
+            Some(true)
+        );
+        assert_eq!(
+            screen_model_matches_session(status, "openai-codex/gpt-5.6-luna"),
+            Some(false)
+        );
+        assert_eq!(screen_thinking_level(status), Some("high"));
+        assert_eq!(
+            screen_model_matches_session(
+                "openai-codex/GPT-5.6-Sol · kelpie",
+                "openai-codex/gpt-5.6-sol"
+            ),
+            None
+        );
     }
 
     #[test]

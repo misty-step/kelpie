@@ -372,7 +372,11 @@ pub struct ModelResponse {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct ThinkingResponse {
-    pub thinking: Option<String>,
+    pub action_id: String,
+    pub model: String,
+    pub thinking: String,
+    pub generation: u64,
+    pub revision: u64,
     #[serde(default)]
     pub ok: bool,
 }
@@ -459,6 +463,8 @@ pub struct AskActionReceipt {
 #[derive(Serialize)]
 pub struct ThinkingBody<'a> {
     pub thinking: &'a str,
+    pub model: &'a str,
+    pub action_id: &'a str,
 }
 
 #[derive(Serialize)]

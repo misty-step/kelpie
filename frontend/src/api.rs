@@ -11,7 +11,8 @@ use crate::types::*;
 
 const DEFAULT_DEADLINE_MS: u32 = 5_000;
 const MODEL_CATALOG_DEADLINE_MS: u32 = 35_000;
-const MODEL_THINKING_POST_DEADLINE_MS: u32 = 45_000;
+const MODEL_POST_DEADLINE_MS: u32 = 45_000;
+const THINKING_POST_DEADLINE_MS: u32 = 10_000;
 const TEXT_POST_DEADLINE_MS: u32 = 2_000;
 const ASK_POST_DEADLINE_MS: u32 = 2_000;
 const ASK_STATUS_DEADLINE_MS: u32 = 1_500;
@@ -409,12 +410,21 @@ pub async fn ask_status(
     .await
 }
 
-pub async fn set_thinking(pane_id: &str, thinking: &str) -> Result<ThinkingResponse, ApiError> {
+pub async fn set_thinking(
+    pane_id: &str,
+    thinking: &str,
+    model: &str,
+    action_id: &str,
+) -> Result<ThinkingResponse, ApiError> {
     post_json(
         &format!("/api/pane/{}/thinking", enc(pane_id)),
-        &ThinkingBody { thinking },
+        &ThinkingBody {
+            thinking,
+            model,
+            action_id,
+        },
         "thinking change failed",
-        MODEL_THINKING_POST_DEADLINE_MS,
+        THINKING_POST_DEADLINE_MS,
     )
     .await
 }
@@ -428,7 +438,7 @@ pub async fn set_model(
         &format!("/api/pane/{}/model", enc(pane_id)),
         &ModelBody { model, thinking },
         "model change failed",
-        MODEL_THINKING_POST_DEADLINE_MS,
+        MODEL_POST_DEADLINE_MS,
     )
     .await
 }
