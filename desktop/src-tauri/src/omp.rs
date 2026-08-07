@@ -491,31 +491,89 @@ pub struct Page {
 /// projection counts them (user/assistant/thinking/toolCall append entries;
 /// toolResult only updates an open tool). A pending ask only counts when its
 /// tool call sits within the last six entries.
-pub fn tail_summary(path: &str) -> (Option<String>, bool) {
+#[derive(Clone, Debug, Default)]
+pub struct PaneSummary {
+    pub snippet: Option<String>,
+    pub pending_ask: bool,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+pub fn tail_summary(path: &str) -> PaneSummary {
+    let mut res = PaneSummary::default();
     let Ok(meta) = std::fs::metadata(path) else {
-        return (None, false);
+        return res;
     };
     let len = meta.len();
     if len == 0 {
-        return (None, false);
+        return res;
     }
     let Ok(mut file) = File::open(path) else {
-        return (None, false);
+        return res;
     };
     if file.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES))).is_err() {
-        return (None, false);
+        return res;
     }
     let reader = BufReader::new(file);
-    let mut snippet: Option<String> = None;
     let mut open_asks: HashMap<String, u64> = HashMap::new();
-    let mut seq: u64 = 0; // entry sequence counter, mirroring projection entries
+    let mut seq: u64 = 0;
     for line in reader.lines().flatten() {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
-            continue; // partial first line in the window
+            continue;
         };
+        let evt_type = event.get("type").and_then(Value::as_str);
+        if evt_type == Some("model_change") {
+            if let Some(selector) = event.get("model").and_then(Value::as_str) {
+                if let Some((prov, mod_name)) = selector.split_once('/') {
+                    res.provider = Some(prov.to_string());
+                    res.model = Some(mod_name.to_string());
+                }
+            }
+        }
+        if evt_type == Some("thinking_level_change") {
+            let lvl_val = event.get("configured")
+                .or_else(|| event.get("thinkingLevel"))
+                .or_else(|| event.get("thinking_level"))
+                .or_else(|| event.get("level"));
+            if let Some(lvl) = lvl_val.and_then(Value::as_str) {
+                let lvl_lower = lvl.to_lowercase();
+                let formatted = match lvl_lower.as_str() {
+                    "xhigh" | "extra_high" | "extra high" => "Extra High",
+                    "high" => "High",
+                    "medium" => "Medium",
+                    "low" => "Low",
+                    "off" | "none" => "Off",
+                    _ => lvl,
+                };
+                res.effort = Some(formatted.to_string());
+            }
+        }
         let Some(message) = event.get("message") else {
             continue;
         };
+        if let (Some(prov), Some(mod_name)) = (
+            message.get("provider").and_then(Value::as_str),
+            message.get("model").and_then(Value::as_str),
+        ) {
+            res.provider = Some(prov.to_string());
+            res.model = Some(mod_name.to_string());
+        }
+        let msg_lvl = message.get("configured")
+            .or_else(|| message.get("thinkingLevel"))
+            .or_else(|| message.get("thinking_level"));
+        if let Some(lvl) = msg_lvl.and_then(Value::as_str) {
+            let lvl_lower = lvl.to_lowercase();
+            let formatted = match lvl_lower.as_str() {
+                "xhigh" | "extra_high" | "extra high" => "Extra High",
+                "high" => "High",
+                "medium" => "Medium",
+                "low" => "Low",
+                "off" | "none" => "Off",
+                _ => lvl,
+            };
+            res.effort = Some(formatted.to_string());
+        }
         let Some(role) = message.get("role").and_then(Value::as_str) else {
             continue;
         };
@@ -524,7 +582,7 @@ pub fn tail_summary(path: &str) -> (Option<String>, bool) {
                 let text = content_text(message.get("content").unwrap_or(&Value::Null));
                 if !text.trim().is_empty() {
                     seq += 1;
-                    snippet = Some(clip(&text, SNIPPET_CLIP));
+                    res.snippet = Some(clip(&text, SNIPPET_CLIP));
                 }
             }
             "assistant" => {
@@ -536,7 +594,7 @@ pub fn tail_summary(path: &str) -> (Option<String>, bool) {
                                     item.get("text").and_then(Value::as_str).unwrap_or("");
                                 if !text.trim().is_empty() {
                                     seq += 1;
-                                    snippet = text
+                                    res.snippet = text
                                         .lines()
                                         .rev()
                                         .find(|l| !l.trim().is_empty())
@@ -563,7 +621,7 @@ pub fn tail_summary(path: &str) -> (Option<String>, bool) {
                                 if name == "ask" && !call_id.is_empty() {
                                     open_asks.insert(call_id.to_string(), seq);
                                 }
-                                snippet = Some(clip(
+                                res.snippet = Some(clip(
                                     &format!(
                                         "⚒ {}{}",
                                         name,
@@ -582,11 +640,10 @@ pub fn tail_summary(path: &str) -> (Option<String>, bool) {
             "toolResult" => {
                 let call_id = message.get("toolCallId").and_then(Value::as_str).unwrap_or("");
                 open_asks.remove(call_id);
-                // toolResult appends no projection entry — do not bump seq
             }
             _ => {}
         }
     }
-    let pending_ask = open_asks.values().any(|s| seq.saturating_sub(*s) <= 6);
-    (snippet, pending_ask)
+    res.pending_ask = open_asks.values().any(|s| seq.saturating_sub(*s) <= 6);
+    res
 }

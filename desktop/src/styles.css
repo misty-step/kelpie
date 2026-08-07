@@ -484,17 +484,42 @@ button {
   color: var(--text-faint);
 }
 
-.pane-row-task {
-  font-size: 12.5px;
+.pane-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  padding-left: 15px;
+}
+
+.prov-icon {
+  color: var(--text-soft);
+  flex: none;
+  display: inline-flex;
+}
+
+.pane-model-name {
+  font-family: var(--mono);
+  font-size: 11px;
   color: var(--text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 15px;
 }
 
-.pane-row-card.selected .pane-row-task {
-  color: var(--text);
+.pane-effort-pill {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex: none;
+  margin-left: auto;
 }
 .sidebar-foot {
   flex: none;

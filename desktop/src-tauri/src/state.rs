@@ -31,6 +31,9 @@ pub struct Pane {
     pub updated_ms: Option<u64>,
     /// Working directory reported by herdr (used for workspace command discovery).
     pub cwd: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
     /// Internal control-plane path; never serialized to the frontend.
     #[serde(skip_serializing)]
     pub session_path: Option<String>,

@@ -71,11 +71,6 @@ export function TitleBar({
   return (
     <div className="titlebar">
       <div className="tb-brand" data-tauri-drag-region>
-        <span className="kelpie-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M3 20c4-1 6-3 7-6 1-3 0-5-1-7 1 2 3 3 5 3 4 0 7-3 8-7-1 4-1 7-3 9-2 3-6 4-9 3-2 1-4 3-7 5Z" />
-          </svg>
-        </span>
         <span className="tb-wordmark">kelpie</span>
       </div>
 

@@ -41,7 +41,7 @@ fn status_of(value: Option<&str>) -> String {
 #[derive(Default)]
 struct PollState {
     last_revision: HashMap<String, u64>,
-    summaries: HashMap<String, (Option<String>, bool)>,
+    summaries: HashMap<String, omp::PaneSummary>,
     last_sizes: HashMap<String, u64>,
     last_sizes_emitted: HashMap<String, u64>,
     last_fleet_json: Option<String>,
@@ -82,18 +82,18 @@ async fn build_fleet(poll: &mut PollState) -> Result<Fleet> {
                 continue;
             };
             let revision = p.get("revision").and_then(Value::as_u64).unwrap_or(0);
-            let (snippet, pending_ask) = if revision != 0
+            let summary = if revision != 0
                 && poll.last_revision.get(&pane_id).copied() == Some(revision)
             {
                 poll.summaries
                     .get(&pane_id)
                     .cloned()
-                    .unwrap_or((None, false))
+                    .unwrap_or_default()
             } else {
                 let path = session_path.clone();
                 let summary = tokio::task::spawn_blocking(move || omp::tail_summary(&path))
                     .await
-                    .unwrap_or((None, false));
+                    .unwrap_or_default();
                 poll.summaries.insert(pane_id.clone(), summary.clone());
                 summary
             };
@@ -112,10 +112,13 @@ async fn build_fleet(poll: &mut PollState) -> Result<Fleet> {
                 workspace_id: s(p, &["workspace_id"]).unwrap_or_default(),
                 status: status_of(s(p, &["agent_status"]).as_deref()),
                 task: s(p, &["terminal_title_stripped", "terminal_title"]),
-                pending_ask,
+                pending_ask: summary.pending_ask,
                 session_path: Some(session_path),
                 cwd: s(p, &["cwd", "foreground_cwd"]),
-                snippet,
+                snippet: summary.snippet,
+                provider: summary.provider,
+                model: summary.model,
+                effort: summary.effort,
                 updated_ms,
             });
         }

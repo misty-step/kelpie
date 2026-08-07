@@ -5,7 +5,29 @@ import {
 import type { Fleet, Pane } from "../types";
 import { attentionSort } from "../fleetSort";
 import { relativeTime } from "../relativeTime";
-import { taskTitle } from "../taskTitle";
+
+function ProviderIcon({ model }: { model: string | null | undefined }) {
+  const m = (model ?? "").toLowerCase();
+  if (m.includes("claude") || m.includes("anthropic")) {
+    return (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="prov-icon" aria-hidden="true">
+        <path d="M13.8 3h-3.6L5 21h3.6l1.6-4.8h4.6l1.6 4.8h3.6L13.8 3zm-2.4 10.5 1.5-4.5 1.5 4.5h-3z" />
+      </svg>
+    );
+  }
+  if (m.includes("gemini") || m.includes("google")) {
+    return (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="prov-icon" aria-hidden="true">
+        <path d="M12 2L9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5L12 2z" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="prov-icon" aria-hidden="true">
+      <path d="M22.28 9.87a5.98 5.98 0 0 0-.52-4.93 6.03 6.03 0 0 0-6.47-2.9 6.03 6.03 0 0 0-4.63-2.03 6.03 6.03 0 0 0-5.74 4.16 6.03 6.03 0 0 0-4.14 2.99 6.01 6.01 0 0 0 .73 6.99 5.98 5.98 0 0 0 .52 4.93 6.03 6.03 0 0 0 6.47 2.9 6.03 6.03 0 0 0 4.63 2.03 6.03 6.03 0 0 0 5.74-4.16 6.03 6.03 0 0 0 4.14-2.99 6.01 6.01 0 0 0-.73-6.99zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
+    </svg>
+  );
+}
 
 function StatusRing({ pane }: { pane: Pane }) {
   if (pane.pending_ask) {
@@ -31,9 +53,10 @@ function PaneRow({
   onSelect: (paneId: string) => void;
   workspaceLabel?: string;
 }) {
-  const label = taskTitle(pane.task, pane.pane_id);
   const time = relativeTime(pane.updated_ms);
   const wsName = workspaceLabel ?? pane.workspace_id;
+  const modelName = pane.model ?? "codex";
+  const effort = pane.effort;
 
   return (
     <button
@@ -48,7 +71,11 @@ function PaneRow({
         <span className="pane-ws-name">{wsName}</span>
         <span className="pane-row-time">{time}</span>
       </div>
-      <div className="pane-row-task">{label}</div>
+      <div className="pane-row-meta">
+        <ProviderIcon model={modelName} />
+        <span className="pane-model-name">{modelName}</span>
+        {effort && <span className="pane-effort-pill">{effort}</span>}
+      </div>
     </button>
   );
 }

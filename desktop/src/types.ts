@@ -20,6 +20,9 @@ export interface Pane {
   updated_ms: number | null;
   /** Working directory from herdr; drives workspace command discovery. */
   cwd: string | null;
+  provider?: string | null;
+  model?: string | null;
+  effort?: string | null;
 }
 
 export interface Fleet {
