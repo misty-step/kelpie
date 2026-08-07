@@ -314,7 +314,7 @@ export function SettingsView({ herdr }: { herdr: HerdrStatus; onClose?: () => vo
           <div className="settings-group">
             <div className="settings-row">
               <div className="settings-label-col">
-                <span className="settings-label">Command Palette</span>
+                <span className="settings-label">Command palette</span>
               </div>
               <div className="settings-value-col">
                 <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">K</kbd>
@@ -323,7 +323,97 @@ export function SettingsView({ herdr }: { herdr: HerdrStatus; onClose?: () => vo
 
             <div className="settings-row">
               <div className="settings-label-col">
-                <span className="settings-label">Quit Application</span>
+                <span className="settings-label">Next agent</span>
+                <span className="settings-desc">Sidebar order (needs attention first)</span>
+              </div>
+              <div className="settings-value-col settings-keys">
+                <span>
+                  <kbd className="settings-kbd">Alt</kbd> + <kbd className="settings-kbd">↓</kbd>
+                </span>
+                <span className="settings-keys-or">or</span>
+                <span>
+                  <kbd className="settings-kbd">Alt</kbd> + <kbd className="settings-kbd">J</kbd>
+                </span>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Previous agent</span>
+              </div>
+              <div className="settings-value-col settings-keys">
+                <span>
+                  <kbd className="settings-kbd">Alt</kbd> + <kbd className="settings-kbd">↑</kbd>
+                </span>
+                <span className="settings-keys-or">or</span>
+                <span>
+                  <kbd className="settings-kbd">Alt</kbd> + <kbd className="settings-kbd">K</kbd>
+                </span>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Jump to agent 1–9</span>
+              </div>
+              <div className="settings-value-col">
+                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">1</kbd>
+                <span className="settings-keys-or">…</span>
+                <kbd className="settings-kbd">9</kbd>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Next needs attention</span>
+              </div>
+              <div className="settings-value-col">
+                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">Shift</kbd> +{" "}
+                <kbd className="settings-kbd">A</kbd>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Fleet view</span>
+              </div>
+              <div className="settings-value-col">
+                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">F</kbd>
+                <span className="settings-keys-or">or</span>
+                <kbd className="settings-kbd">Esc</kbd>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Settings</span>
+              </div>
+              <div className="settings-value-col">
+                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">,</kbd>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Usage panel</span>
+              </div>
+              <div className="settings-value-col">
+                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">U</kbd>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Toggle terminal</span>
+              </div>
+              <div className="settings-value-col">
+                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">`</kbd>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label-col">
+                <span className="settings-label">Quit</span>
               </div>
               <div className="settings-value-col">
                 <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">Q</kbd>
@@ -332,37 +422,20 @@ export function SettingsView({ herdr }: { herdr: HerdrStatus; onClose?: () => vo
 
             <div className="settings-row">
               <div className="settings-label-col">
-                <span className="settings-label">Close Overlay / Menu</span>
+                <span className="settings-label">Larger / smaller / reset text</span>
               </div>
-              <div className="settings-value-col">
-                <kbd className="settings-kbd">Esc</kbd>
-              </div>
-            </div>
-
-            <div className="settings-row">
-              <div className="settings-label-col">
-                <span className="settings-label">Larger text</span>
-              </div>
-              <div className="settings-value-col">
-                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">+</kbd>
-              </div>
-            </div>
-
-            <div className="settings-row">
-              <div className="settings-label-col">
-                <span className="settings-label">Smaller text</span>
-              </div>
-              <div className="settings-value-col">
-                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">−</kbd>
-              </div>
-            </div>
-
-            <div className="settings-row">
-              <div className="settings-label-col">
-                <span className="settings-label">Reset text size</span>
-              </div>
-              <div className="settings-value-col">
-                <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">0</kbd>
+              <div className="settings-value-col settings-keys">
+                <span>
+                  <kbd className="settings-kbd">Ctrl</kbd> + <kbd className="settings-kbd">+</kbd>
+                </span>
+                <span className="settings-keys-or">/</span>
+                <span>
+                  <kbd className="settings-kbd">−</kbd>
+                </span>
+                <span className="settings-keys-or">/</span>
+                <span>
+                  <kbd className="settings-kbd">0</kbd>
+                </span>
               </div>
             </div>
           </div>

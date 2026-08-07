@@ -2473,3 +2473,15 @@ button {
   border-radius: 4px;
   color: var(--text);
 }
+
+.settings-keys {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.settings-keys-or {
+  color: var(--text-faint);
+  font-size: 11px;
+}

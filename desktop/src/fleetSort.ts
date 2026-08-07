@@ -16,6 +16,14 @@ export function attentionSort(panes: Pane[]): Pane[] {
   );
 }
 
+/** Same order the sidebar paints: needs-attention first, then the rest. */
+export function sidebarOrder(panes: Pane[]): Pane[] {
+  const sorted = attentionSort(panes);
+  const urgency = sorted.filter((p) => p.pending_ask || p.status === "blocked");
+  const normal = sorted.filter((p) => !p.pending_ask && p.status !== "blocked");
+  return [...urgency, ...normal];
+}
+
 export function workspaceLabelOf(fleet: Fleet | null, workspaceId: string): string {
   return fleet?.workspaces.find((w) => w.id === workspaceId)?.label ?? workspaceId;
 }

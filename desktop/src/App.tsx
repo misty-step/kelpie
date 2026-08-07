@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { Fleet, HerdrStatus, Pane } from "./types";
 import type { Theme } from "./theme";
@@ -11,10 +11,11 @@ import { SettingsView, applyOpacitySetting, getSavedOpacity } from "./components
 import { TerminalPanel } from "./components/TerminalPanel";
 import { UsagePanel } from "./components/UsagePanel";
 import { CommandPalette } from "./components/CommandPalette";
-import { attentionSort } from "./fleetSort";
+import { attentionSort, sidebarOrder } from "./fleetSort";
 import { win } from "./windowApi";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TYPE_SCALE_DEFAULT, applyTypeScale, bumpTypeScale, getSavedTypeScale } from "./typeScale";
+import { digitFromEvent, isTypingTarget, mod } from "./hotkeys";
 
 // Hoisted so the one-shot initial auto-open runs once per session.
 const fleetRef: { current: boolean } = { current: false };
@@ -36,6 +37,24 @@ export default function App() {
   const [usageOpen, setUsageOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [, setNow] = useState(0);
+
+  const fleetLive = useRef(fleet);
+  const viewLive = useRef(view);
+  const overlayLive = useRef({ palette: false, usage: false, terminal: false });
+  fleetLive.current = fleet;
+  viewLive.current = view;
+  overlayLive.current = { palette: paletteOpen, usage: usageOpen, terminal: terminalOpen };
+
+  const openPane = (paneId: string) => {
+    setView({ kind: "chat", paneId });
+    setPaletteOpen(false);
+    setUsageOpen(false);
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-pane-id="${CSS.escape(paneId)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  };
 
   useEffect(() => {
     // Apply saved window opacity on startup
@@ -63,37 +82,174 @@ export default function App() {
       maybeAutoOpen(f);
     });
     const offStatus = api.onHerdrStatus((s) => alive && setHerdr(s));
+
+    const orderedPanes = () => sidebarOrder(fleetLive.current?.panes ?? []);
+
+    const stepAgent = (delta: number) => {
+      const panes = orderedPanes();
+      if (panes.length === 0) return;
+      const cur = viewLive.current;
+      const curId = cur.kind === "chat" ? cur.paneId : null;
+      let idx = curId ? panes.findIndex((p) => p.pane_id === curId) : -1;
+      if (idx < 0) idx = delta > 0 ? -1 : 0;
+      const next = panes[(idx + delta + panes.length) % panes.length];
+      openPane(next.pane_id);
+    };
+
+    const jumpAgent = (index0: number) => {
+      const panes = orderedPanes();
+      const pane = panes[index0];
+      if (pane) openPane(pane.pane_id);
+    };
+
+    const jumpAttention = () => {
+      const panes = orderedPanes();
+      const needs = panes.filter((p) => p.pending_ask || p.status === "blocked");
+      if (needs.length === 0) return;
+      const cur = viewLive.current;
+      const curId = cur.kind === "chat" ? cur.paneId : null;
+      const idx = needs.findIndex((p) => p.pane_id === curId);
+      const next = needs[(idx + 1) % needs.length];
+      openPane(next.pane_id);
+    };
+
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (e.defaultPrevented || e.isComposing) return;
+      const key = e.key;
+      const lower = key.toLowerCase();
+      const typing = isTypingTarget(e.target);
+      const hasMod = mod(e);
+
+      // Always-on: palette, quit, text size, escape
+      if (hasMod && !e.altKey && lower === "k") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "q") {
+      if (hasMod && !e.altKey && lower === "q") {
         e.preventDefault();
         void quit();
+        return;
       }
-      // Text size: Ctrl/Cmd + = / - / 0
-      if (e.metaKey || e.ctrlKey) {
-        const k = e.key;
-        if (k === "=" || k === "+" || e.code === "NumpadAdd") {
+      if (hasMod && !e.altKey) {
+        if (key === "=" || key === "+" || e.code === "NumpadAdd") {
           e.preventDefault();
           bumpTypeScale(1);
           return;
         }
-        if (k === "-" || k === "_" || e.code === "NumpadSubtract") {
+        if (key === "-" || key === "_" || e.code === "NumpadSubtract") {
           e.preventDefault();
           bumpTypeScale(-1);
           return;
         }
-        if (k === "0" || e.code === "Numpad0") {
+        if (key === "0" || e.code === "Numpad0") {
           e.preventDefault();
           applyTypeScale(TYPE_SCALE_DEFAULT);
           return;
         }
       }
-      if (e.key === "Escape") {
+
+      if (key === "Escape") {
+        if (overlayLive.current.palette) {
+          e.preventDefault();
+          setPaletteOpen(false);
+          return;
+        }
+        if (overlayLive.current.usage) {
+          e.preventDefault();
+          setUsageOpen(false);
+          return;
+        }
+        if (overlayLive.current.terminal) {
+          e.preventDefault();
+          setTerminalOpen(false);
+          return;
+        }
+        if (!typing && viewLive.current.kind === "settings") {
+          e.preventDefault();
+          setView({ kind: "fleet" });
+          return;
+        }
+        if (!typing && viewLive.current.kind === "chat") {
+          e.preventDefault();
+          setView({ kind: "fleet" });
+          return;
+        }
+        return;
+      }
+
+      // Editable fields keep plain keys. Modifier chords still navigate.
+      const blockPlain = typing || overlayLive.current.palette;
+
+      // Agent navigation (sidebar order)
+      // Alt/Ctrl/Cmd + ↑↓, Alt+[ ], Alt+J/K — safe while typing
+      if ((e.altKey || hasMod) && key === "ArrowDown") {
+        e.preventDefault();
+        stepAgent(1);
+        return;
+      }
+      if ((e.altKey || hasMod) && key === "ArrowUp") {
+        e.preventDefault();
+        stepAgent(-1);
+        return;
+      }
+      if (e.altKey && !hasMod && (lower === "j" || key === "]")) {
+        e.preventDefault();
+        stepAgent(1);
+        return;
+      }
+      if (e.altKey && !hasMod && (lower === "k" || key === "[")) {
+        e.preventDefault();
+        stepAgent(-1);
+        return;
+      }
+
+      // Ctrl/Cmd+1..9 — jump to Nth agent in sidebar order
+      if (hasMod && !e.altKey) {
+        const digit = digitFromEvent(e);
+        if (digit != null) {
+          e.preventDefault();
+          jumpAgent(digit - 1);
+          return;
+        }
+      }
+
+      // Ctrl/Cmd+Shift+A — cycle agents that need attention
+      if (hasMod && e.shiftKey && lower === "a") {
+        e.preventDefault();
+        jumpAttention();
+        return;
+      }
+
+      if (blockPlain) return;
+
+      // Views / panels
+      if (hasMod && !e.altKey && lower === "f") {
+        e.preventDefault();
+        setView({ kind: "fleet" });
         setPaletteOpen(false);
-        setUsageOpen(false);
+        return;
+      }
+      if (hasMod && !e.altKey && lower === ",") {
+        e.preventDefault();
+        setView({ kind: "settings" });
+        setPaletteOpen(false);
+        return;
+      }
+      if (hasMod && !e.altKey && lower === "u") {
+        e.preventDefault();
+        setUsageOpen((o) => !o);
+        return;
+      }
+      if (hasMod && !e.altKey && lower === "`") {
+        e.preventDefault();
+        setTerminalOpen((o) => !o);
+        return;
+      }
+      if (hasMod && !e.altKey && lower === "b") {
+        e.preventDefault();
+        setView({ kind: "fleet" });
+        return;
       }
     };
     window.addEventListener("keydown", onKey);

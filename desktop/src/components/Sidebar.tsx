@@ -77,6 +77,7 @@ function PaneRow({
     <button
       type="button"
       className={`pane-row-card${selected ? " selected" : ""}`}
+      data-pane-id={pane.pane_id}
       onClick={() => onSelect(pane.pane_id)}
       title={pane.task ?? pane.pane_id}
       aria-pressed={selected}
