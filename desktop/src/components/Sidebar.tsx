@@ -1,6 +1,5 @@
 import {
   Settings,
-  Bot,
   Loader2,
 } from "lucide-react";
 import type { Fleet, Pane } from "../types";
@@ -16,7 +15,7 @@ function StatusRing({ pane }: { pane: Pane }) {
     return <span className="st-ring blocked" title="Blocked" />;
   }
   if (pane.status === "working") {
-    return <span className="st-ring working" title="Working" />;
+    return <span className="st-ring working spin" title="Working" />;
   }
   return <span className="st-ring done" title="Done" />;
 }
@@ -34,7 +33,7 @@ function PaneRow({
 }) {
   const label = taskTitle(pane.task, pane.pane_id);
   const time = relativeTime(pane.updated_ms);
-  const wsTag = workspaceLabel ?? pane.workspace_id;
+  const wsName = workspaceLabel ?? pane.workspace_id;
 
   return (
     <button
@@ -44,10 +43,12 @@ function PaneRow({
       title={pane.task ?? pane.pane_id}
       aria-pressed={selected}
     >
-      <StatusRing pane={pane} />
-      <span className="pane-row-title">{label}</span>
-      <span className="pane-ws-tag">{wsTag}</span>
-      <span className="pane-row-time">{time}</span>
+      <div className="pane-row-top">
+        <StatusRing pane={pane} />
+        <span className="pane-ws-name">{wsName}</span>
+        <span className="pane-row-time">{time}</span>
+      </div>
+      <div className="pane-row-task">{label}</div>
     </button>
   );
 }
@@ -75,7 +76,6 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-top-strip">
         <span className="sidebar-title">
-          <Bot size={14} className="sidebar-icon" />
           <span>Agents</span>
         </span>
         <span className="sidebar-meta">
