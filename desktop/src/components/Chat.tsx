@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { Markdown } from "../markdown";
-import type { IndexedEntry, Pane, SessionPage, Workspace } from "../types";
+import type { IndexedEntry, Pane, SessionPage } from "../types";
 import type { Theme } from "../theme";
 import { Composer } from "./Composer";
 import { statusLabel } from "../status";
@@ -156,13 +156,11 @@ function ThinkingBlock({ entry, theme, last }: { entry: IndexedEntry; theme: The
 
 export function Chat({
   pane,
-  workspace,
   theme,
   onToggleTerminal,
   terminalOpen,
 }: {
   pane: Pane;
-  workspace: Workspace | null;
   theme: Theme;
   onToggleTerminal: () => void;
   terminalOpen: boolean;
@@ -228,7 +226,6 @@ export function Chat({
     void load(oldest);
   };
 
-  const wsLabel = workspace?.label ?? pane.workspace_id;
   const taskText = taskTitle(pane.task, pane.pane_id);
   const provider = (page?.model?.provider ?? pane.provider ?? "").toLowerCase();
   const modelName = page?.model?.model ?? pane.model;
@@ -356,7 +353,6 @@ export function Chat({
         pendingAsk={page?.pending_ask ?? null}
         model={page?.model ? `${page.model.provider}/${page.model.model}` : null}
         thinking={page?.thinking ?? pane.effort ?? null}
-        workspaceLabel={wsLabel}
       />
     </div>
   );

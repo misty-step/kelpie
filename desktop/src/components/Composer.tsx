@@ -110,14 +110,12 @@ export function Composer({
   pendingAsk,
   model,
   thinking,
-  workspaceLabel,
 }: {
   paneId: string;
   cwd?: string | null;
   pendingAsk: Ask | null;
   model: string | null;
   thinking: string | null;
-  workspaceLabel: string | null;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -848,15 +846,6 @@ export function Composer({
             </div>
           </>
         )}
-      </div>
-
-      <div className="composer-meta-rail" aria-label="Session workspace">
-        <span className="composer-meta-chip" title="Workspace (read-only)">
-          <span className="composer-meta-ico" aria-hidden="true">
-            ⌂
-          </span>
-          <span>{workspaceLabel ?? "—"}</span>
-        </span>
       </div>
     </div>
   );

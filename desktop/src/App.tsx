@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import type { Fleet, HerdrStatus, Pane, Workspace } from "./types";
+import type { Fleet, HerdrStatus, Pane } from "./types";
 import type { Theme } from "./theme";
 import { useTheme } from "./theme";
 import { TitleBar } from "./components/TitleBar";
@@ -14,6 +14,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { attentionSort } from "./fleetSort";
 import { win } from "./windowApi";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { TYPE_SCALE_DEFAULT, applyTypeScale, bumpTypeScale, getSavedTypeScale } from "./typeScale";
 
 // Hoisted so the one-shot initial auto-open runs once per session.
 const fleetRef: { current: boolean } = { current: false };
@@ -39,6 +40,7 @@ export default function App() {
   useEffect(() => {
     // Apply saved window opacity on startup
     applyOpacitySetting(getSavedOpacity());
+    applyTypeScale(getSavedTypeScale());
 
     let alive = true;
     const maybeAutoOpen = (f: Fleet) => {
@@ -70,6 +72,25 @@ export default function App() {
         e.preventDefault();
         void quit();
       }
+      // Text size: Ctrl/Cmd + = / - / 0
+      if (e.metaKey || e.ctrlKey) {
+        const k = e.key;
+        if (k === "=" || k === "+" || e.code === "NumpadAdd") {
+          e.preventDefault();
+          bumpTypeScale(1);
+          return;
+        }
+        if (k === "-" || k === "_" || e.code === "NumpadSubtract") {
+          e.preventDefault();
+          bumpTypeScale(-1);
+          return;
+        }
+        if (k === "0" || e.code === "Numpad0") {
+          e.preventDefault();
+          applyTypeScale(TYPE_SCALE_DEFAULT);
+          return;
+        }
+      }
       if (e.key === "Escape") {
         setPaletteOpen(false);
         setUsageOpen(false);
@@ -89,8 +110,6 @@ export default function App() {
 
   const selectedPane: Pane | null =
     view.kind === "chat" ? (fleet?.panes.find((p) => p.pane_id === view.paneId) ?? null) : null;
-  const workspaceOf = (pane: Pane): Workspace | undefined =>
-    fleet?.workspaces.find((w) => w.id === pane.workspace_id);
 
   return (
     <div className="app" data-theme={theme}>
@@ -117,7 +136,6 @@ export default function App() {
             ) : view.kind === "chat" && selectedPane ? (
               <Chat
                 pane={selectedPane}
-                workspace={workspaceOf(selectedPane) ?? null}
                 theme={theme}
                 onToggleTerminal={() => setTerminalOpen((o) => !o)}
                 terminalOpen={terminalOpen}
