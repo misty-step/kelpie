@@ -120,9 +120,11 @@ export default function App() {
             ) : view.kind === "chat" && selectedPane ? (
               <Chat
                 pane={selectedPane}
-                workspace={workspaceOf(selectedPane)}
+                workspace={workspaceOf(selectedPane) ?? null}
                 theme={theme}
-                onToggleTerminal={() => setTerminalOpen((open) => !open)}
+                model={null}
+                thinking={null}
+                onToggleTerminal={() => setTerminalOpen((o) => !o)}
                 terminalOpen={terminalOpen}
               />
             ) : (

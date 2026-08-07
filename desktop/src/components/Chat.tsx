@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Braces,
-  Check,
   ChevronDown,
   ChevronRight,
   CircleAlert,
   FileText,
+  Flame,
+  FolderGit2,
   Globe,
   HelpCircle,
   ListChecks,
@@ -54,6 +55,42 @@ function timeOf(ts?: string | null): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function EffortIcon({ effort }: { effort: string }) {
+  const e = effort.toLowerCase();
+  if (e.includes("max") || e.includes("extra high") || e.includes("xhigh")) {
+    return <Flame size={11} className="pane-effort-ico flame" aria-hidden="true" />;
+  }
+  if (e.includes("high")) {
+    return (
+      <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico high" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (e.includes("medium")) {
+    return (
+      <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico medium" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8 2a6 6 0 0 1 0 12V2z" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico low" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function WorkingSpinner() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" className="spin st-spinner" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="var(--brand-soft)" strokeWidth="2" opacity="0.35" />
+      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function ToolStatus({ status }: { status: "pending" | "ok" | "error" }) {
   if (status === "pending") {
     return (
@@ -71,12 +108,7 @@ function ToolStatus({ status }: { status: "pending" | "ok" | "error" }) {
       </span>
     );
   }
-  return (
-    <span className="tool-status ok">
-      <Check size={11} />
-      done
-    </span>
-  );
+  return null;
 }
 
 function ToolCard({ entry }: { entry: IndexedEntry }) {
@@ -86,6 +118,7 @@ function ToolCard({ entry }: { entry: IndexedEntry }) {
   const long = result.length > 600;
   const Icon = toolIcon(name);
   const showBody = result.length > 0 && (open || !long);
+
   return (
     <div className={`tool-card ${entry.status === "error" ? "error" : ""}`}>
       <button className="tool-head" onClick={() => setOpen((o) => !o)}>
@@ -103,15 +136,16 @@ function ToolCard({ entry }: { entry: IndexedEntry }) {
 function ThinkingBlock({ entry, theme, last }: { entry: IndexedEntry; theme: Theme; last: boolean }) {
   const [open, setOpen] = useState(last);
   const text = entry.text ?? "";
+
   return (
     <div className={`thinking ${open ? "open" : ""}`}>
       <button className="thinking-head" onClick={() => setOpen((o) => !o)}>
         <span className={`thinking-dot${last ? " live" : ""}`} />
-        <span className="thinking-label">{last ? "Reasoning…" : "Reasoning"}</span>
+        <span className="thinking-label">{last ? "Reasoning..." : "Reasoning"}</span>
         <span className="thinking-time">{timeOf(entry.ts)}</span>
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
       </button>
-      {open && (
+      {open && text.length > 0 && (
         <div className="thinking-body">
           <Markdown text={text} theme={theme} />
         </div>
@@ -122,19 +156,18 @@ function ThinkingBlock({ entry, theme, last }: { entry: IndexedEntry; theme: The
 
 function AskCard({ ask, paneId }: { ask: Ask; paneId: string }) {
   const [busy, setBusy] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+
+  const withDescription = ask.options.filter((o) => Boolean(o.description));
+
   const answer = async (index: number) => {
     setBusy(index);
-    setError(null);
     try {
       await api.answerAsk(paneId, ask.call_id, index);
-    } catch (e) {
-      setError(String(e));
     } finally {
       setBusy(null);
     }
   };
-  const withDescription = ask.options.filter((o) => o.description);
+
   return (
     <div className="ask-card">
       <div className="ask-head">
@@ -160,72 +193,29 @@ function AskCard({ ask, paneId }: { ask: Ask; paneId: string }) {
         <ul className="ask-descriptions">
           {withDescription.map((o) => (
             <li key={o.label}>
-              <strong>{o.label}</strong> — {o.description}
+              <strong>{o.label}</strong> - {o.description}
             </li>
           ))}
         </ul>
       )}
-      {error && <div className="ask-error">{error}</div>}
     </div>
   );
-}
-
-function EntryView({
-  entry,
-  theme,
-  last,
-}: {
-  entry: IndexedEntry;
-  theme: Theme;
-  last: boolean;
-}) {
-  switch (entry.kind) {
-    case "user":
-      return (
-        <div className="msg user">
-          <div className="bubble">
-            <pre className="user-text">{entry.text}</pre>
-            <span className="msg-time">{timeOf(entry.ts)}</span>
-          </div>
-        </div>
-      );
-    case "assistant":
-      return (
-        <div className="msg assistant">
-          <Markdown text={entry.text ?? ""} theme={theme} />
-        </div>
-      );
-    case "thinking":
-      return <ThinkingBlock entry={entry} theme={theme} last={last} />;
-    case "tool":
-      return <ToolCard entry={entry} />;
-    case "system":
-      return (
-        <div className="sys-marker" role="separator">
-          <span className="sys-line" />
-          <span className="sys-body">
-            <span className="sys-label">{entry.label ?? "Session event"}</span>
-            {entry.detail && <span className="sys-detail">{entry.detail}</span>}
-            {entry.ts && <span className="sys-time">{timeOf(entry.ts)}</span>}
-          </span>
-          <span className="sys-line" />
-        </div>
-      );
-    default:
-      return null;
-  }
 }
 
 export function Chat({
   pane,
   workspace,
   theme,
+  model,
+  thinking,
   onToggleTerminal,
   terminalOpen,
 }: {
   pane: Pane;
-  workspace: Workspace | undefined;
+  workspace: Workspace | null;
   theme: Theme;
+  model: string | null;
+  thinking: string | null;
   onToggleTerminal: () => void;
   terminalOpen: boolean;
 }) {
@@ -254,7 +244,6 @@ export function Chat({
     [pane.pane_id],
   );
 
-  // Fresh page when the pane changes.
   useEffect(() => {
     paneIdRef.current = pane.pane_id;
     stickRef.current = true;
@@ -263,7 +252,6 @@ export function Chat({
     void load();
   }, [pane.pane_id, load]);
 
-  // Live refresh: the backend pokes when this pane's session file grows.
   useEffect(() => {
     let alive = true;
     const off = api.onPoke((paneId) => {
@@ -275,7 +263,6 @@ export function Chat({
     };
   }, [load]);
 
-  // Anchor scroll to the bottom while the user is near it.
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -293,36 +280,48 @@ export function Chat({
     void load(oldest);
   };
 
-  const lastIndex = page && page.entries.length > 0 ? page.entries[page.entries.length - 1].index : -1;
+  const wsLabel = workspace?.label ?? pane.workspace_id;
+  const taskText = taskTitle(pane.task, pane.pane_id);
+  const provider = (page?.model?.provider ?? pane.provider ?? "").toLowerCase();
+  const modelName = page?.model?.model ?? pane.model;
+  const effortLevel = page?.thinking ?? pane.effort;
 
   return (
     <div className="chat">
       <header className="chat-head">
-        <div className="chat-head-id">
-          <div className="chat-title">{taskTitle(pane.task, pane.pane_id)}</div>
-          <div className="chat-sub">
-            {workspace?.label ?? pane.workspace_id}
-            {page?.model && (
-              <span className="chat-model" title="active session model">
-                {page.model.provider}/{page.model.model}
-              </span>
-            )}
-            {page?.thinking && (
-              <span className="chat-thinking" title="reasoning level">
-                thinking {page.thinking}
-              </span>
-            )}
+        <div className="chat-head-left">
+          <div className="chat-ws-badge">
+            <FolderGit2 size={12} className="chat-ws-icon" />
+            <span className="chat-ws-name">{wsLabel}</span>
           </div>
+          <h2 className="chat-title" title={pane.task ?? pane.pane_id}>
+            {taskText}
+          </h2>
+          {(provider || modelName || effortLevel) && (
+            <div className="chat-meta">
+              {provider && <span className="chat-provider">{provider}</span>}
+              {provider && modelName && <span className="chat-dot">•</span>}
+              {modelName && <span className="chat-model">{modelName}</span>}
+              {effortLevel && (
+                <span className="chat-thinking-tag">
+                  <EffortIcon effort={effortLevel} />
+                  <span>{effortLevel.toLowerCase()}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
+
         <div className="chat-head-right">
-          <span className={`head-status ${pane.pending_ask ? "needs" : pane.status}`}>
+          <div className={`head-status ${pane.pending_ask ? "needs" : pane.status}`}>
             {pane.status === "working" && !pane.pending_ask ? (
-              <Loader2 size={12} className="spin head-status-spin" aria-hidden="true" />
+              <WorkingSpinner />
             ) : (
               <span className="head-status-dot" />
             )}
-            {statusLabel(pane.pending_ask ? "blocked" : pane.status)}
-          </span>
+            <span className="head-status-label">{statusLabel(pane.pending_ask ? "blocked" : pane.status)}</span>
+          </div>
+
           <button
             type="button"
             className="tb-btn"
@@ -343,9 +342,9 @@ export function Chat({
           </button>
           <button
             type="button"
-            className={`tb-btn${terminalOpen ? " active" : ""}`}
+            className={`chat-head-btn${terminalOpen ? " active" : ""}`}
             onClick={onToggleTerminal}
-            title="Toggle terminal"
+            title={terminalOpen ? "Close terminal drawer" : "Open terminal drawer"}
             aria-label="Toggle terminal"
           >
             <TerminalIcon size={14} />
@@ -361,36 +360,53 @@ export function Chat({
             <span>Reading transcript…</span>
           </div>
         )}
-        {!loading && page && page.entries.length === 0 && (
-          <div className="chat-empty">
-            <span>No messages yet.</span>
-          </div>
-        )}
-        {page?.has_older && (
-          <button className="load-older" onClick={loadOlder}>
-            Load older messages
+
+        {page && page.entries.length > 0 && page.entries[0].index > 0 && (
+          <button type="button" className="load-older" onClick={loadOlder}>
+            Load older messages…
           </button>
         )}
-        {page?.entries.map((entry) => (
-          <EntryView
-            key={entry.index}
-            entry={entry}
-            theme={theme}
-            last={entry.index === lastIndex}
-          />
-        ))}
+
+        {page?.entries.map((entry, idx) => {
+          const isLast = idx === page.entries.length - 1;
+          if (entry.kind === "thinking") {
+            return <ThinkingBlock key={entry.index} entry={entry} theme={theme} last={isLast} />;
+          }
+          if (entry.kind === "tool") {
+            return <ToolCard key={entry.index} entry={entry} />;
+          }
+          if (entry.kind === "system") {
+            return (
+              <div key={entry.index} className="sys-marker">
+                <div className="sys-line" />
+                <div className="sys-body">
+                  <span className="sys-label">{entry.label}</span>
+                  {entry.detail && <span className="sys-detail">{entry.detail}</span>}
+                  {entry.ts && <span className="sys-time">{timeOf(entry.ts)}</span>}
+                </div>
+                <div className="sys-line" />
+              </div>
+            );
+          }
+          const isUser = entry.kind === "user";
+          return (
+            <div key={entry.index} className={`msg ${isUser ? "user" : "assistant"}`}>
+              <div className="bubble">
+                <Markdown text={entry.text ?? ""} theme={theme} />
+              </div>
+            </div>
+          );
+        })}
+
+        {page?.pending_ask && <AskCard ask={page.pending_ask} paneId={pane.pane_id} />}
       </div>
 
-      {page?.pending_ask && <AskCard ask={page.pending_ask} paneId={pane.pane_id} />}
-
       <Composer
-        key={pane.pane_id}
         paneId={pane.pane_id}
-        cwd={pane.cwd}
         pendingAsk={page?.pending_ask ?? null}
-        model={page?.model ? `${page.model.provider}/${page.model.model}` : null}
-        thinking={page?.thinking ?? null}
-        workspaceLabel={workspace?.label ?? null}
+        model={model}
+        thinking={thinking}
+        workspaceLabel={wsLabel}
       />
     </div>
   );
