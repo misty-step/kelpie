@@ -387,13 +387,12 @@ button {
 }
 
 /* ── Urgency Section ─────────────────────────────────────────────────── */
-
 .urgency-sec {
   position: sticky;
   top: 0;
   z-index: 2;
-  margin: 0 -6px 12px;
-  padding: 10px 12px 10px;
+  margin: 0 -6px 10px;
+  padding: 8px 6px 8px;
   background: var(--bg);
   border-bottom: 1px solid var(--seam);
 }
@@ -402,12 +401,13 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  padding: 0 4px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--err);
+  color: var(--text-soft);
 }
 
 .urgency-count {
@@ -417,28 +417,27 @@ button {
   color: var(--text-faint);
 }
 
-/* ── Status Rings ────────────────────────────────────────────────────── */
+/* ── Status Dots / Rings ─────────────────────────────────────────────── */
 
 .st-ring {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex: none;
 }
 
 .st-ring.needs {
   background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-bg);
+  box-shadow: 0 0 0 2px var(--ok-bg);
 }
 
 .st-ring.blocked {
   background: var(--err);
-  box-shadow: 0 0 0 3px var(--err-bg);
+  box-shadow: 0 0 0 2px var(--err-bg);
 }
 
 .st-ring.working {
-  border: 2px solid var(--brand);
-  border-top-color: transparent;
+  background: var(--ok);
 }
 
 .st-ring.done {
@@ -447,7 +446,7 @@ button {
 
 @keyframes needs-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.2); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 0.7; }
 }
 
 .st-ring.needs.pulse {
@@ -459,33 +458,33 @@ button {
   .st-ring.spin {
     animation: none !important;
   }
-  .st-ring.working {
-    border-top-color: var(--brand) !important;
-  }
 }
 
-/* ── Frameless Roster Card ────────────────────────────────────────────── */
+/* ── Codex Card Rows ──────────────────────────────────────────────────── */
 
 .pane-row-card {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  border: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
 }
 
 .pane-row-card:hover {
-  background: var(--surface);
+  background: #ebebeb;
 }
 
 .pane-row-card.selected {
-  background: var(--brand-bg);
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .pane-row-card:focus-visible {
@@ -493,17 +492,11 @@ button {
   outline-offset: 1px;
 }
 
-.pane-row-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .pane-row-title {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -511,8 +504,8 @@ button {
 }
 
 .pane-row-card.selected .pane-row-title {
-  font-weight: 650;
-  color: var(--brand-ink);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .pane-row-time {
@@ -522,35 +515,9 @@ button {
   color: var(--text-faint);
 }
 
-.pane-row-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.prov-icon {
-  color: var(--text-soft);
-  flex: none;
-  display: inline-flex;
-}
-
-.pane-model-name {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .pane-ws-tag {
-  margin-left: auto;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-faint);
   background: var(--surface-2);
   padding: 1px 5px;
@@ -558,15 +525,13 @@ button {
   border: 1px solid var(--border);
   flex: none;
 }
+
 .sidebar-foot {
-  flex: none;
-  border-top: 1px solid var(--seam);
   padding: 10px 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
 .side-settings {
   display: inline-flex;
   align-items: center;

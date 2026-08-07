@@ -50,16 +50,12 @@ function PaneRow({
       title={pane.task ?? pane.pane_id}
       aria-pressed={selected}
     >
-      <div className="pane-row-top">
-        <StatusRing pane={pane} />
-        <span className="pane-row-title">{label}</span>
-        <span className="pane-row-time">{time}</span>
-      </div>
+      <StatusRing pane={pane} />
+      <span className="pane-row-title">{label}</span>
       {showWorkspace && (
-        <div className="pane-row-meta">
-          <span className="pane-ws-tag">{workspaceLabel ?? pane.workspace_id}</span>
-        </div>
+        <span className="pane-ws-tag">{workspaceLabel ?? pane.workspace_id}</span>
       )}
+      <span className="pane-row-time">{time}</span>
     </button>
   );
 }
