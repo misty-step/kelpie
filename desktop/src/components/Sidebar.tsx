@@ -1,17 +1,65 @@
-import { Loader2, Settings } from "lucide-react";
+import { useState } from "react";
+import {
+  FolderGit2,
+  ChevronDown,
+  ChevronRight,
+  MessageSquareCode,
+  AlertOctagon,
+  Loader2,
+  CheckCircle2,
+  Settings,
+  Bot,
+} from "lucide-react";
 import type { Fleet, Pane } from "../types";
 import { attentionSort, paneRank } from "../fleetSort";
 import { relativeTime } from "../relativeTime";
 import { taskTitle } from "../taskTitle";
 
+function shortCwd(cwd: string | null | undefined): string | null {
+  if (!cwd) return null;
+  const parts = cwd.replace(/\/$/, "").split("/");
+  if (parts.length <= 2) return parts.join("/");
+  return parts.slice(-2).join("/");
+}
+
+function cleanSnippet(snippet: string | null | undefined): string | null {
+  if (!snippet) return null;
+  const cleaned = snippet.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  if (cleaned.length <= 44) return cleaned;
+  return cleaned.slice(0, 44) + "…";
+}
+
 function StatusChip({ pane }: { pane: Pane }) {
-  if (pane.pending_ask) return <span className="chip needs">needs input</span>;
-  if (pane.status === "blocked") return <span className="chip blocked">blocked</span>;
+  if (pane.pending_ask) {
+    return (
+      <span className="chip needs">
+        <MessageSquareCode size={11} aria-hidden="true" />
+        needs input
+      </span>
+    );
+  }
+  if (pane.status === "blocked") {
+    return (
+      <span className="chip blocked">
+        <AlertOctagon size={11} aria-hidden="true" />
+        blocked
+      </span>
+    );
+  }
   if (pane.status === "working") {
     return (
       <span className="chip working">
         <Loader2 size={11} className="spin" aria-hidden="true" />
         working
+      </span>
+    );
+  }
+  if (pane.status === "done") {
+    return (
+      <span className="chip done">
+        <CheckCircle2 size={11} aria-hidden="true" />
+        done
       </span>
     );
   }
@@ -28,16 +76,28 @@ function PaneRow({
   onSelect: (paneId: string) => void;
 }) {
   const label = taskTitle(pane.task, pane.pane_id);
+  const cwd = shortCwd(pane.cwd);
+  const snippet = cleanSnippet(pane.snippet);
+
   return (
     <button
       type="button"
-      className={`pane-row${selected ? " selected" : ""}`}
+      className={`pane-row-card${selected ? " selected" : ""}`}
       onClick={() => onSelect(pane.pane_id)}
       title={pane.task ?? pane.pane_id}
     >
-      <span className="pane-row-label">{label}</span>
-      <StatusChip pane={pane} />
-      <span className="pane-row-time">{relativeTime(pane.updated_ms)}</span>
+      <div className="pane-row-top">
+        <span className="pane-row-title">{label}</span>
+        <StatusChip pane={pane} />
+        <span className="pane-row-time">{relativeTime(pane.updated_ms)}</span>
+      </div>
+      {(cwd || snippet) && (
+        <div className="pane-row-sub">
+          {cwd && <span className="pane-row-cwd">{cwd}</span>}
+          {cwd && snippet && <span className="pane-row-dot">•</span>}
+          {snippet && <span className="pane-row-snippet">{snippet}</span>}
+        </div>
+      )}
     </button>
   );
 }
@@ -54,12 +114,47 @@ export function Sidebar({
   onOpenUsage?: () => void;
   onOpenSettings: () => void;
 }) {
-  const panes = fleet ? attentionSort(fleet.panes) : [];
-  const needsYou = panes.filter((p) => paneRank(p) === 0);
-  const rest = panes.filter((p) => paneRank(p) !== 0);
+  const [collapsedWs, setCollapsedWs] = useState<Record<string, boolean>>({});
+
+  const toggleWorkspace = (wsId: string) => {
+    setCollapsedWs((prev) => ({ ...prev, [wsId]: !prev[wsId] }));
+  };
+
+  // Group panes by workspace while sorting panes within each workspace by attention
+  const groupedWorkspaces = (() => {
+    if (!fleet) return [];
+    const map = new Map<string, Pane[]>();
+    for (const pane of fleet.panes) {
+      const list = map.get(pane.workspace_id) ?? [];
+      list.push(pane);
+      map.set(pane.workspace_id, list);
+    }
+    return fleet.workspaces
+      .filter((ws) => map.has(ws.id))
+      .map((ws) => ({
+        ws,
+        panes: attentionSort(map.get(ws.id) ?? []),
+        minRank: Math.min(...(map.get(ws.id) ?? []).map(paneRank)),
+      }))
+      .sort((a, b) => a.minRank - b.minRank || a.ws.label.localeCompare(b.ws.label));
+  })();
+
+  const totalPanes = fleet?.panes.length ?? 0;
+  const needsCount = fleet?.panes.filter((p) => paneRank(p) === 0).length ?? 0;
 
   return (
     <aside className="sidebar">
+      <div className="sidebar-top-strip">
+        <span className="sidebar-title">
+          <Bot size={14} className="sidebar-icon" />
+          <span>Workspaces</span>
+        </span>
+        <span className="sidebar-meta">
+          {totalPanes} {totalPanes === 1 ? "agent" : "agents"}
+          {needsCount > 0 && <span className="sidebar-needs-badge">{needsCount} needs you</span>}
+        </span>
+      </div>
+
       <nav className="sidebar-list">
         {!fleet && (
           <div className="side-empty">
@@ -68,42 +163,47 @@ export function Sidebar({
           </div>
         )}
 
-        {fleet && needsYou.length > 0 && (
-          <section className="side-section">
-            <h2 className="side-heading">Needs you</h2>
-            {needsYou.map((pane) => (
-              <PaneRow
-                key={pane.pane_id}
-                pane={pane}
-                selected={pane.pane_id === selectedPaneId}
-                onSelect={onSelectPane}
-              />
-            ))}
-          </section>
-        )}
-
-        {fleet && rest.length > 0 && (
-          <section className="side-section">
-            <h2 className="side-heading">
-              Agents
-              <span className="side-count">{rest.length}</span>
-            </h2>
-            {rest.map((pane) => (
-              <PaneRow
-                key={pane.pane_id}
-                pane={pane}
-                selected={pane.pane_id === selectedPaneId}
-                onSelect={onSelectPane}
-              />
-            ))}
-          </section>
-        )}
-
-        {fleet && panes.length === 0 && (
+        {fleet && groupedWorkspaces.length === 0 && (
           <div className="side-empty">
             <span>No agents running — open a workspace in herdr.</span>
           </div>
         )}
+
+        {groupedWorkspaces.map(({ ws, panes, minRank }) => {
+          const isCollapsed = collapsedWs[ws.id] ?? false;
+          const hasNeeds = minRank === 0;
+
+          return (
+            <section key={ws.id} className={`side-ws-group${hasNeeds ? " has-needs" : ""}`}>
+              <button
+                type="button"
+                className="side-ws-header"
+                onClick={() => toggleWorkspace(ws.id)}
+                aria-expanded={!isCollapsed}
+              >
+                <span className="side-ws-toggle">
+                  {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                </span>
+                <FolderGit2 size={13} className="side-ws-icon" />
+                <span className="side-ws-label">{ws.label}</span>
+                <span className="side-ws-count">{panes.length}</span>
+              </button>
+
+              {!isCollapsed && (
+                <div className="side-ws-body">
+                  {panes.map((pane) => (
+                    <PaneRow
+                      key={pane.pane_id}
+                      pane={pane}
+                      selected={pane.pane_id === selectedPaneId}
+                      onSelect={onSelectPane}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </nav>
 
       <footer className="sidebar-foot">
