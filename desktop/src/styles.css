@@ -1176,35 +1176,15 @@ button {
 .ask-descriptions li { margin: 3px 0; }
 .ask-error { margin-top: 8px; color: var(--err); font-size: 12.5px; }
 
-/* ── Composer (A — Workflow first: draft → send → session rail) ────────── */
+/* ── Composer (Codex desktop pixel match) ──────────────────────────────── */
 
 .composer {
   flex: none;
-  padding: 0 24px 16px;
+  padding: 0 24px 18px;
   width: 100%;
   max-width: 840px;
   margin: 0 auto;
   box-sizing: border-box;
-}
-
-.composer-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text-soft);
-  font-size: 12.5px;
-}
-.composer-banner-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #3c9663;
-  flex: none;
 }
 
 .composer-error {
@@ -1214,21 +1194,25 @@ button {
   font-size: 12.5px;
 }
 
+/* White pill card — matches Codex follow-up input */
 .composer-box {
   position: relative;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 18px;
   background: var(--surface);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 1px 2px rgba(20, 22, 30, 0.03), 0 8px 24px rgba(20, 22, 30, 0.04);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .composer-box:focus-within {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent), var(--shadow-md);
+  border-color: #d4d4d4;
+  box-shadow: 0 1px 2px rgba(20, 22, 30, 0.04), 0 10px 28px rgba(20, 22, 30, 0.06);
 }
-.composer-box.is-busy .composer-session-rail {
-  opacity: 0.55;
-  pointer-events: none;
+.composer-box.is-busy {
+  opacity: 0.92;
+}
+.composer-box.ask-mode {
+  border-color: var(--ok-border);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 18%, transparent);
 }
 
 .composer-input {
@@ -1241,112 +1225,245 @@ button {
   font-family: inherit;
   font-size: 14.5px;
   color: var(--text);
-  line-height: 1.5;
-  padding: 14px 14px 6px;
-  min-height: 72px;
-  max-height: 220px;
+  line-height: 1.45;
+  padding: 14px 16px 8px;
+  min-height: 52px;
+  max-height: 200px;
 }
-.composer-input::placeholder { color: var(--text-faint); }
-.composer-input:disabled { opacity: 0.7; }
+.composer-input::placeholder {
+  color: #b0b0b0;
+}
+.composer-input:disabled {
+  opacity: 0.7;
+}
 
-/* Tier 2 — primary action row */
-.composer-action-row {
+/* Codex toolbar: +  model▾  thinking▾  ……  ↑ */
+.composer-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px 10px;
+  gap: 6px;
+  padding: 4px 10px 10px;
 }
-.composer-slash {
+
+.composer-plus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border);
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  color: var(--text-soft);
+  color: #8a8a8a;
   flex: none;
-  background: var(--surface);
+  background: transparent;
 }
-.composer-slash:hover,
-.composer-slash.active {
-  border-color: var(--brand-soft);
-  color: var(--brand);
-  background: var(--brand-bg);
+.composer-plus:hover,
+.composer-plus.active {
+  background: var(--surface-2);
+  color: var(--text);
 }
-.composer-action-hint {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-muted);
+
+.composer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px 0 11px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #5c5c5c;
+  font-size: 12.5px;
+  font-weight: 500;
+  max-width: 220px;
   white-space: nowrap;
+}
+.composer-pill:hover,
+.composer-pill.open {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.composer-pill-label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.composer-pill svg {
+  flex: none;
+  color: #a0a0a0;
+}
+
+.composer-toolbar-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
 .composer-send {
-  margin-left: auto;
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 16px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   border: 0;
-  border-radius: 999px;
-  background: var(--brand);
+  border-radius: 50%;
+  background: #c8c8c8;
   color: #fff;
-  font-size: 13.5px;
-  font-weight: 600;
 }
-.composer-send:hover:not(:disabled) { filter: brightness(1.05); }
-.composer-send:disabled { opacity: 0.4; cursor: default; }
+.composer-send:not(:disabled) {
+  background: #6b6b6b;
+}
+.composer-send:hover:not(:disabled) {
+  background: #555;
+}
+.composer-send:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 
-/* Tier 3 — session meta rail (subordinate) */
-.composer-session-rail {
+/* Outer quiet meta row under the pill (workspace) */
+.composer-meta-rail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 6px 0;
+}
+.composer-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+.composer-meta-ico {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Ask takeover — replaces draft + toolbar inside the same pill */
+.composer-ask {
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.composer-ask-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ok);
+}
+.composer-ask-question {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+.composer-ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.composer-ask-option {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 9px 10px;
-  border-top: 1px solid var(--seam);
-}
-.session-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 11px;
+  min-height: 40px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-soft);
-  font-size: 12.5px;
-  white-space: nowrap;
-  max-width: 100%;
-}
-.session-chip.picker {
-  cursor: pointer;
-  font: inherit;
-}
-.session-chip.picker:hover,
-.session-chip.picker.open {
-  border-color: var(--brand-soft);
+  border-radius: 10px;
+  background: var(--surface);
   color: var(--text);
-  background: var(--brand-bg);
+  font-size: 13.5px;
+  text-align: left;
 }
-.session-chip-k {
+.composer-ask-option:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.composer-ask-option.recommended {
+  border-color: var(--ok-border);
+  background: color-mix(in srgb, var(--ok-bg) 55%, var(--surface));
+}
+.composer-ask-option-label {
+  flex: 1;
+  min-width: 0;
+}
+.composer-ask-rec {
   font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ok);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
+  letter-spacing: 0.03em;
 }
-.session-chip-v {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.composer-ask-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 2px;
 }
-.session-chip-v.mono,
-.session-chip .mono { font-family: var(--mono); font-size: 12px; }
+.composer-ask-link {
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 0;
+}
+.composer-ask-link.mute {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.composer-ask-link:hover:not(:disabled) {
+  color: var(--brand-ink);
+}
+.composer-ask-link.mute:hover:not(:disabled) {
+  color: var(--text-soft);
+}
+.composer-ask-other {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.composer-ask-other-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13.5px;
+  resize: vertical;
+  min-height: 56px;
+  background: var(--surface);
+  color: var(--text);
+}
+.composer-ask-other-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  outline-offset: 1px;
+}
+.composer-ask-other-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.composer-ask-submit {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--brand);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.composer-ask-submit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 
 /* Menus — anchored above the card (no bottom+top clip) */
 .slash-menu,

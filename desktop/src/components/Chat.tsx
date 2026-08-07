@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { Markdown } from "../markdown";
-import type { Ask, IndexedEntry, Pane, SessionPage, Workspace } from "../types";
+import type { IndexedEntry, Pane, SessionPage, Workspace } from "../types";
 import type { Theme } from "../theme";
 import { Composer } from "./Composer";
 import { statusLabel } from "../status";
@@ -153,53 +153,6 @@ function ThinkingBlock({ entry, theme, last }: { entry: IndexedEntry; theme: The
   );
 }
 
-function AskCard({ ask, paneId }: { ask: Ask; paneId: string }) {
-  const [busy, setBusy] = useState<number | null>(null);
-
-  const withDescription = ask.options.filter((o) => Boolean(o.description));
-
-  const answer = async (index: number) => {
-    setBusy(index);
-    try {
-      await api.answerAsk(paneId, ask.call_id, index);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <div className="ask-card">
-      <div className="ask-head">
-        <HelpCircle size={14} />
-        <span className="ask-label">{ask.multi ? "Multi-select ask" : "Ask"}</span>
-      </div>
-      <div className="ask-question">{ask.question}</div>
-      <div className="ask-options">
-        {ask.options.map((option, i) => (
-          <button
-            key={option.label}
-            className="ask-option"
-            disabled={busy !== null}
-            onClick={() => void answer(i)}
-          >
-            <span className="ask-option-label">{option.label}</span>
-            {i === ask.recommended && <span className="ask-rec">recommended</span>}
-            {busy === i && <Loader2 size={12} className="spin" />}
-          </button>
-        ))}
-      </div>
-      {withDescription.length > 0 && (
-        <ul className="ask-descriptions">
-          {withDescription.map((o) => (
-            <li key={o.label}>
-              <strong>{o.label}</strong> - {o.description}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 export function Chat({
   pane,
@@ -394,7 +347,7 @@ export function Chat({
           );
         })}
 
-        {page?.pending_ask && <AskCard ask={page.pending_ask} paneId={pane.pane_id} />}
+
       </div>
 
       <Composer

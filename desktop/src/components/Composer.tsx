@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CornerDownLeft, Loader2, Plus, Search } from "lucide-react";
+import { ArrowUp, ChevronDown, Loader2, Plus, Search } from "lucide-react";
 import { api } from "../api";
 import type { Ask, Command, CommandSource, ModelOption } from "../types";
 
@@ -37,6 +37,14 @@ function shortModel(id: string | null): string {
   if (!id) return "model…";
   const slash = id.lastIndexOf("/");
   return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+function formatThinking(level: string): string {
+  const t = level.trim();
+  if (!t) return "thinking";
+  if (t.toLowerCase() === "xhigh") return "Extra High";
+  if (t.toLowerCase() === "off") return "Off";
+  return t.replace(/^\w/, (c) => c.toUpperCase());
 }
 
 function isDatedId(id: string): boolean {
@@ -91,6 +99,9 @@ export function Composer({
   const [modelQuery, setModelQuery] = useState("");
   const [localModel, setLocalModel] = useState<string | null>(null);
   const [localThinking, setLocalThinking] = useState<string | null>(null);
+  const [askBusy, setAskBusy] = useState<number | null>(null);
+  const [askOther, setAskOther] = useState(false);
+  const [otherText, setOtherText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
@@ -232,12 +243,12 @@ export function Composer({
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "0px";
-    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, 72), 220)}px`;
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, 52), 200)}px`;
   };
 
   const send = async () => {
     const value = text.trim();
-    if (!value || busy) return;
+    if (!value || busy || pendingAsk) return;
     setBusy(true);
     setError(null);
     setMenu(null);
@@ -250,6 +261,47 @@ export function Composer({
     } finally {
       setBusy(false);
     }
+  };
+
+  const answerAsk = async (index: number) => {
+    if (!pendingAsk || askBusy !== null) return;
+    setAskBusy(index);
+    setError(null);
+    try {
+      await api.answerAsk(paneId, pendingAsk.call_id, index);
+      setAskOther(false);
+      setOtherText("");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAskBusy(null);
+    }
+  };
+
+  const sendOtherAnswer = async () => {
+    const value = otherText.trim();
+    if (!value || !pendingAsk || askBusy !== null) return;
+    setAskBusy(-1);
+    setError(null);
+    try {
+      // Free-text answer while an ask is open is still ask resolution, not a follow-up.
+      await api.sendText(paneId, value);
+      setOtherText("");
+      setAskOther(false);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAskBusy(null);
+    }
+  };
+
+  const cancelAsk = () => {
+    setAskOther(false);
+    setOtherText("");
+    setMenu(null);
+    // Escape/cancel dismisses local takeover UI; agent still owns the pending ask
+    // until answered. Send Escape to the pane as the operator escape path.
+    void api.sendKeys(paneId, ["Escape"]);
   };
 
   const pickSlash = (command: Command) => {
@@ -334,7 +386,7 @@ export function Composer({
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void send();
+      if (!pendingAsk) void send();
     }
   };
 
@@ -369,15 +421,7 @@ export function Composer({
   }, [slashQuery]);
 
   return (
-    <div className="composer">
-      {pendingAsk && (
-        <div className="composer-banner" role="status">
-          <span className="composer-banner-dot" aria-hidden="true" />
-          <span>
-            Agent is waiting for your answer — choose an option in the transcript, or type a reply.
-          </span>
-        </div>
-      )}
+    <div className={`composer${pendingAsk ? " is-ask" : ""}`}>
       {error && (
         <div className="composer-error" role="alert">
           {error}
@@ -385,11 +429,13 @@ export function Composer({
       )}
 
       <div
-        className={`composer-box${busy ? " is-busy" : ""}`}
+        className={`composer-box${busy || askBusy !== null ? " is-busy" : ""}${
+          pendingAsk ? " ask-mode" : ""
+        }`}
         ref={boxRef}
-        data-busy={busy || undefined}
+        data-busy={busy || askBusy !== null || undefined}
       >
-        {menu === "slash" && slashMatches.length > 0 && (
+        {menu === "slash" && slashMatches.length > 0 && !pendingAsk && (
           <div className="slash-menu" role="listbox" aria-label="Slash commands">
             <div className="slash-menu-head">Commands</div>
             {slashMatches.map((command, i) => {
@@ -424,9 +470,7 @@ export function Composer({
                 className="model-search"
                 value={modelQuery}
                 placeholder={
-                  catalog.length
-                    ? `Search ${catalog.length} models…`
-                    : "Search models…"
+                  catalog.length ? `Search ${catalog.length} models…` : "Search models…"
                 }
                 aria-label="Filter models"
                 onChange={(e) => setModelQuery(e.target.value)}
@@ -493,102 +537,188 @@ export function Composer({
           </div>
         )}
 
-        <label className="sr-only" htmlFor={`composer-input-${paneId}`}>
-          Message to agent
-        </label>
-        <textarea
-          id={`composer-input-${paneId}`}
-          ref={taRef}
-          className="composer-input"
-          value={text}
-          rows={3}
-          disabled={busy}
-          placeholder={
-            pendingAsk ? "Answer the ask, or type a message…" : "Ask for follow-up changes"
-          }
-          onChange={(e) => {
-            setText(e.target.value);
-            const v = e.target.value;
-            if (v.startsWith("/") && !v.includes(" ")) setMenu("slash");
-            autoResize();
-          }}
-          onKeyDown={onKeyDown}
-        />
-
-        <div className="composer-action-row">
-          <button
-            type="button"
-            className={`composer-slash${menu === "slash" ? " active" : ""}`}
-            title="Insert a / command (skills + workspace + omp)"
-            aria-label="Open slash commands"
-            aria-expanded={menu === "slash"}
-            disabled={busy}
-            onClick={() => {
-              if (menu === "slash") setMenu(null);
-              else {
-                setMenu("slash");
-                taRef.current?.focus();
-              }
-            }}
-          >
-            <Plus size={16} />
-          </button>
-          <span className="composer-action-hint">
-            Enter sends · Shift+Enter newline · / commands
-          </span>
-          <button
-            type="button"
-            className="composer-send"
-            disabled={busy || !text.trim()}
-            onClick={() => void send()}
-            title="Send (Enter)"
-          >
-            {busy ? (
-              <Loader2 size={14} className="spin" />
+        {pendingAsk ? (
+          <div className="composer-ask" role="group" aria-label="Pending ask">
+            <div className="composer-ask-kicker">Needs your answer</div>
+            <div className="composer-ask-question">{pendingAsk.question}</div>
+            <div className="composer-ask-options">
+              {pendingAsk.options.map((option, i) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  className={`composer-ask-option${
+                    i === pendingAsk.recommended ? " recommended" : ""
+                  }`}
+                  disabled={askBusy !== null}
+                  onClick={() => void answerAsk(i)}
+                >
+                  <span className="composer-ask-option-label">{option.label}</span>
+                  {i === pendingAsk.recommended && (
+                    <span className="composer-ask-rec">recommended</span>
+                  )}
+                  {askBusy === i && <Loader2 size={13} className="spin" />}
+                </button>
+              ))}
+            </div>
+            {askOther ? (
+              <div className="composer-ask-other">
+                <label className="sr-only" htmlFor={`ask-other-${paneId}`}>
+                  Other response
+                </label>
+                <textarea
+                  id={`ask-other-${paneId}`}
+                  className="composer-ask-other-input"
+                  rows={2}
+                  value={otherText}
+                  placeholder="Type another response…"
+                  disabled={askBusy !== null}
+                  onChange={(e) => setOtherText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendOtherAnswer();
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setAskOther(false);
+                    }
+                  }}
+                />
+                <div className="composer-ask-other-actions">
+                  <button
+                    type="button"
+                    className="composer-ask-link"
+                    disabled={askBusy !== null}
+                    onClick={() => setAskOther(false)}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="composer-ask-submit"
+                    disabled={askBusy !== null || !otherText.trim()}
+                    onClick={() => void sendOtherAnswer()}
+                  >
+                    {askBusy === -1 ? <Loader2 size={14} className="spin" /> : "Submit answer"}
+                  </button>
+                </div>
+              </div>
             ) : (
-              <>
-                <span>Send</span>
-                <CornerDownLeft size={14} />
-              </>
+              <div className="composer-ask-footer">
+                <button
+                  type="button"
+                  className="composer-ask-link"
+                  disabled={askBusy !== null}
+                  onClick={() => setAskOther(true)}
+                >
+                  Other response…
+                </button>
+                <button
+                  type="button"
+                  className="composer-ask-link mute"
+                  disabled={askBusy !== null}
+                  onClick={cancelAsk}
+                  title="Send Escape to the agent"
+                >
+                  Cancel
+                </button>
+              </div>
             )}
-          </button>
-        </div>
+          </div>
+        ) : (
+          <>
+            <label className="sr-only" htmlFor={`composer-input-${paneId}`}>
+              Message to agent
+            </label>
+            <textarea
+              id={`composer-input-${paneId}`}
+              ref={taRef}
+              className="composer-input"
+              value={text}
+              rows={2}
+              disabled={busy}
+              placeholder="Ask for follow-up changes"
+              onChange={(e) => {
+                setText(e.target.value);
+                const v = e.target.value;
+                if (v.startsWith("/") && !v.includes(" ")) setMenu("slash");
+                autoResize();
+              }}
+              onKeyDown={onKeyDown}
+            />
 
-        <div className="composer-session-rail" aria-label="Session controls">
-          <span className="session-chip workspace" title="Workspace (read-only)">
-            <span className="session-chip-label">{workspaceLabel ?? "—"}</span>
+            <div className="composer-toolbar">
+              <button
+                type="button"
+                className={`composer-plus${menu === "slash" ? " active" : ""}`}
+                title="Commands"
+                aria-label="Open slash commands"
+                aria-expanded={menu === "slash"}
+                disabled={busy}
+                onClick={() => {
+                  if (menu === "slash") setMenu(null);
+                  else {
+                    setMenu("slash");
+                    if (!text.startsWith("/")) setText("/");
+                    taRef.current?.focus();
+                  }
+                }}
+              >
+                <Plus size={16} strokeWidth={1.75} />
+              </button>
+
+              <button
+                type="button"
+                className={`composer-pill${menu === "model" ? " open" : ""}`}
+                title={displayModel ?? "Session model"}
+                aria-haspopup="listbox"
+                aria-expanded={menu === "model"}
+                disabled={busy}
+                onClick={() => setMenu((m) => (m === "model" ? null : "model"))}
+              >
+                <span className="composer-pill-label">{shortModel(displayModel)}</span>
+                <ChevronDown size={13} strokeWidth={2} aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                className={`composer-pill${menu === "thinking" ? " open" : ""}`}
+                title="Thinking level"
+                aria-haspopup="listbox"
+                aria-expanded={menu === "thinking"}
+                disabled={busy}
+                onClick={() => setMenu((m) => (m === "thinking" ? null : "thinking"))}
+              >
+                <span className="composer-pill-label">
+                  {displayThinking ? formatThinking(displayThinking) : "thinking"}
+                </span>
+                <ChevronDown size={13} strokeWidth={2} aria-hidden="true" />
+              </button>
+
+              <span className="composer-toolbar-spacer" aria-hidden="true" />
+
+              <button
+                type="button"
+                className="composer-send"
+                disabled={busy || !text.trim()}
+                onClick={() => void send()}
+                title="Send (Enter)"
+                aria-label="Send"
+              >
+                {busy ? <Loader2 size={16} className="spin" /> : <ArrowUp size={16} strokeWidth={2.25} />}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="composer-meta-rail" aria-label="Session workspace">
+        <span className="composer-meta-chip" title="Workspace (read-only)">
+          <span className="composer-meta-ico" aria-hidden="true">
+            ⌂
           </span>
-
-          <button
-            type="button"
-            className={`session-chip picker${menu === "model" ? " open" : ""}`}
-            title={displayModel ?? "Session model"}
-            aria-haspopup="listbox"
-            aria-expanded={menu === "model"}
-            disabled={busy}
-            onClick={() => setMenu((m) => (m === "model" ? null : "model"))}
-          >
-            <span className="session-chip-k">model</span>
-            <span className="session-chip-v mono">{shortModel(displayModel)}</span>
-          </button>
-
-          <button
-            type="button"
-            className={`session-chip picker${menu === "thinking" ? " open" : ""}`}
-            title={
-              commands.some((c) => c.name === "thinking" || c.name === "effort")
-                ? "Thinking level"
-                : "Thinking level (levels from model catalog; absolute set needs omp slash/RPC)"
-            }
-            aria-haspopup="listbox"
-            aria-expanded={menu === "thinking"}
-            disabled={busy}
-            onClick={() => setMenu((m) => (m === "thinking" ? null : "thinking"))}
-          >
-            <span className="session-chip-k">thinking</span>
-            <span className="session-chip-v">{displayThinking ?? "—"}</span>
-          </button>
-        </div>
+          <span>{workspaceLabel ?? "—"}</span>
+        </span>
       </div>
     </div>
   );
