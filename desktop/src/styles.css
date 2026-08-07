@@ -471,14 +471,13 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 10px 10px 12px;
+  padding: 10px 12px;
   border-radius: var(--radius);
   border: 0;
-  border-left: 2px solid transparent;
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease;
 }
 
 .pane-row-card:hover {
@@ -487,7 +486,6 @@ button {
 
 .pane-row-card.selected {
   background: var(--brand-bg);
-  border-left-color: var(--brand);
 }
 
 .pane-row-card:focus-visible {
