@@ -1241,16 +1241,29 @@ button {
 .composer-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px 10px;
+  gap: 4px;
+  height: 40px;
+  padding: 0 10px 8px;
+  box-sizing: border-box;
 }
 
-.composer-plus {
+.composer-plus,
+.composer-pill,
+.composer-send {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
   height: 28px;
+  margin: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.composer-plus {
+  width: 28px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
   color: #8a8a8a;
   flex: none;
@@ -1261,18 +1274,20 @@ button {
   background: var(--surface-2);
   color: var(--text);
 }
+.composer-plus svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
 
 .composer-pill {
-  display: inline-flex;
-  align-items: center;
   gap: 5px;
-  height: 28px;
-  padding: 0 10px 0 11px;
-  border: none;
+  padding: 0 8px 0 10px;
+  border: 0;
   border-radius: 999px;
   background: transparent;
   color: #5c5c5c;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   max-width: min(360px, 46vw);
   white-space: nowrap;
@@ -1283,20 +1298,34 @@ button {
   color: var(--text);
 }
 .composer-pill-label {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1;
   text-transform: lowercase;
-}
-.composer-pill-label.mono {
-  font-family: var(--mono);
   font-size: 12px;
   font-weight: 500;
 }
-.composer-pill.thinking .pane-effort-ico {
-  flex: none;
+.composer-pill-label.mono {
+  font-family: var(--mono);
 }
-.composer-pill svg {
+.composer-pill svg,
+.composer-pill .pane-effort-ico {
+  display: block;
   flex: none;
+  width: 12px;
+  height: 12px;
+  color: #a0a0a0;
+}
+.composer-pill .pane-effort-ico.flame {
+  color: #d97706;
+}
+.composer-pill .pane-effort-ico.high {
+  color: var(--brand);
+}
+.composer-pill > svg:last-child {
+  width: 13px;
+  height: 13px;
   color: #a0a0a0;
 }
 
@@ -1345,15 +1374,18 @@ button {
 
 .composer-send {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: #c8c8c8;
   color: #fff;
+}
+.composer-send svg {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 .composer-send:not(:disabled) {
   background: #6b6b6b;
