@@ -97,9 +97,6 @@ export default function App() {
       <TitleBar
         fleet={fleet}
         herdr={herdr}
-        activeWorkspace={
-          view.kind === "chat" && selectedPane ? workspaceOf(selectedPane)?.label ?? null : null
-        }
         activeViewKind={view.kind}
         onBackToFleet={() => setView({ kind: "fleet" })}
         onOpenUsage={() => setUsageOpen(true)}

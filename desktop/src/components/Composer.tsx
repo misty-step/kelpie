@@ -556,7 +556,6 @@ export function Composer({
 
         <div className="composer-session-rail" aria-label="Session controls">
           <span className="session-chip workspace" title="Workspace (read-only)">
-            <span className="session-latch" aria-hidden="true" />
             <span className="session-chip-label">{workspaceLabel ?? "—"}</span>
           </span>
 
@@ -571,9 +570,6 @@ export function Composer({
           >
             <span className="session-chip-k">model</span>
             <span className="session-chip-v mono">{shortModel(displayModel)}</span>
-            <span className="session-caret" aria-hidden="true">
-              ▾
-            </span>
           </button>
 
           <button
@@ -591,9 +587,6 @@ export function Composer({
           >
             <span className="session-chip-k">thinking</span>
             <span className="session-chip-v">{displayThinking ?? "—"}</span>
-            <span className="session-caret" aria-hidden="true">
-              ▾
-            </span>
           </button>
         </div>
       </div>

@@ -18,7 +18,6 @@ export function TitleBar({
   onBackToFleet,
   onOpenUsage,
   onOpenSettings,
-  activeWorkspace,
   activeViewKind,
 }: {
   fleet: Fleet | null;
@@ -26,7 +25,6 @@ export function TitleBar({
   onBackToFleet: () => void;
   onOpenUsage: () => void;
   onOpenSettings: () => void;
-  activeWorkspace: string | null;
   activeViewKind?: string;
 }) {
   const [maximized, setMaximized] = useState(false);
@@ -85,11 +83,7 @@ export function TitleBar({
           <span>Fleet{count ? ` ${count}` : ""}</span>
           {needs > 0 && <span className="tb-badge">{needs}</span>}
         </button>
-        {activeWorkspace && (
-          <button type="button" className="tb-btn" onClick={onBackToFleet} title="Current workspace">
-            {activeWorkspace}
-          </button>
-        )}
+
         <button type="button" className="tb-btn" onClick={onOpenUsage} title="Provider usage">
           <Gauge size={14} />
           <span>Usage</span>

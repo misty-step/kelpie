@@ -604,20 +604,6 @@ button {
   flex: 1;
 }
 
-.chat-ws-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--brand-soft);
-  text-transform: lowercase;
-}
-
-.chat-ws-icon {
-  color: var(--brand-soft);
-}
-
 .chat-title {
   margin: 0;
   font-size: 15px;
@@ -673,7 +659,7 @@ button {
 .chat-head-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: none;
 }
 
@@ -681,13 +667,15 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 3px 10px;
-  border-radius: 12px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface);
+  font-size: 12px;
+  color: var(--text-muted);
 }
+
 .head-status-dot {
   width: 7px;
   height: 7px;
@@ -704,14 +692,15 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  min-width: 32px;
   height: 32px;
+  padding: 0 8px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  transition: background 0.1s ease, border-color 0.1s ease;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
 }
 
 .chat-head-btn:hover {
@@ -725,10 +714,43 @@ button {
   border-color: var(--brand);
   color: var(--brand);
 }
-.head-status.working { color: var(--text-soft); border-color: var(--border); background: var(--surface-2); }
-.head-status.working .head-status-dot { background: var(--ok); }
-.head-status.needs { color: var(--ok); border-color: var(--ok-border); background: var(--ok-bg); }
-.head-status.blocked { color: var(--err); border-color: var(--err-border); background: var(--err-bg); }
+
+.chat-head-btn-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.head-status.working {
+  color: var(--text-soft);
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.head-status.working .head-status-dot {
+  background: var(--ok);
+}
+
+.head-status.needs {
+  color: var(--ok);
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+}
+
+.head-status.blocked {
+  color: var(--err);
+  border-color: var(--err-border);
+  background: var(--err-bg);
+}
+
+.head-status.idle,
+.head-status.done,
+.head-status.unknown {
+  color: var(--text-soft);
+  border-color: var(--border);
+  background: var(--surface);
+}
 
 .transcript {
   flex: 1;
@@ -1312,14 +1334,6 @@ button {
   color: var(--text);
   background: var(--brand-bg);
 }
-.session-chip.workspace { cursor: default; }
-.session-latch {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #3c9663;
-  flex: none;
-}
 .session-chip-k {
   font-size: 10.5px;
   text-transform: uppercase;
@@ -1333,7 +1347,6 @@ button {
 }
 .session-chip-v.mono,
 .session-chip .mono { font-family: var(--mono); font-size: 12px; }
-.session-caret { font-size: 9px; color: var(--text-faint); }
 
 /* Menus — anchored above the card (no bottom+top clip) */
 .slash-menu,
@@ -1940,20 +1953,6 @@ button {
   height: auto;
   border-radius: 6px;
   cursor: zoom-in;
-}
-
-/* keycap-style labels (e.g. the Esc relay button in the composer) */
-.key-cap {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.4px;
-  padding: 1px 4px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  line-height: 1.3;
 }
 
 /* crash safety net (ErrorBoundary) */

@@ -6,7 +6,6 @@ import {
   CircleAlert,
   FileText,
   Flame,
-  FolderGit2,
   Globe,
   HelpCircle,
   ListChecks,
@@ -286,17 +285,13 @@ export function Chat({
     <div className="chat">
       <header className="chat-head">
         <div className="chat-head-left">
-          <div className="chat-ws-badge">
-            <FolderGit2 size={12} className="chat-ws-icon" />
-            <span className="chat-ws-name">{wsLabel}</span>
-          </div>
           <h2 className="chat-title" title={pane.task ?? pane.pane_id}>
             {taskText}
           </h2>
           {(provider || modelName || effortLevel) && (
             <div className="chat-meta">
               {provider && <span className="chat-provider">{provider}</span>}
-              {provider && modelName && <span className="chat-dot">•</span>}
+              {provider && modelName && <span className="chat-dot">·</span>}
               {modelName && <span className="chat-model">{modelName}</span>}
               {effortLevel && (
                 <span className="chat-thinking-tag">
@@ -308,33 +303,38 @@ export function Chat({
           )}
         </div>
 
-        <div className="chat-head-right">
-          <div className={`head-status ${pane.pending_ask ? "needs" : pane.status}`}>
+        <div className="chat-head-right" role="toolbar" aria-label="Session controls">
+          <div
+            className={`head-status ${pane.pending_ask ? "needs" : pane.status}`}
+            title={statusLabel(pane.pending_ask ? "blocked" : pane.status)}
+          >
             {pane.status === "working" && !pane.pending_ask ? (
               <WorkingSpinner />
             ) : (
               <span className="head-status-dot" />
             )}
-            <span className="head-status-label">{statusLabel(pane.pending_ask ? "blocked" : pane.status)}</span>
+            <span className="head-status-label">
+              {statusLabel(pane.pending_ask ? "blocked" : pane.status)}
+            </span>
           </div>
 
           <button
             type="button"
-            className="tb-btn"
+            className="chat-head-btn"
             title="Interrupt agent (Ctrl+C)"
             aria-label="Interrupt agent"
             onClick={() => void api.sendKeys(pane.pane_id, ["ctrl+c"])}
           >
-            <Square size={13} />
+            <Square size={14} />
           </button>
           <button
             type="button"
-            className="tb-btn"
+            className="chat-head-btn"
             title="Send Escape to the agent"
             aria-label="Send Escape"
             onClick={() => void api.sendKeys(pane.pane_id, ["Escape"])}
           >
-            <span className="key-cap">Esc</span>
+            <span className="chat-head-btn-label">Esc</span>
           </button>
           <button
             type="button"
