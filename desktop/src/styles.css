@@ -478,7 +478,7 @@ button {
 }
 
 .pane-row-card:hover {
-  background: #ebebeb;
+  background: var(--surface-2);
 }
 
 .pane-row-card.selected {
@@ -516,17 +516,15 @@ button {
 }
 
 .pane-ws-tag {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--text-faint);
-  background: var(--surface-2);
-  padding: 1px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
   flex: none;
 }
 
 .sidebar-foot {
+  flex: none;
+  border-top: 1px solid var(--seam);
   padding: 10px 10px 12px;
   display: flex;
   flex-direction: column;

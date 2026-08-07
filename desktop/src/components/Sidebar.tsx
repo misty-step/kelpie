@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Settings,
   Bot,
-  AlertOctagon,
   Loader2,
 } from "lucide-react";
 import type { Fleet, Pane } from "../types";
@@ -21,7 +20,7 @@ function StatusRing({ pane }: { pane: Pane }) {
     return <span className="st-ring blocked" title="Blocked" />;
   }
   if (pane.status === "working") {
-    return <span className="st-ring working spin" title="Working" />;
+    return <span className="st-ring working" title="Working" />;
   }
   return <span className="st-ring done" title="Done" />;
 }
@@ -128,7 +127,6 @@ export function Sidebar({
         {fleet && urgencyPanes.length > 0 && (
           <div className="urgency-sec">
             <div className="urgency-h">
-              <AlertOctagon size={12} />
               <span>Needs Attention</span>
               <span className="urgency-count">{urgencyPanes.length}</span>
             </div>
