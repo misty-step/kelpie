@@ -504,11 +504,18 @@ fn parse_event_meta(event: &Value, res: &mut PaneSummary) {
     let evt_type = event.get("type").and_then(Value::as_str);
     if evt_type == Some("model_change") {
         if let Some(selector) = event.get("model").and_then(Value::as_str) {
-            if let Some((prov, mod_name)) = selector.split_once('/') {
+            let (prov_and_model, mod_effort) = match selector.split_once(':') {
+                Some((m, e)) => (m, Some(e)),
+                None => (selector, None),
+            };
+            if let Some((prov, mod_name)) = prov_and_model.split_once('/') {
                 res.provider = Some(prov.to_string());
                 res.model = Some(mod_name.to_string());
             } else {
-                res.model = Some(selector.to_string());
+                res.model = Some(prov_and_model.to_string());
+            }
+            if let Some(e) = mod_effort {
+                res.effort = Some(e.to_lowercase());
             }
         }
     }
@@ -549,19 +556,20 @@ pub fn tail_summary(path: &str) -> PaneSummary {
     if len == 0 {
         return res;
     }
-    let Ok(mut file) = File::open(path) else {
+    let Ok(file) = File::open(path) else {
         return res;
     };
 
-    // First scan head 8KB to seed provider, model, and thinking_level from session setup
-    let reader_head = BufReader::new(&file);
-    for line in reader_head.lines().take(60).flatten() {
+    // Full scan from start to end so the LATEST model and thinking_level are captured
+    let reader_full = BufReader::new(&file);
+    for line in reader_full.lines().flatten() {
         if let Ok(event) = serde_json::from_str::<Value>(&line) {
             parse_event_meta(&event, &mut res);
         }
     }
 
-    // Now scan tail 32KB for recent messages, tool calls, pending asks, and model changes
+    // Bounded tail scan for recent messages, tool calls, and pending asks
+    let mut file = file;
     if file.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES))).is_err() {
         return res;
     }
@@ -572,7 +580,6 @@ pub fn tail_summary(path: &str) -> PaneSummary {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        parse_event_meta(&event, &mut res);
         let Some(message) = event.get("message") else {
             continue;
         };
