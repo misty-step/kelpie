@@ -19,9 +19,13 @@
 
 ## What it is
 
-You run a herd of coding agents in terminal panes on your desk. You leave the
-desk. kelpie is the pocket view: a tiny Rust bridge on the workstation plus a
-self-contained Yew/WASM PWA you install to your phone's home screen.
+> Project direction, surfaces, and non-goals live in [VISION.md](VISION.md).
+
+You run a herd of coding agents in terminal panes on your desk. kelpie is the
+console for that herd, on two surfaces: a desktop cockpit (`desktop/`, Tauri +
+React — see `desktop/README.md`) and this pocket view: a tiny Rust bridge on
+the workstation plus a self-contained Yew/WASM PWA you install to your phone's
+home screen.
 
 - **Inbox** — every workspace, sorted by what needs you: pending asks first,
   then working, then idle/done, recency within each tier.

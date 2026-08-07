@@ -1,5 +1,7 @@
 # Kelpie desktop (prototype)
 
+> Project direction and surface boundaries live in [../VISION.md](../VISION.md).
+
 A Tauri 2 + React desktop console for a fleet of omp agents running in herdr
 workspaces — the reimagined kelpie: fleet sidebar, rich chat (markdown,
 mermaid, tool cards, thinking blocks, pending asks), a usage panel, an
