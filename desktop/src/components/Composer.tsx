@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Flame, Loader2, Plus, Search, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import { api } from "../api";
 import type { Ask, Command, CommandSource, ModelOption } from "../types";
+import { ThinkingIcon } from "./ThinkingIcon";
 
 const SOURCE_LABEL: Record<CommandSource, string> = {
   "built-in": "omp",
@@ -49,33 +50,6 @@ function formatThinking(level: string): string {
   const t = level.trim().toLowerCase();
   if (!t) return "thinking";
   return t;
-}
-
-function EffortIcon({ effort }: { effort: string }) {
-  const e = effort.toLowerCase();
-  if (e.includes("max") || e.includes("extra high") || e.includes("xhigh")) {
-    return <Flame size={12} className="pane-effort-ico flame" aria-hidden="true" />;
-  }
-  if (e.includes("high")) {
-    return (
-      <svg width="12" height="12" viewBox="0 0 16 16" className="pane-effort-ico high" aria-hidden="true">
-        <circle cx="8" cy="8" r="6" fill="currentColor" />
-      </svg>
-    );
-  }
-  if (e.includes("medium")) {
-    return (
-      <svg width="12" height="12" viewBox="0 0 16 16" className="pane-effort-ico medium" aria-hidden="true">
-        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M8 2a6 6 0 0 1 0 12V2z" fill="currentColor" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" className="pane-effort-ico low" aria-hidden="true">
-      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
 }
 
 function isDatedId(id: string): boolean {
@@ -642,7 +616,7 @@ export function Composer({
                 }}
               >
                 <span className="slash-name thinking-opt">
-                  <EffortIcon effort={level} />
+                  <ThinkingIcon level={level} size={12} />
                   <span>{formatThinking(level)}</span>
                 </span>
               </button>
@@ -824,7 +798,7 @@ export function Composer({
                 disabled={busy}
                 onClick={() => openAnchoredMenu("thinking", thinkingBtnRef.current)}
               >
-                {displayThinking && <EffortIcon effort={displayThinking} />}
+                {displayThinking && <ThinkingIcon level={displayThinking} size={12} />}
                 <span className="composer-pill-label">
                   {displayThinking ? formatThinking(displayThinking) : "thinking"}
                 </span>

@@ -118,6 +118,16 @@ button {
   padding: 0;
 }
 
+/* Keyboard focus ring. Without this, WebKitGTK paints the platform GTK accent
+   (e.g. a wine accent_color) over an indigo design. */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 1px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* ── App shell ─────────────────────────────────────────────────────────── */
 
 .app {
@@ -540,24 +550,9 @@ button {
   margin-left: auto;
 }
 
-.pane-effort-ico {
+.thinking-ico {
+  display: block;
   flex: none;
-}
-
-.pane-effort-ico.flame {
-  color: #d97706;
-}
-
-.pane-effort-ico.high {
-  color: var(--brand);
-}
-
-.pane-effort-ico.medium {
-  color: var(--text-soft);
-}
-
-.pane-effort-ico.low {
-  color: var(--text-faint);
 }
 
 .sidebar-foot {
@@ -1339,7 +1334,7 @@ button {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1;
+  line-height: 1.4;
   text-transform: lowercase;
   font-size: 12px;
   font-weight: 500;
@@ -1348,18 +1343,8 @@ button {
   font-family: var(--mono);
 }
 .composer-pill svg,
-.composer-pill .pane-effort-ico {
-  display: block;
-  flex: none;
-  width: 12px;
-  height: 12px;
+.composer-pill .thinking-ico {
   color: #a0a0a0;
-}
-.composer-pill .pane-effort-ico.flame {
-  color: #d97706;
-}
-.composer-pill .pane-effort-ico.high {
-  color: var(--brand);
 }
 .composer-pill > svg:last-child {
   width: 13px;
