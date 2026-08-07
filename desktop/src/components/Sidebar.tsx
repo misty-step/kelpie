@@ -2,9 +2,6 @@ import {
   Settings,
   Loader2,
   Flame,
-  CheckCircle2,
-  CircleDot,
-  Circle,
 } from "lucide-react";
 import type { Fleet, Pane } from "../types";
 import { attentionSort } from "../fleetSort";
@@ -15,12 +12,25 @@ function EffortIcon({ effort }: { effort: string }) {
     return <Flame size={11} className="pane-effort-ico flame" aria-hidden="true" />;
   }
   if (e.includes("high")) {
-    return <CheckCircle2 size={11} className="pane-effort-ico high" aria-hidden="true" />;
+    return (
+      <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico high" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="currentColor" />
+      </svg>
+    );
   }
   if (e.includes("medium")) {
-    return <CircleDot size={11} className="pane-effort-ico medium" aria-hidden="true" />;
+    return (
+      <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico medium" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8 2a6 6 0 0 1 0 12V2z" fill="currentColor" />
+      </svg>
+    );
   }
-  return <Circle size={11} className="pane-effort-ico low" aria-hidden="true" />;
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico low" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
 }
 
 function WorkingSpinner() {
@@ -82,7 +92,7 @@ function PaneRow({
           {effort && (
             <span className="pane-effort-pill">
               <EffortIcon effort={effort} />
-              <span>{effort}</span>
+              <span>{effort.toLowerCase()}</span>
             </span>
           )}
         </div>

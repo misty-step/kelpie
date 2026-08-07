@@ -519,16 +519,7 @@ fn parse_event_meta(event: &Value, res: &mut PaneSummary) {
             .or_else(|| event.get("thinking_level").and_then(Value::as_str))
             .or_else(|| event.get("level").and_then(Value::as_str));
         if let Some(lvl) = lvl_val {
-            let lvl_lower = lvl.to_lowercase();
-            let formatted = match lvl_lower.as_str() {
-                "xhigh" | "extra_high" | "extra high" | "max" => "Max",
-                "high" => "High",
-                "medium" => "Medium",
-                "low" => "Low",
-                "off" | "none" | "0" => "Off",
-                _ => lvl,
-            };
-            res.effort = Some(formatted.to_string());
+            res.effort = Some(lvl.to_lowercase());
         }
     }
     if let Some(message) = event.get("message") {
@@ -544,16 +535,7 @@ fn parse_event_meta(event: &Value, res: &mut PaneSummary) {
             .or_else(|| message.get("thinkingLevel").and_then(Value::as_str))
             .or_else(|| message.get("thinking_level").and_then(Value::as_str));
         if let Some(lvl) = msg_lvl {
-            let lvl_lower = lvl.to_lowercase();
-            let formatted = match lvl_lower.as_str() {
-                "xhigh" | "extra_high" | "extra high" | "max" => "Max",
-                "high" => "High",
-                "medium" => "Medium",
-                "low" => "Low",
-                "off" | "none" | "0" => "Off",
-                _ => lvl,
-            };
-            res.effort = Some(formatted.to_string());
+            res.effort = Some(lvl.to_lowercase());
         }
     }
 }
