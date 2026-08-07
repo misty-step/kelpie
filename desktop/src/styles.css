@@ -1265,7 +1265,7 @@ button {
 .composer-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 28px;
   padding: 0 10px 0 11px;
   border: none;
@@ -1274,7 +1274,7 @@ button {
   color: #5c5c5c;
   font-size: 12.5px;
   font-weight: 500;
-  max-width: 220px;
+  max-width: min(360px, 46vw);
   white-space: nowrap;
 }
 .composer-pill:hover,
@@ -1285,12 +1285,59 @@ button {
 .composer-pill-label {
   overflow: hidden;
   text-overflow: ellipsis;
+  text-transform: lowercase;
+}
+.composer-pill-label.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+.composer-pill.thinking .pane-effort-ico {
+  flex: none;
 }
 .composer-pill svg {
   flex: none;
   color: #a0a0a0;
 }
 
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 6px;
+}
+.composer-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.composer-attach-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-attach-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+.composer-attach-remove:hover {
+  background: var(--surface);
+  color: var(--text);
+}
 .composer-toolbar-spacer {
   flex: 1;
   min-width: 8px;
@@ -1465,7 +1512,7 @@ button {
   cursor: default;
 }
 
-/* Menus — anchored above the card (no bottom+top clip) */
+/* Menus — default above card; JS may pin left/bottom to the trigger pill */
 .slash-menu,
 .session-menu {
   position: absolute;
@@ -1485,10 +1532,14 @@ button {
 }
 .session-menu.model-menu,
 .session-menu.thinking-menu {
-  left: auto;
-  right: 10px;
-  min-width: 320px;
-  max-width: min(440px, calc(100% - 20px));
+  min-width: 280px;
+  max-width: min(440px, calc(100% - 16px));
+}
+.slash-name.thinking-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: lowercase;
 }
 .model-search-row {
   display: flex;

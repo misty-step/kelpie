@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Loader2, Plus, Search } from "lucide-react";
+import { ArrowUp, ChevronDown, Flame, Loader2, Plus, Search, X } from "lucide-react";
 import { api } from "../api";
 import type { Ask, Command, CommandSource, ModelOption } from "../types";
 
@@ -33,6 +33,12 @@ const FALLBACK_THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "
 
 type MenuKind = "slash" | "model" | "thinking" | null;
 
+/** Full selector, lowercase — e.g. xai-oauth/grok-4.5 */
+function modelLabel(id: string | null): string {
+  if (!id) return "model…";
+  return id.toLowerCase();
+}
+
 function shortModel(id: string | null): string {
   if (!id) return "model…";
   const slash = id.lastIndexOf("/");
@@ -40,11 +46,36 @@ function shortModel(id: string | null): string {
 }
 
 function formatThinking(level: string): string {
-  const t = level.trim();
+  const t = level.trim().toLowerCase();
   if (!t) return "thinking";
-  if (t.toLowerCase() === "xhigh") return "Extra High";
-  if (t.toLowerCase() === "off") return "Off";
-  return t.replace(/^\w/, (c) => c.toUpperCase());
+  return t;
+}
+
+function EffortIcon({ effort }: { effort: string }) {
+  const e = effort.toLowerCase();
+  if (e.includes("max") || e.includes("extra high") || e.includes("xhigh")) {
+    return <Flame size={11} className="pane-effort-ico flame" aria-hidden="true" />;
+  }
+  if (e.includes("high")) {
+    return (
+      <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico high" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (e.includes("medium")) {
+    return (
+      <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico medium" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8 2a6 6 0 0 1 0 12V2z" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" className="pane-effort-ico low" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
 }
 
 function isDatedId(id: string): boolean {
@@ -102,9 +133,14 @@ export function Composer({
   const [askBusy, setAskBusy] = useState<number | null>(null);
   const [askOther, setAskOther] = useState(false);
   const [otherText, setOtherText] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [menuAnchor, setMenuAnchor] = useState<{ left: number; bottom: number } | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const modelBtnRef = useRef<HTMLButtonElement>(null);
+  const thinkingBtnRef = useRef<HTMLButtonElement>(null);
 
   const displayModel = localModel ?? model;
   const displayThinking = localThinking ?? thinking;
@@ -231,7 +267,10 @@ export function Composer({
   }, [menu]);
 
   useEffect(() => {
-    if (!menu) return;
+    if (!menu) {
+      setMenuAnchor(null);
+      return;
+    }
     const onDoc = (e: MouseEvent) => {
       if (!boxRef.current?.contains(e.target as Node)) setMenu(null);
     };
@@ -246,15 +285,59 @@ export function Composer({
     ta.style.height = `${Math.min(Math.max(ta.scrollHeight, 52), 200)}px`;
   };
 
+  const openAnchoredMenu = (kind: "model" | "thinking", btn: HTMLButtonElement | null) => {
+    if (menu === kind) {
+      setMenu(null);
+      return;
+    }
+    const box = boxRef.current;
+    if (box && btn) {
+      const br = box.getBoundingClientRect();
+      const er = btn.getBoundingClientRect();
+      setMenuAnchor({
+        left: Math.max(8, er.left - br.left),
+        bottom: Math.max(8, br.bottom - er.top + 6),
+      });
+    } else {
+      setMenuAnchor(null);
+    }
+    setMenu(kind);
+  };
+
+  const onPickFiles = (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const next = Array.from(list);
+    setAttachments((prev) => {
+      const names = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      const merged = [...prev];
+      for (const f of next) {
+        const key = `${f.name}:${f.size}`;
+        if (!names.has(key)) merged.push(f);
+      }
+      return merged.slice(0, 12);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const send = async () => {
     const value = text.trim();
-    if (!value || busy || pendingAsk) return;
+    const hasFiles = attachments.length > 0;
+    if ((!value && !hasFiles) || busy || pendingAsk) return;
     setBusy(true);
     setError(null);
     setMenu(null);
     try {
-      await api.sendText(paneId, value);
+      const fileBlock =
+        attachments.length > 0
+          ? attachments.map((f) => `@file ${f.name}`).join("\n") + (value ? "\n\n" : "")
+          : "";
+      await api.sendText(paneId, `${fileBlock}${value}`);
       setText("");
+      setAttachments([]);
       requestAnimationFrame(autoResize);
     } catch (e) {
       setError(String(e));
@@ -462,7 +545,22 @@ export function Composer({
         )}
 
         {menu === "model" && (
-          <div className="session-menu model-menu" role="listbox" aria-label="Session model">
+          <div
+            className="session-menu model-menu"
+            role="listbox"
+            aria-label="Session model"
+            style={
+              menuAnchor
+                ? {
+                    left: menuAnchor.left,
+                    right: "auto",
+                    bottom: menuAnchor.bottom,
+                    top: "auto",
+                    transform: "none",
+                  }
+                : undefined
+            }
+          >
             <div className="model-search-row">
               <Search size={13} aria-hidden="true" />
               <input
@@ -501,11 +599,10 @@ export function Composer({
                   }}
                 >
                   <span className="model-item-main">
-                    <span className="model-item-name">{option.name}</span>
-                    <span className="slash-name mono model-item-sel">{option.selector}</span>
+                    <span className="model-item-name mono">{option.selector.toLowerCase()}</span>
+                    <span className="model-item-sel">{option.name}</span>
                   </span>
                   <span className="model-item-meta">
-                    <span className="slash-src">{option.provider}</span>
                     {option.thinking && option.thinking.length > 0 && (
                       <span className="model-think-tag">think</span>
                     )}
@@ -517,7 +614,22 @@ export function Composer({
         )}
 
         {menu === "thinking" && (
-          <div className="session-menu thinking-menu" role="listbox" aria-label="Thinking level">
+          <div
+            className="session-menu thinking-menu"
+            role="listbox"
+            aria-label="Thinking level"
+            style={
+              menuAnchor
+                ? {
+                    left: menuAnchor.left,
+                    right: "auto",
+                    bottom: menuAnchor.bottom,
+                    top: "auto",
+                    transform: "none",
+                  }
+                : undefined
+            }
+          >
             <div className="slash-menu-head">Thinking</div>
             {thinkingOptions.map((level) => (
               <button
@@ -531,7 +643,10 @@ export function Composer({
                   void applyThinking(level);
                 }}
               >
-                <span className="slash-name">{level}</span>
+                <span className="slash-name thinking-opt">
+                  <EffortIcon effort={level} />
+                  <span>{formatThinking(level)}</span>
+                </span>
               </button>
             ))}
           </div>
@@ -647,48 +762,71 @@ export function Composer({
               onKeyDown={onKeyDown}
             />
 
+            {attachments.length > 0 && (
+              <div className="composer-attachments" aria-label="Attachments">
+                {attachments.map((file, i) => (
+                  <span key={`${file.name}-${file.size}-${i}`} className="composer-attach-chip">
+                    <span className="composer-attach-name" title={file.name}>
+                      {file.name}
+                    </span>
+                    <button
+                      type="button"
+                      className="composer-attach-remove"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => removeAttachment(i)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="composer-toolbar">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="sr-only"
+                multiple
+                accept="image/*,.png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.rs,.py,.go,.toml,.yaml,.yml,.html,.css"
+                onChange={(e) => onPickFiles(e.target.files)}
+              />
               <button
                 type="button"
-                className={`composer-plus${menu === "slash" ? " active" : ""}`}
-                title="Commands"
-                aria-label="Open slash commands"
-                aria-expanded={menu === "slash"}
+                className="composer-plus"
+                title="Attach files or images"
+                aria-label="Attach files"
                 disabled={busy}
-                onClick={() => {
-                  if (menu === "slash") setMenu(null);
-                  else {
-                    setMenu("slash");
-                    if (!text.startsWith("/")) setText("/");
-                    taRef.current?.focus();
-                  }
-                }}
+                onClick={() => fileInputRef.current?.click()}
               >
                 <Plus size={16} strokeWidth={1.75} />
               </button>
 
               <button
+                ref={modelBtnRef}
                 type="button"
-                className={`composer-pill${menu === "model" ? " open" : ""}`}
+                className={`composer-pill model${menu === "model" ? " open" : ""}`}
                 title={displayModel ?? "Session model"}
                 aria-haspopup="listbox"
                 aria-expanded={menu === "model"}
                 disabled={busy}
-                onClick={() => setMenu((m) => (m === "model" ? null : "model"))}
+                onClick={() => openAnchoredMenu("model", modelBtnRef.current)}
               >
-                <span className="composer-pill-label">{shortModel(displayModel)}</span>
+                <span className="composer-pill-label mono">{modelLabel(displayModel)}</span>
                 <ChevronDown size={13} strokeWidth={2} aria-hidden="true" />
               </button>
 
               <button
+                ref={thinkingBtnRef}
                 type="button"
-                className={`composer-pill${menu === "thinking" ? " open" : ""}`}
+                className={`composer-pill thinking${menu === "thinking" ? " open" : ""}`}
                 title="Thinking level"
                 aria-haspopup="listbox"
                 aria-expanded={menu === "thinking"}
                 disabled={busy}
-                onClick={() => setMenu((m) => (m === "thinking" ? null : "thinking"))}
+                onClick={() => openAnchoredMenu("thinking", thinkingBtnRef.current)}
               >
+                {displayThinking && <EffortIcon effort={displayThinking} />}
                 <span className="composer-pill-label">
                   {displayThinking ? formatThinking(displayThinking) : "thinking"}
                 </span>
@@ -700,7 +838,7 @@ export function Composer({
               <button
                 type="button"
                 className="composer-send"
-                disabled={busy || !text.trim()}
+                disabled={busy || (!text.trim() && attachments.length === 0)}
                 onClick={() => void send()}
                 title="Send (Enter)"
                 aria-label="Send"
