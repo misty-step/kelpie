@@ -122,8 +122,6 @@ export default function App() {
                 pane={selectedPane}
                 workspace={workspaceOf(selectedPane) ?? null}
                 theme={theme}
-                model={null}
-                thinking={null}
                 onToggleTerminal={() => setTerminalOpen((o) => !o)}
                 terminalOpen={terminalOpen}
               />

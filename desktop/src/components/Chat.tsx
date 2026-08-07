@@ -206,16 +206,12 @@ export function Chat({
   pane,
   workspace,
   theme,
-  model,
-  thinking,
   onToggleTerminal,
   terminalOpen,
 }: {
   pane: Pane;
   workspace: Workspace | null;
   theme: Theme;
-  model: string | null;
-  thinking: string | null;
   onToggleTerminal: () => void;
   terminalOpen: boolean;
 }) {
@@ -403,9 +399,10 @@ export function Chat({
 
       <Composer
         paneId={pane.pane_id}
+        cwd={pane.cwd}
         pendingAsk={page?.pending_ask ?? null}
-        model={model}
-        thinking={thinking}
+        model={page?.model ? `${page.model.provider}/${page.model.model}` : null}
+        thinking={page?.thinking ?? pane.effort ?? null}
         workspaceLabel={wsLabel}
       />
     </div>
