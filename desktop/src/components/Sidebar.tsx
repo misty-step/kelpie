@@ -1,14 +1,10 @@
-import { useState } from "react";
 import {
-  FolderGit2,
-  ChevronDown,
-  ChevronRight,
   Settings,
   Bot,
   Loader2,
 } from "lucide-react";
 import type { Fleet, Pane } from "../types";
-import { attentionSort, paneRank } from "../fleetSort";
+import { attentionSort } from "../fleetSort";
 import { relativeTime } from "../relativeTime";
 import { taskTitle } from "../taskTitle";
 
@@ -29,17 +25,16 @@ function PaneRow({
   pane,
   selected,
   onSelect,
-  showWorkspace,
   workspaceLabel,
 }: {
   pane: Pane;
   selected: boolean;
   onSelect: (paneId: string) => void;
-  showWorkspace?: boolean;
   workspaceLabel?: string;
 }) {
   const label = taskTitle(pane.task, pane.pane_id);
   const time = relativeTime(pane.updated_ms);
+  const wsTag = workspaceLabel ?? pane.workspace_id;
 
   return (
     <button
@@ -51,9 +46,7 @@ function PaneRow({
     >
       <StatusRing pane={pane} />
       <span className="pane-row-title">{label}</span>
-      {showWorkspace && (
-        <span className="pane-ws-tag">{workspaceLabel ?? pane.workspace_id}</span>
-      )}
+      <span className="pane-ws-tag">{wsTag}</span>
       <span className="pane-row-time">{time}</span>
     </button>
   );
@@ -71,39 +64,19 @@ export function Sidebar({
   onOpenUsage?: () => void;
   onOpenSettings: () => void;
 }) {
-  const [collapsedWs, setCollapsedWs] = useState<Record<string, boolean>>({});
-
-  const toggleWorkspace = (wsId: string) => {
-    setCollapsedWs((prev) => ({ ...prev, [wsId]: !prev[wsId] }));
-  };
-
   const totalPanes = fleet?.panes.length ?? 0;
-  const urgencyPanes = fleet ? fleet.panes.filter((p) => p.pending_ask || p.status === "blocked") : [];
   const wsLabelMap = new Map(fleet?.workspaces.map((w) => [w.id, w.label]) ?? []);
-  const groupedWorkspaces = (() => {
-    if (!fleet) return [];
-    const map = new Map<string, Pane[]>();
-    for (const pane of fleet.panes) {
-      const list = map.get(pane.workspace_id) ?? [];
-      list.push(pane);
-      map.set(pane.workspace_id, list);
-    }
-    return fleet.workspaces
-      .filter((ws) => map.has(ws.id))
-      .map((ws) => ({
-        ws,
-        panes: attentionSort(map.get(ws.id) ?? []),
-        minRank: Math.min(...(map.get(ws.id) ?? []).map(paneRank)),
-      }))
-      .sort((a, b) => a.minRank - b.minRank || a.ws.label.localeCompare(b.ws.label));
-  })();
+
+  const sortedPanes = fleet ? attentionSort(fleet.panes) : [];
+  const urgencyPanes = sortedPanes.filter((p) => p.pending_ask || p.status === "blocked");
+  const normalPanes = sortedPanes.filter((p) => !p.pending_ask && p.status !== "blocked");
 
   return (
     <aside className="sidebar">
       <div className="sidebar-top-strip">
         <span className="sidebar-title">
           <Bot size={14} className="sidebar-icon" />
-          <span>Workspaces</span>
+          <span>Agents</span>
         </span>
         <span className="sidebar-meta">
           {totalPanes} {totalPanes === 1 ? "agent" : "agents"}
@@ -118,7 +91,7 @@ export function Sidebar({
           </div>
         )}
 
-        {fleet && groupedWorkspaces.length === 0 && (
+        {fleet && totalPanes === 0 && (
           <div className="side-empty">
             <span>No agents running — open a workspace in herdr.</span>
           </div>
@@ -136,48 +109,30 @@ export function Sidebar({
                 pane={pane}
                 selected={pane.pane_id === selectedPaneId}
                 onSelect={onSelectPane}
-                showWorkspace
-                workspaceLabel={wsLabelMap.get(pane.workspace_id) ?? pane.workspace_id}
+                workspaceLabel={wsLabelMap.get(pane.workspace_id)}
               />
             ))}
           </div>
         )}
 
-        {groupedWorkspaces.map(({ ws, panes, minRank }) => {
-          const isCollapsed = collapsedWs[ws.id] ?? false;
-          const hasNeeds = minRank === 0;
-
-          return (
-            <section key={ws.id} className={`side-ws-group${hasNeeds ? " has-needs" : ""}`}>
-              <button
-                type="button"
-                className="side-ws-header"
-                onClick={() => toggleWorkspace(ws.id)}
-                aria-expanded={!isCollapsed}
-              >
-                <span className="side-ws-toggle">
-                  {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                </span>
-                <FolderGit2 size={13} className="side-ws-icon" />
-                <span className="side-ws-label">{ws.label}</span>
-                <span className="side-ws-count">{panes.length}</span>
-              </button>
-
-              {!isCollapsed && (
-                <div className="side-ws-body">
-                  {panes.map((pane) => (
-                    <PaneRow
-                      key={pane.pane_id}
-                      pane={pane}
-                      selected={pane.pane_id === selectedPaneId}
-                      onSelect={onSelectPane}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+        {fleet && normalPanes.length > 0 && (
+          <div className="agents-sec">
+            {urgencyPanes.length > 0 && (
+              <div className="agents-h">
+                <span>Agents</span>
+              </div>
+            )}
+            {normalPanes.map((pane) => (
+              <PaneRow
+                key={pane.pane_id}
+                pane={pane}
+                selected={pane.pane_id === selectedPaneId}
+                onSelect={onSelectPane}
+                workspaceLabel={wsLabelMap.get(pane.workspace_id)}
+              />
+            ))}
+          </div>
+        )}
       </nav>
 
       <footer className="sidebar-foot">

@@ -328,62 +328,10 @@ button {
   color: var(--text-muted);
 }
 
-.side-ws-group + .side-ws-group {
-  margin-top: 10px;
-}
-
-.side-ws-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-soft);
-  text-align: left;
-  cursor: pointer;
-  background: transparent;
-  border: 1px solid transparent;
-}
-
-.side-ws-header:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.side-ws-toggle {
-  color: var(--text-faint);
-  display: inline-flex;
-}
-
-.side-ws-icon {
-  color: var(--brand-soft);
-  flex: none;
-}
-
-.side-ws-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.side-ws-count {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-faint);
-  font-family: var(--mono);
-}
-
-.side-ws-body {
+.agents-sec {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 4px;
-  padding-left: 4px;
 }
 
 /* ── Urgency Section ─────────────────────────────────────────────────── */
@@ -409,7 +357,6 @@ button {
   text-transform: uppercase;
   color: var(--text-soft);
 }
-
 .urgency-count {
   margin-left: auto;
   font-family: var(--mono);
@@ -417,6 +364,18 @@ button {
   color: var(--text-faint);
 }
 
+.agents-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
 /* ── Status Dots / Rings ─────────────────────────────────────────────── */
 
 .st-ring {
