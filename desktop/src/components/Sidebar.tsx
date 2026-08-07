@@ -23,14 +23,37 @@ function ProviderIcon({ provider, model }: { provider?: string | null; model?: s
       </svg>
     );
   }
-  if (p.includes("openai") || p.includes("codex") || p.includes("gpt")) {
+  if (p.includes("grok") || p.includes("xai")) {
     return (
       <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="prov-icon" aria-hidden="true">
-        <path d="M22.28 9.87a5.98 5.98 0 0 0-.52-4.93 6.03 6.03 0 0 0-6.47-2.9 6.03 6.03 0 0 0-4.63-2.03 6.03 6.03 0 0 0-5.74 4.16 6.03 6.03 0 0 0-4.14 2.99 6.01 6.01 0 0 0 .73 6.99 5.98 5.98 0 0 0 .52 4.93 6.03 6.03 0 0 0 6.47 2.9 6.03 6.03 0 0 0 4.63 2.03 6.03 6.03 0 0 0 5.74-4.16 6.03 6.03 0 0 0 4.14-2.99 6.01 6.01 0 0 0-.73-6.99zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
+        <path d="M18.2 3H21l-6.5 7.4L22 21h-5.8l-4.5-5.9L6.4 21H3.6l7-8L3 3h6l4.1 5.4L18.2 3z" />
       </svg>
     );
   }
-  return null;
+  if (p.includes("openrouter")) {
+    return (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="prov-icon" aria-hidden="true">
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="6" r="3" />
+        <circle cx="18" cy="18" r="3" />
+        <path d="M8.5 10.8l7-4.5M8.5 13.2l7 4.5" stroke="currentColor" strokeWidth="2" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="prov-icon" aria-hidden="true">
+      <path d="M22.28 9.87a5.98 5.98 0 0 0-.52-4.93 6.03 6.03 0 0 0-6.47-2.9 6.03 6.03 0 0 0-4.63-2.03 6.03 6.03 0 0 0-5.74 4.16 6.03 6.03 0 0 0-4.14 2.99 6.01 6.01 0 0 0 .73 6.99 5.98 5.98 0 0 0 .52 4.93 6.03 6.03 0 0 0 6.47 2.9 6.03 6.03 0 0 0 4.63 2.03 6.03 6.03 0 0 0 5.74-4.16 6.03 6.03 0 0 0 4.14-2.99 6.01 6.01 0 0 0-.73-6.99zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
+    </svg>
+  );
+}
+
+function WorkingSpinner() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" className="spin st-spinner" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="var(--brand-soft)" strokeWidth="2" opacity="0.35" />
+      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function StatusRing({ pane }: { pane: Pane }) {
@@ -41,7 +64,7 @@ function StatusRing({ pane }: { pane: Pane }) {
     return <span className="st-ring blocked" title="Blocked" />;
   }
   if (pane.status === "working") {
-    return <span className="st-ring working spin" title="Working" />;
+    return <WorkingSpinner />;
   }
   return <span className="st-ring done" title="Done" />;
 }
@@ -81,6 +104,8 @@ function PaneRow({
       {hasMeta && (
         <div className="pane-row-meta">
           <ProviderIcon provider={provider} model={modelName} />
+          {provider && <span className="pane-provider-name">{provider}</span>}
+          {provider && modelName && <span className="pane-meta-dot">•</span>}
           {modelName && <span className="pane-model-name">{modelName}</span>}
           {effort && <span className="pane-effort-pill">{effort}</span>}
         </div>

@@ -501,6 +501,20 @@ button {
   display: inline-flex;
 }
 
+.pane-provider-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-soft);
+  text-transform: capitalize;
+  flex: none;
+}
+
+.pane-meta-dot {
+  font-size: 10px;
+  color: var(--text-faint);
+  flex: none;
+}
+
 .pane-model-name {
   font-family: var(--mono);
   font-size: 11px;
