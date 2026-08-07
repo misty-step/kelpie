@@ -32,6 +32,19 @@ npm run tauri dev        # desktop window against live herdr + omp
 
 Hot keys: `Ctrl/Cmd+K` command palette, `Esc` closes overlays.
 
+### Install as the `kelpie` command
+
+```sh
+cd desktop
+npm run install-local    # build → ~/.local/bin/kelpie → relaunch if running
+```
+
+`kelpie` on the workstation is this installed release binary, so a source edit
+is invisible until it is reinstalled. Commits that touch desktop sources do it
+automatically through `scripts/git-hooks/post-commit`; enable the hooks once per
+clone with `git config core.hooksPath scripts/git-hooks`. Pass `--no-relaunch`
+to leave a running app alone (`npm run install-local -- --no-relaunch`).
+
 ### Browser preview (no desktop shell)
 
 ```sh
