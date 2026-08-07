@@ -477,11 +477,12 @@ button {
   color: var(--text);
 }
 
-.pane-row-time {
-  flex: none;
+.pane-provider-tag {
   font-size: 11px;
-  font-family: var(--mono);
+  font-weight: 500;
   color: var(--text-faint);
+  text-transform: lowercase;
+  flex: none;
 }
 
 .pane-row-meta {
@@ -493,26 +494,6 @@ button {
   white-space: nowrap;
   overflow: hidden;
   padding-left: 15px;
-}
-
-.prov-icon {
-  color: var(--text-soft);
-  flex: none;
-  display: inline-flex;
-}
-
-.pane-provider-name {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-soft);
-  text-transform: lowercase;
-  flex: none;
-}
-
-.pane-meta-dot {
-  font-size: 10px;
-  color: var(--text-faint);
-  flex: none;
 }
 
 .pane-model-name {
@@ -527,7 +508,7 @@ button {
 .pane-effort-pill {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 10px;
   font-weight: 500;
   color: var(--text-faint);
@@ -538,6 +519,27 @@ button {
   flex: none;
   margin-left: auto;
 }
+
+.pane-effort-ico {
+  flex: none;
+}
+
+.pane-effort-ico.flame {
+  color: #d97706;
+}
+
+.pane-effort-ico.high {
+  color: var(--brand);
+}
+
+.pane-effort-ico.medium {
+  color: var(--text-soft);
+}
+
+.pane-effort-ico.low {
+  color: var(--text-faint);
+}
+
 .sidebar-foot {
   flex: none;
   border-top: 1px solid var(--seam);

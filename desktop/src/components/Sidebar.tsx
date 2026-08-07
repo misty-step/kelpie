@@ -1,11 +1,27 @@
 import {
   Settings,
   Loader2,
-  Brain,
+  Flame,
+  CheckCircle2,
+  CircleDot,
+  Circle,
 } from "lucide-react";
 import type { Fleet, Pane } from "../types";
 import { attentionSort } from "../fleetSort";
-import { relativeTime } from "../relativeTime";
+
+function EffortIcon({ effort }: { effort: string }) {
+  const e = effort.toLowerCase();
+  if (e.includes("max") || e.includes("extra high") || e.includes("xhigh")) {
+    return <Flame size={11} className="pane-effort-ico flame" aria-hidden="true" />;
+  }
+  if (e.includes("high")) {
+    return <CheckCircle2 size={11} className="pane-effort-ico high" aria-hidden="true" />;
+  }
+  if (e.includes("medium")) {
+    return <CircleDot size={11} className="pane-effort-ico medium" aria-hidden="true" />;
+  }
+  return <Circle size={11} className="pane-effort-ico low" aria-hidden="true" />;
+}
 
 function WorkingSpinner() {
   return (
@@ -40,12 +56,12 @@ function PaneRow({
   onSelect: (paneId: string) => void;
   workspaceLabel?: string;
 }) {
-  const time = relativeTime(pane.updated_ms);
   const wsName = workspaceLabel ?? pane.workspace_id;
   const provider = pane.provider ? pane.provider.toLowerCase() : null;
   const modelName = pane.model;
   const effort = pane.effort;
-  const hasMeta = Boolean(provider || modelName || effort);
+
+  const hasMeta = Boolean(modelName || effort);
 
   return (
     <button
@@ -58,16 +74,14 @@ function PaneRow({
       <div className="pane-row-top">
         <StatusRing pane={pane} />
         <span className="pane-ws-name">{wsName}</span>
-        <span className="pane-row-time">{time}</span>
+        {provider && <span className="pane-provider-tag">{provider}</span>}
       </div>
       {hasMeta && (
         <div className="pane-row-meta">
-          {provider && <span className="pane-provider-name">{provider}</span>}
-          {provider && modelName && <span className="pane-meta-dot">•</span>}
           {modelName && <span className="pane-model-name">{modelName}</span>}
           {effort && (
             <span className="pane-effort-pill">
-              <Brain size={10} />
+              <EffortIcon effort={effort} />
               <span>{effort}</span>
             </span>
           )}

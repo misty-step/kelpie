@@ -82,7 +82,7 @@ async fn build_fleet(poll: &mut PollState) -> Result<Fleet> {
                 continue;
             };
             let revision = p.get("revision").and_then(Value::as_u64).unwrap_or(0);
-            let summary = if revision != 0
+            let mut summary = if revision != 0
                 && poll.last_revision.get(&pane_id).copied() == Some(revision)
             {
                 poll.summaries
@@ -97,6 +97,14 @@ async fn build_fleet(poll: &mut PollState) -> Result<Fleet> {
                 poll.summaries.insert(pane_id.clone(), summary.clone());
                 summary
             };
+
+            if summary.model.is_none() || summary.effort.is_none() {
+                let path = session_path.clone();
+                summary = tokio::task::spawn_blocking(move || omp::tail_summary(&path))
+                    .await
+                    .unwrap_or(summary);
+                poll.summaries.insert(pane_id.clone(), summary.clone());
+            }
             poll.last_revision.insert(pane_id.clone(), revision);
             let updated_ms = if let Ok(meta) = tokio::fs::metadata(&session_path).await {
                 poll.last_sizes.insert(pane_id.clone(), meta.len());

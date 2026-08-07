@@ -500,6 +500,64 @@ pub struct PaneSummary {
     pub effort: Option<String>,
 }
 
+fn parse_event_meta(event: &Value, res: &mut PaneSummary) {
+    let evt_type = event.get("type").and_then(Value::as_str);
+    if evt_type == Some("model_change") {
+        if let Some(selector) = event.get("model").and_then(Value::as_str) {
+            if let Some((prov, mod_name)) = selector.split_once('/') {
+                res.provider = Some(prov.to_string());
+                res.model = Some(mod_name.to_string());
+            } else {
+                res.model = Some(selector.to_string());
+            }
+        }
+    }
+    if evt_type == Some("thinking_level_change") {
+        let lvl_val = event.get("configured")
+            .and_then(Value::as_str)
+            .or_else(|| event.get("thinkingLevel").and_then(Value::as_str))
+            .or_else(|| event.get("thinking_level").and_then(Value::as_str))
+            .or_else(|| event.get("level").and_then(Value::as_str));
+        if let Some(lvl) = lvl_val {
+            let lvl_lower = lvl.to_lowercase();
+            let formatted = match lvl_lower.as_str() {
+                "xhigh" | "extra_high" | "extra high" | "max" => "Max",
+                "high" => "High",
+                "medium" => "Medium",
+                "low" => "Low",
+                "off" | "none" | "0" => "Off",
+                _ => lvl,
+            };
+            res.effort = Some(formatted.to_string());
+        }
+    }
+    if let Some(message) = event.get("message") {
+        if let (Some(prov), Some(mod_name)) = (
+            message.get("provider").and_then(Value::as_str),
+            message.get("model").and_then(Value::as_str),
+        ) {
+            res.provider = Some(prov.to_string());
+            res.model = Some(mod_name.to_string());
+        }
+        let msg_lvl = message.get("configured")
+            .and_then(Value::as_str)
+            .or_else(|| message.get("thinkingLevel").and_then(Value::as_str))
+            .or_else(|| message.get("thinking_level").and_then(Value::as_str));
+        if let Some(lvl) = msg_lvl {
+            let lvl_lower = lvl.to_lowercase();
+            let formatted = match lvl_lower.as_str() {
+                "xhigh" | "extra_high" | "extra high" | "max" => "Max",
+                "high" => "High",
+                "medium" => "Medium",
+                "low" => "Low",
+                "off" | "none" | "0" => "Off",
+                _ => lvl,
+            };
+            res.effort = Some(formatted.to_string());
+        }
+    }
+}
+
 pub fn tail_summary(path: &str) -> PaneSummary {
     let mut res = PaneSummary::default();
     let Ok(meta) = std::fs::metadata(path) else {
@@ -512,68 +570,30 @@ pub fn tail_summary(path: &str) -> PaneSummary {
     let Ok(mut file) = File::open(path) else {
         return res;
     };
+
+    // First scan head 8KB to seed provider, model, and thinking_level from session setup
+    let reader_head = BufReader::new(&file);
+    for line in reader_head.lines().take(60).flatten() {
+        if let Ok(event) = serde_json::from_str::<Value>(&line) {
+            parse_event_meta(&event, &mut res);
+        }
+    }
+
+    // Now scan tail 32KB for recent messages, tool calls, pending asks, and model changes
     if file.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES))).is_err() {
         return res;
     }
-    let reader = BufReader::new(file);
+    let reader_tail = BufReader::new(file);
     let mut open_asks: HashMap<String, u64> = HashMap::new();
     let mut seq: u64 = 0;
-    for line in reader.lines().flatten() {
+    for line in reader_tail.lines().flatten() {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        let evt_type = event.get("type").and_then(Value::as_str);
-        if evt_type == Some("model_change") {
-            if let Some(selector) = event.get("model").and_then(Value::as_str) {
-                if let Some((prov, mod_name)) = selector.split_once('/') {
-                    res.provider = Some(prov.to_string());
-                    res.model = Some(mod_name.to_string());
-                }
-            }
-        }
-        if evt_type == Some("thinking_level_change") {
-            let lvl_val = event.get("configured")
-                .or_else(|| event.get("thinkingLevel"))
-                .or_else(|| event.get("thinking_level"))
-                .or_else(|| event.get("level"));
-            if let Some(lvl) = lvl_val.and_then(Value::as_str) {
-                let lvl_lower = lvl.to_lowercase();
-                let formatted = match lvl_lower.as_str() {
-                    "xhigh" | "extra_high" | "extra high" => "Extra High",
-                    "high" => "High",
-                    "medium" => "Medium",
-                    "low" => "Low",
-                    "off" | "none" => "Off",
-                    _ => lvl,
-                };
-                res.effort = Some(formatted.to_string());
-            }
-        }
+        parse_event_meta(&event, &mut res);
         let Some(message) = event.get("message") else {
             continue;
         };
-        if let (Some(prov), Some(mod_name)) = (
-            message.get("provider").and_then(Value::as_str),
-            message.get("model").and_then(Value::as_str),
-        ) {
-            res.provider = Some(prov.to_string());
-            res.model = Some(mod_name.to_string());
-        }
-        let msg_lvl = message.get("configured")
-            .or_else(|| message.get("thinkingLevel"))
-            .or_else(|| message.get("thinking_level"));
-        if let Some(lvl) = msg_lvl.and_then(Value::as_str) {
-            let lvl_lower = lvl.to_lowercase();
-            let formatted = match lvl_lower.as_str() {
-                "xhigh" | "extra_high" | "extra high" => "Extra High",
-                "high" => "High",
-                "medium" => "Medium",
-                "low" => "Low",
-                "off" | "none" => "Off",
-                _ => lvl,
-            };
-            res.effort = Some(formatted.to_string());
-        }
         let Some(role) = message.get("role").and_then(Value::as_str) else {
             continue;
         };
