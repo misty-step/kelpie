@@ -1,0 +1,788 @@
+{
+  "generatedAt": 1785883295124,
+  "reports": [
+    {
+      "provider": "openai-codex",
+      "fetchedAt": 1785883087173,
+      "limits": [
+        {
+          "id": "openai-codex:primary",
+          "label": "7 days",
+          "scope": {
+            "provider": "openai-codex",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 days",
+            "durationMs": 604800000,
+            "resetsAt": 1786196023000
+          },
+          "amount": {
+            "used": 100,
+            "limit": 100,
+            "remaining": 0,
+            "usedFraction": 1,
+            "remainingFraction": 0,
+            "unit": "percent"
+          },
+          "status": "exhausted"
+        },
+        {
+          "id": "openai-codex:spark:primary",
+          "label": "7 days (Spark)",
+          "scope": {
+            "provider": "openai-codex",
+            "accountId": "cd*",
+            "tier": "spark",
+            "modelId": "GPT-5.3-Codex-Spark",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 days",
+            "durationMs": 604800000,
+            "resetsAt": 1786487887000
+          },
+          "amount": {
+            "used": 0,
+            "limit": 100,
+            "remaining": 100,
+            "usedFraction": 0,
+            "remainingFraction": 1,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "resetCredits": {
+        "availableCount": 0
+      },
+      "metadata": {
+        "planType": "pro",
+        "allowed": false,
+        "limitReached": true,
+        "email": "ph*",
+        "accountId": "cd*",
+        "meterStates": {
+          "chat": {
+            "allowed": false,
+            "limitReached": true
+          },
+          "spark": {
+            "allowed": true,
+            "limitReached": false
+          }
+        },
+        "orgId": "cd*",
+        "orgName": "pr*"
+      }
+    },
+    {
+      "provider": "openai-codex",
+      "fetchedAt": 1785883087173,
+      "limits": [
+        {
+          "id": "openai-codex:primary",
+          "label": "7 days",
+          "scope": {
+            "provider": "openai-codex",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 days",
+            "durationMs": 604800000,
+            "resetsAt": 1786210162000
+          },
+          "amount": {
+            "used": 100,
+            "limit": 100,
+            "remaining": 0,
+            "usedFraction": 1,
+            "remainingFraction": 0,
+            "unit": "percent"
+          },
+          "status": "exhausted"
+        },
+        {
+          "id": "openai-codex:spark:primary",
+          "label": "7 days (Spark)",
+          "scope": {
+            "provider": "openai-codex",
+            "accountId": "51*",
+            "tier": "spark",
+            "modelId": "GPT-5.3-Codex-Spark",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 days",
+            "durationMs": 604800000,
+            "resetsAt": 1786487887000
+          },
+          "amount": {
+            "used": 0,
+            "limit": 100,
+            "remaining": 100,
+            "usedFraction": 0,
+            "remainingFraction": 1,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "resetCredits": {
+        "availableCount": 0
+      },
+      "metadata": {
+        "planType": "pro",
+        "allowed": false,
+        "limitReached": true,
+        "email": "ph*k*",
+        "accountId": "51*",
+        "meterStates": {
+          "chat": {
+            "allowed": false,
+            "limitReached": true
+          },
+          "spark": {
+            "allowed": true,
+            "limitReached": false
+          }
+        },
+        "orgId": "51*",
+        "orgName": "pr*"
+      }
+    },
+    {
+      "provider": "openai-codex",
+      "fetchedAt": 1785883087173,
+      "limits": [
+        {
+          "id": "openai-codex:primary",
+          "label": "7 days",
+          "scope": {
+            "provider": "openai-codex",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 days",
+            "durationMs": 604800000,
+            "resetsAt": 1786230015000
+          },
+          "amount": {
+            "used": 100,
+            "limit": 100,
+            "remaining": 0,
+            "usedFraction": 1,
+            "remainingFraction": 0,
+            "unit": "percent"
+          },
+          "status": "exhausted"
+        }
+      ],
+      "resetCredits": {
+        "availableCount": 0
+      },
+      "metadata": {
+        "planType": "team",
+        "allowed": false,
+        "limitReached": true,
+        "email": "ph*9*",
+        "accountId": "9d*",
+        "meterStates": {
+          "chat": {
+            "allowed": false,
+            "limitReached": true
+          }
+        },
+        "orgId": "9d*",
+        "orgName": "te*"
+      }
+    },
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1785882157860,
+      "limits": [
+        {
+          "id": "anthropic:5h",
+          "label": "Claude 5 Hour",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "5h",
+            "shared": true
+          },
+          "window": {
+            "id": "5h",
+            "label": "5 Hour",
+            "durationMs": 18000000,
+            "resetsAt": 1785898800000
+          },
+          "amount": {
+            "used": 12,
+            "limit": 100,
+            "remaining": 88,
+            "usedFraction": 0.12,
+            "remainingFraction": 0.88,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d",
+          "label": "Claude 7 Day",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "durationMs": 604800000,
+            "resetsAt": 1786348800000
+          },
+          "amount": {
+            "used": 22,
+            "limit": 100,
+            "remaining": 78,
+            "usedFraction": 0.22,
+            "remainingFraction": 0.78,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d:fable",
+          "label": "Claude 7 Day (Fable)",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "7d",
+            "tier": "fable"
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "durationMs": 604800000,
+            "resetsAt": 1786348800000
+          },
+          "amount": {
+            "used": 40,
+            "limit": 100,
+            "remaining": 60,
+            "usedFraction": 0.4,
+            "remainingFraction": 0.6,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "accountId": "8a*",
+        "email": "ph*",
+        "orgId": "98*",
+        "orgName": "ph*'*",
+        "endpoint": "https://api.anthropic.com/api/oauth/usage",
+        "headersUpdatedAt": 1785882157860
+      }
+    },
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1785883294707,
+      "limits": [
+        {
+          "id": "anthropic:5h",
+          "label": "Claude 5 Hour",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "5h",
+            "shared": true
+          },
+          "window": {
+            "id": "5h",
+            "label": "5 Hour",
+            "durationMs": 18000000,
+            "resetsAt": 1785897000606
+          },
+          "amount": {
+            "used": 24,
+            "limit": 100,
+            "remaining": 76,
+            "usedFraction": 0.24,
+            "remainingFraction": 0.76,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d",
+          "label": "Claude 7 Day",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "durationMs": 604800000,
+            "resetsAt": 1786269600606
+          },
+          "amount": {
+            "used": 55,
+            "limit": 100,
+            "remaining": 45,
+            "usedFraction": 0.55,
+            "remainingFraction": 0.44999999999999996,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d:fable",
+          "label": "Claude 7 Day (Fable)",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "7d",
+            "tier": "fable"
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "durationMs": 604800000,
+            "resetsAt": 1786269599607
+          },
+          "amount": {
+            "used": 100,
+            "limit": 100,
+            "remaining": 0,
+            "usedFraction": 1,
+            "remainingFraction": 0,
+            "unit": "percent"
+          },
+          "status": "exhausted"
+        }
+      ],
+      "metadata": {
+        "endpoint": "https://api.anthropic.com/api/oauth/usage",
+        "accountId": "e1*",
+        "email": "ph*9*",
+        "orgId": "cb*",
+        "orgName": "r9*"
+      }
+    },
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1785883294569,
+      "limits": [
+        {
+          "id": "anthropic:5h",
+          "label": "Claude 5 Hour",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "5h",
+            "shared": true
+          },
+          "window": {
+            "id": "5h",
+            "label": "5 Hour",
+            "durationMs": 18000000,
+            "resetsAt": 1785898800515
+          },
+          "amount": {
+            "used": 19,
+            "limit": 100,
+            "remaining": 81,
+            "usedFraction": 0.19,
+            "remainingFraction": 0.81,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d",
+          "label": "Claude 7 Day",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "7d",
+            "shared": true
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "durationMs": 604800000,
+            "resetsAt": 1786348800515
+          },
+          "amount": {
+            "used": 24,
+            "limit": 100,
+            "remaining": 76,
+            "usedFraction": 0.24,
+            "remainingFraction": 0.76,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d:fable",
+          "label": "Claude 7 Day (Fable)",
+          "scope": {
+            "provider": "anthropic",
+            "windowId": "7d",
+            "tier": "fable"
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "durationMs": 604800000,
+            "resetsAt": 1786348800515
+          },
+          "amount": {
+            "used": 43,
+            "limit": 100,
+            "remaining": 57,
+            "usedFraction": 0.43,
+            "remainingFraction": 0.5700000000000001,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "endpoint": "https://api.anthropic.com/api/oauth/usage",
+        "accountId": "c9*",
+        "email": "ph*k*",
+        "orgId": "f8*",
+        "orgName": "Ph*"
+      }
+    },
+    {
+      "provider": "xai-oauth",
+      "fetchedAt": 1785883295121,
+      "limits": [
+        {
+          "id": "xai-oauth:credits:1w",
+          "label": "SuperGrok Weekly Credits",
+          "scope": {
+            "provider": "xai-oauth",
+            "accountId": "dc*",
+            "windowId": "1w",
+            "shared": true
+          },
+          "window": {
+            "id": "1w",
+            "label": "Weekly",
+            "durationMs": 604800000,
+            "resetsAt": 1785935184800
+          },
+          "amount": {
+            "used": 100,
+            "limit": 100,
+            "remaining": 0,
+            "usedFraction": 1,
+            "remainingFraction": 0,
+            "unit": "percent"
+          },
+          "status": "exhausted"
+        },
+        {
+          "id": "xai-oauth:product:grokbuild:1w",
+          "label": "Grok Build (Weekly)",
+          "scope": {
+            "provider": "xai-oauth",
+            "accountId": "dc*",
+            "windowId": "1w",
+            "shared": true
+          },
+          "window": {
+            "id": "1w",
+            "label": "Weekly",
+            "durationMs": 604800000,
+            "resetsAt": 1785935184800
+          },
+          "amount": {
+            "used": 99,
+            "limit": 100,
+            "remaining": 1,
+            "usedFraction": 0.99,
+            "remainingFraction": 0.010000000000000009,
+            "unit": "percent"
+          },
+          "status": "warning"
+        },
+        {
+          "id": "xai-oauth:product:grokchat:1w",
+          "label": "GrokChat (Weekly)",
+          "scope": {
+            "provider": "xai-oauth",
+            "accountId": "dc*",
+            "windowId": "1w",
+            "shared": true
+          },
+          "window": {
+            "id": "1w",
+            "label": "Weekly",
+            "durationMs": 604800000,
+            "resetsAt": 1785935184800
+          },
+          "amount": {
+            "used": 1,
+            "limit": 100,
+            "remaining": 99,
+            "usedFraction": 0.01,
+            "remainingFraction": 0.99,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "xai-oauth:included:1mo",
+          "label": "SuperGrok Monthly Included",
+          "scope": {
+            "provider": "xai-oauth",
+            "accountId": "dc*",
+            "windowId": "1mo",
+            "shared": true
+          },
+          "window": {
+            "id": "1mo",
+            "label": "Monthly",
+            "durationMs": 2678400000,
+            "resetsAt": 1788220800000
+          },
+          "amount": {
+            "used": 30555,
+            "limit": 150000,
+            "remaining": 119445,
+            "usedFraction": 0.2037,
+            "remainingFraction": 0.7963,
+            "unit": "unknown"
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "endpoint": "https://cli-chat-proxy.grok.com/v1/billing?format=credits + https://cli-chat-proxy.grok.com/v1/billing",
+        "source": "cli-chat-proxy.grok.com/v1/billing",
+        "billingKind": "unified",
+        "accountId": "dc*",
+        "email": "gr*"
+      }
+    },
+    {
+      "provider": "kimi-code",
+      "fetchedAt": 1785883294097,
+      "limits": [
+        {
+          "id": "kimi-code:0",
+          "label": "Total quota",
+          "scope": {
+            "provider": "kimi-code",
+            "windowId": "default",
+            "shared": true
+          },
+          "window": {
+            "id": "default",
+            "label": "Usage window",
+            "resetsAt": 1785945213581
+          },
+          "amount": {
+            "unit": "unknown",
+            "limit": 100,
+            "used": 100,
+            "usedFraction": 1,
+            "remainingFraction": 0,
+            "remaining": 0
+          },
+          "status": "exhausted"
+        },
+        {
+          "id": "kimi-code:1",
+          "label": "5h limit",
+          "scope": {
+            "provider": "kimi-code",
+            "windowId": "300time_unit_minute",
+            "shared": true
+          },
+          "window": {
+            "id": "300time_unit_minute",
+            "label": "5h limit",
+            "durationMs": 18000000,
+            "resetsAt": 1785887613581
+          },
+          "amount": {
+            "unit": "unknown",
+            "limit": 100,
+            "used": 0,
+            "remaining": 100,
+            "usedFraction": 0,
+            "remainingFraction": 1
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "endpoint": "https://api.kimi.com/coding/v1/usages"
+      }
+    },
+    {
+      "provider": "google-antigravity",
+      "fetchedAt": 1785883294098,
+      "limits": [
+        {
+          "id": "google-antigravity:google:default:daily",
+          "label": "Usage (Google)",
+          "scope": {
+            "provider": "google-antigravity",
+            "projectId": "ze*",
+            "windowId": "daily"
+          },
+          "window": {
+            "id": "daily",
+            "label": "Daily",
+            "durationMs": 86400000,
+            "resetsAt": 1785896818000
+          },
+          "amount": {
+            "unit": "percent",
+            "remainingFraction": 0.1802514,
+            "usedFraction": 0.8197486,
+            "remaining": 18.02514,
+            "used": 81.97486,
+            "limit": 100
+          },
+          "status": "ok"
+        },
+        {
+          "id": "google-antigravity:openai:default:daily",
+          "label": "Usage (OpenAI)",
+          "scope": {
+            "provider": "google-antigravity",
+            "projectId": "ze*",
+            "windowId": "daily"
+          },
+          "window": {
+            "id": "daily",
+            "label": "Daily",
+            "durationMs": 86400000,
+            "resetsAt": 1785901294000
+          },
+          "amount": {
+            "unit": "percent",
+            "remainingFraction": 1,
+            "usedFraction": 0,
+            "remaining": 100,
+            "used": 0,
+            "limit": 100
+          },
+          "status": "ok"
+        },
+        {
+          "id": "google-antigravity:anthropic:default:daily",
+          "label": "Usage (Anthropic)",
+          "scope": {
+            "provider": "google-antigravity",
+            "projectId": "ze*",
+            "windowId": "daily"
+          },
+          "window": {
+            "id": "daily",
+            "label": "Daily",
+            "durationMs": 86400000,
+            "resetsAt": 1785901294000
+          },
+          "amount": {
+            "unit": "percent",
+            "remainingFraction": 1,
+            "usedFraction": 0,
+            "remaining": 100,
+            "used": 0,
+            "limit": 100
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "endpoint": "https://daily-cloudcode-pa.googleapis.com",
+        "projectId": "ze*",
+        "email": "ph*k*"
+      }
+    }
+  ],
+  "accountsWithoutUsage": [],
+  "disabledCredentials": [],
+  "capacity": {
+    "openai-codex": [
+      {
+        "window": "7d",
+        "durationMs": 604800000,
+        "accounts": 3,
+        "usedAccounts": 3,
+        "remainingAccounts": 0
+      }
+    ],
+    "anthropic": [
+      {
+        "window": "5h",
+        "durationMs": 18000000,
+        "accounts": 3,
+        "usedAccounts": 0.55,
+        "remainingAccounts": 2.45
+      },
+      {
+        "window": "7d",
+        "durationMs": 604800000,
+        "accounts": 3,
+        "usedAccounts": 1.8299999999999998,
+        "remainingAccounts": 1.1700000000000002
+      }
+    ],
+    "xai-oauth": [
+      {
+        "window": "7d",
+        "durationMs": 604800000,
+        "accounts": 1,
+        "usedAccounts": 1,
+        "remainingAccounts": 0
+      },
+      {
+        "window": "31d",
+        "durationMs": 2678400000,
+        "accounts": 1,
+        "usedAccounts": 0.2037,
+        "remainingAccounts": 0.7963
+      }
+    ],
+    "kimi-code": [
+      {
+        "window": "5h",
+        "durationMs": 18000000,
+        "accounts": 1,
+        "usedAccounts": 0,
+        "remainingAccounts": 1
+      },
+      {
+        "window": "Usage window",
+        "accounts": 1,
+        "usedAccounts": 1,
+        "remainingAccounts": 0
+      }
+    ],
+    "google-antigravity": [
+      {
+        "window": "1d",
+        "durationMs": 86400000,
+        "accounts": 1,
+        "usedAccounts": 0.8197486,
+        "remainingAccounts": 0.18025139999999995
+      }
+    ]
+  }
+}

@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Sidebar C — Dense ops</title><style>
+:root{
+  --bg:#f3f3f3; --surface:#ffffff; --border:#e0e0e0; --seam:#efefef;
+  --text:#2d2e30; --soft:#666666; --faint:#898989;
+  --brand:#8891e1; --brand-bg:#eef1ff; --brand-ink:#5b66c8;
+  --ok:#3c9663; --ok-bg:#e8f6ee; --ok-border:#a2ccb4;
+  --err:#c44; --err-bg:#fdecec; --err-border:#f0b4b4;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);color:var(--text);background:#dfe3ea;display:flex;height:100%}
+button{font:inherit;color:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .7s linear infinite}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.app{display:flex;width:min(1100px,100%);height:min(820px,100%);margin:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 12px 40px rgba(20,22,30,.12)}
+.main{flex:1;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13px;border-left:1px solid var(--seam)}
+.sb{width:300px;flex:none;display:flex;flex-direction:column;background:var(--bg);min-height:0}
+.sb-head{flex:none;padding:12px 14px 10px;border-bottom:1px solid var(--seam)}
+.sb-head h1{margin:0;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.sb-head .sub{margin-top:2px;font-size:12px;color:var(--soft)}
+.sb-list{flex:1;overflow:auto;padding:8px}
+.sb-foot{flex:none;border-top:1px solid var(--seam);padding:10px;font-size:12px;color:var(--faint)}
+
+.sb{width:320px}
+.sb-list{padding:4px 6px 8px}
+.ws{margin:0 0 2px}
+.ws-h{display:flex;align-items:center;gap:6px;padding:5px 6px 3px;position:sticky;top:0;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(6px);z-index:2;border-bottom:1px solid transparent}
+.ws-name{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+.ws-count{margin-left:auto;font-size:10.5px;font-family:var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:16px minmax(0,1fr) 72px 36px;align-items:center;column-gap:6px;width:100%;height:28px;padding:0 6px;border:0;border-radius:6px;background:transparent;cursor:pointer;text-align:left}
+.row:hover{background:var(--surface)}
+.row.sel{background:var(--surface);outline:1px solid var(--border)}
+.row .ico{width:12px;height:12px;display:inline-flex;align-items:center;justify-content:center}
+.row .ico .ring{width:11px;height:11px;border:2px solid #c3cdf6;border-top-color:var(--brand-ink);border-radius:50%;display:block}
+.row .ico .bl{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--ok-bg)}
+.row .ico .id{width:7px;height:7px;border-radius:50%;background:var(--border)}
+.row .ico .dn{width:7px;height:7px;border-radius:50%;background:#bbb}
+.row .title{font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row.needs .title{font-weight:600;color:#1f6838}
+.row .cwd{font-size:11px;font-family:var(--mono);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+.row .time{font-size:11px;font-family:var(--mono);color:var(--faint);text-align:right;font-variant-numeric:tabular-nums}
+.colhead{display:grid;grid-template-columns:16px minmax(0,1fr) 72px 36px;column-gap:6px;padding:4px 6px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.colhead span:nth-child(3),.colhead span:nth-child(4){text-align:right}
+</style></head><body>
+<div class="app"><aside class="sb"><div class="sb-head"><h1>Fleet</h1><div class="sub">Tabular scan · fixed columns</div></div>
+<div class="colhead" aria-hidden="true"><span></span><span>Task</span><span>cwd</span><span>age</span></div>
+<div class="sb-list"><section class="ws"><div class="ws-h"><span class="ws-name">iron-forest</span><span class="ws-count">1</span></div><button type="button" class="row needs" data-id="p1" title="/home/phaedrus/Development/iron-forest">
+              <span class="ico"><span class="bl"></span></span>
+              <span class="title">π ! iron-forest</span>
+              <span class="cwd">iron-forest</span>
+              <span class="time">2m</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">olympus</span><span class="ws-count">1</span></div><button type="button" class="row sel" data-id="p2" title="/home/phaedrus/Development/demo/wA">
+              <span class="ico"><span class="ring spin"></span></span>
+              <span class="title">Simplify service implementation strategy</span>
+              <span class="cwd">wA</span>
+              <span class="time">5m</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">kelpie</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p3" title="/home/phaedrus/Development/misty-step/kelpie">
+              <span class="ico"><span class="ring spin"></span></span>
+              <span class="title">kelpie</span>
+              <span class="cwd">kelpie</span>
+              <span class="time">7m</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">bluetooth-demo</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p4" title="/home/phaedrus/Development/demo/bt">
+              <span class="ico"><span class="ring spin"></span></span>
+              <span class="title">Improve Bluetooth connection reliability</span>
+              <span class="cwd">bt</span>
+              <span class="time">12m</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">time-tracker</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p5" title="/home/phaedrus/Development/demo/wC">
+              <span class="ico"><span class="id"></span></span>
+              <span class="title">Initialize TI-101 remediation tasks</span>
+              <span class="cwd">wC</span>
+              <span class="time">1h</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">canary</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p6" title="/home/phaedrus/Development/demo/wF">
+              <span class="ico"><span class="id"></span></span>
+              <span class="title">Repair canary host connectivity</span>
+              <span class="cwd">wF</span>
+              <span class="time">2h</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">cantrip</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p7" title="/home/phaedrus/Development/demo/wJ">
+              <span class="ico"><span class="id"></span></span>
+              <span class="title">Investigate cloud STT credentials</span>
+              <span class="cwd">wJ</span>
+              <span class="time">3h</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">mint</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p8" title="/home/phaedrus/Development/demo/wK">
+              <span class="ico"><span class="id"></span></span>
+              <span class="title">Reconcile agent work with Mint security</span>
+              <span class="cwd">wK</span>
+              <span class="time">4h</span>
+            </button></section><section class="ws"><div class="ws-h"><span class="ws-name">habitat</span><span class="ws-count">1</span></div><button type="button" class="row" data-id="p9" title="/home/phaedrus/Development/demo/wB">
+              <span class="ico"><span class="dn"></span></span>
+              <span class="title">Plan webhook outbox and deployment</span>
+              <span class="cwd">wB</span>
+              <span class="time">1d</span>
+            </button></section></div><div class="sb-foot">C · Dense ops band</div></aside>
+<main class="main" id="main">Scan and select</main></div>
+<script>
+const rows=[...document.querySelectorAll('.row')];
+function select(el){rows.forEach(r=>r.classList.remove('sel'));el.classList.add('sel');document.getElementById('main').textContent=el.querySelector('.title').textContent;el.focus()}
+rows.forEach(el=>el.addEventListener('click',()=>select(el)));
+document.querySelector('.sb-list').addEventListener('keydown',e=>{
+  const i=rows.indexOf(document.activeElement);
+  if(e.key==='ArrowDown'){e.preventDefault();rows[Math.min(rows.length-1,(i<0?0:i+1))].focus()}
+  if(e.key==='ArrowUp'){e.preventDefault();rows[Math.max(0,(i<0?0:i-1))].focus()}
+  if(e.key==='Enter'&&document.activeElement.classList.contains('row')) select(document.activeElement);
+});
+rows.forEach(r=>r.tabIndex=0);
+const init=document.querySelector('.row.sel'); if(init) select(init);
+</script></body></html>

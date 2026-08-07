@@ -1,0 +1,10 @@
+π ⠇ Prototype the Kelpie desktop console
+────────────────────────────────────────────────────────────────────────────────
+❯ find desktop -maxdepth 2 -type f | sort
+desktop/package.json
+desktop/src/App.tsx
+desktop/src/components/Chat.tsx
+desktop/src-tauri/src/lib.rs
+desktop/src-tauri/src/omp.rs
+
+❯ ⠇ waiting for your input…

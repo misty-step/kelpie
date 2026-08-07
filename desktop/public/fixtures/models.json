@@ -1,0 +1,625 @@
+{
+ "models": [
+  {
+   "provider": "anthropic",
+   "id": "claude-fable-5",
+   "selector": "anthropic/claude-fable-5",
+   "name": "Claude Fable 5",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-5",
+   "selector": "anthropic/claude-opus-5",
+   "name": "Claude Opus 5",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-sonnet-5",
+   "selector": "anthropic/claude-sonnet-5",
+   "name": "Claude Sonnet 5",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-mythos-5",
+   "selector": "anthropic/claude-mythos-5",
+   "name": "Claude Mythos 5",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-haiku-4-5",
+   "selector": "anthropic/claude-haiku-4-5",
+   "name": "Claude Haiku 4.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.6-luna",
+   "selector": "openai-codex/gpt-5.6-luna",
+   "name": "GPT-5.6-Luna",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.6-sol",
+   "selector": "openai-codex/gpt-5.6-sol",
+   "name": "GPT-5.6-Sol",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.6-terra",
+   "selector": "openai-codex/gpt-5.6-terra",
+   "name": "GPT-5.6-Terra",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.5",
+   "selector": "openai-codex/gpt-5.5",
+   "name": "GPT-5.5",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.4",
+   "selector": "openai-codex/gpt-5.4",
+   "name": "GPT-5.4",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "kimi-code",
+   "id": "k3",
+   "selector": "kimi-code/k3",
+   "name": "K3",
+   "thinking": [
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3.6-flash",
+   "selector": "google-antigravity/gemini-3.6-flash",
+   "name": "Gemini 3.6 Flash",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3-pro",
+   "selector": "google-antigravity/gemini-3-pro",
+   "name": "Gemini 3 Pro",
+   "thinking": [
+    "low",
+    "high"
+   ]
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-4.5",
+   "selector": "xai-oauth/grok-4.5",
+   "name": "Grok 4.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "openrouter",
+   "id": "deepseek/deepseek-v4-flash-0731",
+   "selector": "openrouter/deepseek/deepseek-v4-flash-0731",
+   "name": "DeepSeek V4 Flash 0731",
+   "thinking": [
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  {
+   "provider": "openrouter",
+   "id": "openai/gpt-5.6-luna",
+   "selector": "openrouter/openai/gpt-5.6-luna",
+   "name": "GPT-5.6 Luna",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-4-0",
+   "selector": "anthropic/claude-opus-4-0",
+   "name": "Claude Opus 4",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-4-1",
+   "selector": "anthropic/claude-opus-4-1",
+   "name": "Claude Opus 4.1",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-4-5",
+   "selector": "anthropic/claude-opus-4-5",
+   "name": "Claude Opus 4.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-4-6",
+   "selector": "anthropic/claude-opus-4-6",
+   "name": "Claude Opus 4.6",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-4-7",
+   "selector": "anthropic/claude-opus-4-7",
+   "name": "Claude Opus 4.7",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-opus-4-8",
+   "selector": "anthropic/claude-opus-4-8",
+   "name": "Claude Opus 4.8",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-sonnet-4-0",
+   "selector": "anthropic/claude-sonnet-4-0",
+   "name": "Claude Sonnet 4",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-sonnet-4-5",
+   "selector": "anthropic/claude-sonnet-4-5",
+   "name": "Claude Sonnet 4.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "id": "claude-sonnet-4-6",
+   "selector": "anthropic/claude-sonnet-4-6",
+   "name": "Claude Sonnet 4.6",
+   "thinking": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "claude-opus-4-5",
+   "selector": "google-antigravity/claude-opus-4-5",
+   "name": "Claude Opus 4.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "claude-opus-4-6",
+   "selector": "google-antigravity/claude-opus-4-6",
+   "name": "Claude Opus 4.6",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "claude-sonnet-4-5",
+   "selector": "google-antigravity/claude-sonnet-4-5",
+   "name": "Claude Sonnet 4.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "claude-sonnet-4-6",
+   "selector": "google-antigravity/claude-sonnet-4-6",
+   "name": "Claude Sonnet 4.6",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-2.5-flash",
+   "selector": "google-antigravity/gemini-2.5-flash",
+   "name": "Gemini 2.5 Flash",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-2.5-flash-lite",
+   "selector": "google-antigravity/gemini-2.5-flash-lite",
+   "name": "Gemini 3.1 Flash Lite",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-2.5-pro",
+   "selector": "google-antigravity/gemini-2.5-pro",
+   "name": "Gemini 2.5 Pro",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3-flash",
+   "selector": "google-antigravity/gemini-3-flash",
+   "name": "Gemini 3 Flash",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3.1-flash-image",
+   "selector": "google-antigravity/gemini-3.1-flash-image",
+   "name": "Gemini 3.1 Flash Image",
+   "thinking": null
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3.1-flash-lite",
+   "selector": "google-antigravity/gemini-3.1-flash-lite",
+   "name": "Gemini 3.1 Flash Lite",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3.1-pro",
+   "selector": "google-antigravity/gemini-3.1-pro",
+   "name": "Gemini 3.1 Pro",
+   "thinking": [
+    "low",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gemini-3.5-flash",
+   "selector": "google-antigravity/gemini-3.5-flash",
+   "name": "Gemini 3.5 Flash",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "gpt-oss-120b",
+   "selector": "google-antigravity/gpt-oss-120b",
+   "name": "GPT-OSS 120B",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "tab_flash_lite_preview",
+   "selector": "google-antigravity/tab_flash_lite_preview",
+   "name": "tab_flash_lite_preview",
+   "thinking": null
+  },
+  {
+   "provider": "google-antigravity",
+   "id": "tab_jump_flash_lite_preview",
+   "selector": "google-antigravity/tab_jump_flash_lite_preview",
+   "name": "tab_jump_flash_lite_preview",
+   "thinking": null
+  },
+  {
+   "provider": "kimi-code",
+   "id": "k3-256k",
+   "selector": "kimi-code/k3-256k",
+   "name": "K3-256k",
+   "thinking": [
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  {
+   "provider": "kimi-code",
+   "id": "kimi-for-coding",
+   "selector": "kimi-code/kimi-for-coding",
+   "name": "K2.7 Coding",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "kimi-code",
+   "id": "kimi-for-coding-highspeed",
+   "selector": "kimi-code/kimi-for-coding-highspeed",
+   "name": "K2.7 Coding Highspeed",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "kimi-code",
+   "id": "kimi-k2",
+   "selector": "kimi-code/kimi-k2",
+   "name": "Kimi K2",
+   "thinking": null
+  },
+  {
+   "provider": "kimi-code",
+   "id": "kimi-k2-turbo-preview",
+   "selector": "kimi-code/kimi-k2-turbo-preview",
+   "name": "Kimi K2 Turbo",
+   "thinking": null
+  },
+  {
+   "provider": "kimi-code",
+   "id": "kimi-k2.5",
+   "selector": "kimi-code/kimi-k2.5",
+   "name": "Kimi K2.5",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.3-codex-spark",
+   "selector": "openai-codex/gpt-5.3-codex-spark",
+   "name": "GPT-5.3-Codex-Spark",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "openai-codex",
+   "id": "gpt-5.4-mini",
+   "selector": "openai-codex/gpt-5.4-mini",
+   "name": "GPT-5.4-Mini",
+   "thinking": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-4.20-0309-non-reasoning",
+   "selector": "xai-oauth/grok-4.20-0309-non-reasoning",
+   "name": "Grok 4.20 (Non-Reasoning)",
+   "thinking": null
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-4.20-0309-reasoning",
+   "selector": "xai-oauth/grok-4.20-0309-reasoning",
+   "name": "Grok 4.20 (Reasoning)",
+   "thinking": null
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-4.20-multi-agent-0309",
+   "selector": "xai-oauth/grok-4.20-multi-agent-0309",
+   "name": "Grok 4.20 (Multi-Agent)",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-4.3",
+   "selector": "xai-oauth/grok-4.3",
+   "name": "Grok 4.3",
+   "thinking": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-build",
+   "selector": "xai-oauth/grok-build",
+   "name": "Grok Build",
+   "thinking": null
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-build-0.1",
+   "selector": "xai-oauth/grok-build-0.1",
+   "name": "Grok Build 0.1",
+   "thinking": null
+  },
+  {
+   "provider": "xai-oauth",
+   "id": "grok-composer-2.5-fast",
+   "selector": "xai-oauth/grok-composer-2.5-fast",
+   "name": "Grok Composer 2.5 Fast",
+   "thinking": null
+  }
+ ]
+}

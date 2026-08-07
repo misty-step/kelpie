@@ -1,0 +1,158 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Sidebar B — Places</title><style>
+:root{
+  --bg:#f3f3f3; --surface:#ffffff; --border:#e0e0e0; --seam:#efefef;
+  --text:#2d2e30; --soft:#666666; --faint:#898989;
+  --brand:#8891e1; --brand-bg:#eef1ff; --brand-ink:#5b66c8;
+  --ok:#3c9663; --ok-bg:#e8f6ee; --ok-border:#a2ccb4;
+  --err:#c44; --err-bg:#fdecec; --err-border:#f0b4b4;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);color:var(--text);background:#dfe3ea;display:flex;height:100%}
+button{font:inherit;color:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .7s linear infinite}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.app{display:flex;width:min(1100px,100%);height:min(820px,100%);margin:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 12px 40px rgba(20,22,30,.12)}
+.main{flex:1;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13px;border-left:1px solid var(--seam)}
+.sb{width:300px;flex:none;display:flex;flex-direction:column;background:var(--bg);min-height:0}
+.sb-head{flex:none;padding:12px 14px 10px;border-bottom:1px solid var(--seam)}
+.sb-head h1{margin:0;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.sb-head .sub{margin-top:2px;font-size:12px;color:var(--soft)}
+.sb-list{flex:1;overflow:auto;padding:8px}
+.sb-foot{flex:none;border-top:1px solid var(--seam);padding:10px;font-size:12px;color:var(--faint)}
+
+.sb{width:312px;background:#f0f1f5}
+.sb-head{background:var(--surface);border-bottom:1px solid var(--border)}
+.sb-head h1{text-transform:none;letter-spacing:-.01em;font-size:15px;color:var(--text);font-weight:700}
+.place{margin:0 8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.place-h{display:flex;gap:10px;padding:12px 12px 10px;border-bottom:1px solid var(--seam);position:relative}
+.place-h::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--brand)}
+.mono-g{width:34px;height:34px;border-radius:10px;background:var(--brand-bg);color:var(--brand-ink);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none;letter-spacing:.02em}
+.place-meta{min-width:0;flex:1}
+.place-name{font-size:14px;font-weight:700;color:var(--text)}
+.place-path{margin-top:2px;font-family:var(--mono);font-size:11.5px;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.place-count{font-size:11px;color:var(--faint);align-self:start;padding-top:2px}
+.agent{display:flex;flex-direction:column;gap:4px;width:100%;padding:10px 12px 12px 16px;border:0;border-top:1px solid transparent;background:transparent;text-align:left;cursor:pointer;border-left:3px solid transparent}
+.agent:hover{background:#fafafb}
+.agent.sel{background:var(--brand-bg);border-left-color:var(--brand)}
+.agent-top{display:flex;align-items:center;gap:8px}
+.agent-title{flex:1;font-size:13.5px;font-weight:600;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--border);color:var(--soft);background:var(--bg);display:inline-flex;align-items:center;gap:4px}
+.pill.needs{background:var(--ok-bg);border-color:var(--ok-border);color:#1f6838}
+.pill.working{background:var(--brand-bg);border-color:#c3cdf6;color:var(--brand-ink)}
+.pill .dot{width:8px;height:8px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent}
+.agent-story{font-size:12px;color:var(--soft);line-height:1.35}
+.agent-story b{color:var(--text);font-weight:600}
+.agent-time{font-size:11px;color:var(--faint);font-family:var(--mono)}
+</style></head><body>
+<div class="app"><aside class="sb"><div class="sb-head"><h1>Places</h1><div class="sub">Workspace as home base · agents inside</div></div><div class="sb-list"><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">IF</div>
+            <div class="place-meta">
+              <div class="place-name">iron-forest</div>
+              <div class="place-path" title="/home/phaedrus/Development/iron-forest">~/…/Development/iron-forest</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p1">
+              <div class="agent-top"><span class="agent-title">π ! iron-forest</span><span class="pill needs">needs input</span></div>
+              <div class="agent-story">In <b>iron-forest</b> · last active 2m</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">OL</div>
+            <div class="place-meta">
+              <div class="place-name">olympus</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/wA">~/…/Development/demo/wA</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent sel" data-id="p2">
+              <div class="agent-top"><span class="agent-title">Simplify service implementation strategy</span><span class="pill working"><span class="dot spin" aria-hidden="true"></span>working</span></div>
+              <div class="agent-story">In <b>wA</b> · last active 5m</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">KE</div>
+            <div class="place-meta">
+              <div class="place-name">kelpie</div>
+              <div class="place-path" title="/home/phaedrus/Development/misty-step/kelpie">~/…/Development/misty-step/kelpie</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p3">
+              <div class="agent-top"><span class="agent-title">kelpie</span><span class="pill working"><span class="dot spin" aria-hidden="true"></span>working</span></div>
+              <div class="agent-story">In <b>kelpie</b> · last active 7m</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">BT</div>
+            <div class="place-meta">
+              <div class="place-name">bluetooth-demo</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/bt">~/…/Development/demo/bt</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p4">
+              <div class="agent-top"><span class="agent-title">Improve Bluetooth connection reliability</span><span class="pill working"><span class="dot spin" aria-hidden="true"></span>working</span></div>
+              <div class="agent-story">In <b>bt</b> · last active 12m</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">TT</div>
+            <div class="place-meta">
+              <div class="place-name">time-tracker</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/wC">~/…/Development/demo/wC</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p5">
+              <div class="agent-top"><span class="agent-title">Initialize TI-101 remediation tasks</span><span class="pill idle">idle</span></div>
+              <div class="agent-story">In <b>wC</b> · last active 1h</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">CA</div>
+            <div class="place-meta">
+              <div class="place-name">canary</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/wF">~/…/Development/demo/wF</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p6">
+              <div class="agent-top"><span class="agent-title">Repair canary host connectivity</span><span class="pill idle">idle</span></div>
+              <div class="agent-story">In <b>wF</b> · last active 2h</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">CT</div>
+            <div class="place-meta">
+              <div class="place-name">cantrip</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/wJ">~/…/Development/demo/wJ</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p7">
+              <div class="agent-top"><span class="agent-title">Investigate cloud STT credentials</span><span class="pill idle">idle</span></div>
+              <div class="agent-story">In <b>wJ</b> · last active 3h</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">MI</div>
+            <div class="place-meta">
+              <div class="place-name">mint</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/wK">~/…/Development/demo/wK</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p8">
+              <div class="agent-top"><span class="agent-title">Reconcile agent work with Mint security</span><span class="pill idle">idle</span></div>
+              <div class="agent-story">In <b>wK</b> · last active 4h</div>
+            </button></section><section class="place">
+          <header class="place-h">
+            <div class="mono-g" aria-hidden="true">HA</div>
+            <div class="place-meta">
+              <div class="place-name">habitat</div>
+              <div class="place-path" title="/home/phaedrus/Development/demo/wB">~/…/Development/demo/wB</div>
+            </div>
+            <div class="place-count">1</div>
+          </header><button type="button" class="agent" data-id="p9">
+              <div class="agent-top"><span class="agent-title">Plan webhook outbox and deployment</span><span class="pill done">done</span></div>
+              <div class="agent-story">In <b>wB</b> · last active 1d</div>
+            </button></section></div><div class="sb-foot">B · Identity / place narrative</div></aside>
+<main class="main" id="main">Enter a place</main></div>
+<script>
+document.querySelectorAll('.agent').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('.agent').forEach(a=>a.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('main').textContent = el.querySelector('.agent-title').textContent;
+}));
+</script></body></html>

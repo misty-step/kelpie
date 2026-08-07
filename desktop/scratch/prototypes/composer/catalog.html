@@ -1,0 +1,1966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kelpie composer — direction catalog</title>
+<style>
+  :root {
+    --bg: #f3f3f3;
+    --surface: #ffffff;
+    --border: #e0e0e0;
+    --seam: #efefef;
+    --text: #2d2e30;
+    --soft: #666666;
+    --faint: #898989;
+    --brand: #8891e1;
+    --brand-ink: #5b66c8;
+    --brand-bg: #eef1ff;
+    --ok-bg: #e8f6ee;
+    --ok: #1f6838;
+    --radius: 12px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.45;
+  }
+  a { color: var(--brand-ink); }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 20px 80px; }
+  #brief {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    margin-bottom: 16px;
+  }
+  #brief h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.02em; }
+  #brief .question { color: var(--soft); margin: 0 0 14px; font-size: 14.5px; }
+  .brief-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px 18px;
+    font-size: 13px;
+  }
+  .brief-grid dt { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
+  .brief-grid dd { margin: 2px 0 0; color: var(--text); }
+  .rules {
+    margin: 14px 0 0;
+    padding: 10px 12px;
+    background: var(--brand-bg);
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--soft);
+  }
+  .rules strong { color: var(--brand-ink); }
+  #compare {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    font-size: 13.5px;
+  }
+  #compare h2 { margin: 0 0 8px; font-size: 15px; }
+  #compare ul { margin: 0; padding-left: 18px; color: var(--soft); }
+  #compare li { margin: 4px 0; }
+  nav.dir-nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 0;
+    margin-bottom: 8px;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+  }
+  nav.dir-nav .nav-btn {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  nav.dir-nav .nav-btn[aria-current="true"] {
+    border-color: var(--brand);
+    background: var(--brand-bg);
+    color: var(--brand-ink);
+    font-weight: 600;
+  }
+  nav.dir-nav .spacer { flex: 1; }
+  nav.dir-nav .step {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .direction {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 18px 20px;
+    margin-bottom: 22px;
+    scroll-margin-top: 64px;
+  }
+  .direction.is-locked {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-bg);
+  }
+  .dir-head h2 { margin: 0 0 6px; font-size: 18px; }
+  .thesis { margin: 0 0 10px; font-size: 14.5px; color: var(--soft); }
+  .lens, .structure { margin: 0 0 6px; font-size: 13px; color: var(--text); }
+  .preview-wrap {
+    margin: 14px 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #dfe3ea;
+    height: min(78vh, 820px);
+  }
+  .preview-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--bg);
+  }
+  .tradeoffs {
+    margin: 8px 0 12px;
+    font-size: 13px;
+    color: var(--soft);
+  }
+  .tradeoffs summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .tradeoffs ul { margin: 8px 0 0; padding-left: 18px; }
+  .tradeoffs li { margin: 4px 0; }
+  .notes-label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--soft);
+  }
+  .notes-label textarea {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font: inherit;
+    font-weight: 400;
+    color: var(--text);
+    resize: vertical;
+    min-height: 64px;
+  }
+  .dir-actions { margin-top: 12px; display: flex; gap: 8px; }
+  .lock-btn {
+    border: 1px solid var(--brand);
+    background: var(--brand-ink);
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lock-btn:hover { filter: brightness(1.05); }
+  .direction.is-locked .lock-btn {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  #lock-record {
+    position: sticky;
+    bottom: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.08);
+    font-size: 13.5px;
+  }
+  #lock-record.locked {
+    border-color: var(--ok);
+    background: var(--ok-bg);
+  }
+  #lock-record h2 { margin: 0 0 6px; font-size: 14px; }
+  #lock-record p { margin: 0 0 8px; color: var(--soft); }
+  #lock-record .clear-lock {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .run {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #f7f8fa;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--soft);
+  }
+</style>
+</head>
+<body>
+<main>
+  <header id="brief">
+    <h1>Kelpie composer — direction catalog</h1>
+    <p class="question"><strong>Question:</strong> How should Kelpie’s chat input area look and behave for draft + session controls?</p>
+    <dl class="brief-grid">
+      <div><dt>Audience / task</dt><dd>Operator triaging OMP agents; draft follow-ups; see and adjust model + thinking in-chat.</dd></div>
+      <div><dt>Host</dt><dd>Desktop Kelpie chat column. Scratch only — no production path in this catalog.</dd></div>
+      <div><dt>Editable</dt><dd>Model + thinking pickers. Workspace read-only.</dd></div>
+      <div><dt>Out of scope</dt><dd>Attach, permissions chip, Interrupt/Esc in composer, ask-option strip, production API.</dd></div>
+    </dl>
+    <div class="rules">
+      <strong>Locked rules for every direction:</strong>
+      chrome + session controls · + opens slash only · Interrupt/Esc stay in chat header · pending-ask is a thin banner only · Codex light tokens · desktop-first · fixture data.
+    </div>
+    <p class="run">Preview this catalog: <code>python3 -m http.server 8770 --directory desktop/scratch/prototypes/composer</code> → <code>http://127.0.0.1:8770/catalog.html</code></p>
+  </header>
+
+  <aside id="compare" aria-label="Comparison summary">
+    <h2>Structural differences</h2>
+    <ul>
+      <li><strong>A Workflow first</strong> — vertical staging: hero draft → send row → demoted session rail under a seam.</li>
+      <li><strong>B Session Story</strong> — identity card + indigo rail; model/thinking live inside a prose sentence above a recessed stage.</li>
+      <li><strong>C Docked Ops Band</strong> — single horizontal ops baseline (~74px); every control owns a fixed spatial slot for scanning and keyboard reach.</li>
+    </ul>
+    <p style="margin:10px 0 0;color:var(--soft);font-size:13px;">Judge rendered pixels and task flow, not titles. Lock is a candidate only until you confirm in chat.</p>
+  </aside>
+
+  <nav class="dir-nav" aria-label="Direction navigation">
+    <button type="button" class="nav-btn" data-nav="a">A · Workflow</button>
+    <button type="button" class="nav-btn" data-nav="b">B · Story</button>
+    <button type="button" class="nav-btn" data-nav="c">C · Dense ops</button>
+    <span class="spacer"></span>
+    <button type="button" class="step" data-step="-1">Previous</button>
+    <button type="button" class="step" data-step="1">Next</button>
+  </nav>
+
+  
+<section id="direction-a" class="direction" aria-labelledby="direction-a-title" data-dir="a">
+  <header class="dir-head">
+    <h2 id="direction-a-title">A — Workflow first</h2>
+    <p class="thesis">Stage attention vertically: draft + send own the top of the card; workspace / model / thinking sit on a quiet seam-docked rail that never competes with Send.</p>
+    <p class="lens"><strong>Lead lens:</strong> Workflow and information hierarchy · skill://baseline-ui</p>
+    <p class="structure"><strong>Layout / interaction:</strong> Three tiers: (1) hero textarea, (2) action row with + left and primary Send right, (3) session meta rail below a seam. Pickers demoted; draft path is primary.</p>
+  </header>
+  <div class="preview-wrap" aria-label="Direction A live preview">
+    <iframe title="Direction A preview" class="preview-frame" srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;title&gt;Kelpie Composer — A: Workflow first&lt;/title&gt;
+&lt;style&gt;
+  :root{
+    --bg:#f3f3f3; --surface:#ffffff; --border:#e0e0e0; --seam:#efefef;
+    --text:#2d2e30; --text2:#666; --text3:#898989;
+    --indigo:#8891e1; --indigo-strong:#7d87dd; --indigo-wash:#eef0fb;
+    --green-bg:#c1e2ce; --green:#3c9663;
+    --radius:12px;
+    --mono: ui-monospace,&quot;SF Mono&quot;,Menlo,Consolas,&quot;Liberation Mono&quot;,monospace;
+    --shadow: 0 1px 2px rgba(20,22,30,.04), 0 10px 28px rgba(20,22,30,.06);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 system-ui,-apple-system,&quot;Segoe UI&quot;,Roboto,sans-serif;
+    display:flex; flex-direction:column;
+  }
+  button{ font:inherit; }
+  :focus-visible{ outline:2px solid var(--indigo); outline-offset:2px; }
+
+  /* ── Shell chrome ── */
+  .topbar{
+    height:56px; flex:0 0 auto; display:flex; align-items:center; gap:14px;
+    padding:0 20px; background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .thread-title{ font-weight:600; font-size:14px; color:var(--text); }
+  .thread-sub{ color:var(--text3); font-size:12.5px; margin-top:1px; }
+  .topbar .spacer{ flex:1; }
+  .header-stub{
+    display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--text3);
+    border:1px dashed var(--border); border-radius:999px; padding:5px 11px;
+  }
+  .statebar{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:10px 20px; background:var(--bg);
+  }
+  .statebar &gt; span{ color:var(--text3); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .statebar button{
+    border:1px solid var(--border); background:var(--surface); color:var(--text2);
+    border-radius:999px; padding:6px 13px; font-size:13px; cursor:pointer;
+  }
+  .statebar button:hover{ border-color:var(--indigo); color:var(--text); }
+  .statebar button[aria-pressed=&quot;true&quot;]{
+    background:var(--indigo); border-color:var(--indigo); color:#fff; font-weight:600;
+  }
+
+  /* ── Chat column ── */
+  .chat{
+    flex:1 1 auto; width:100%; max-width:920px; margin:0 auto;
+    display:flex; flex-direction:column; gap:4px;
+    padding:22px 24px 18px;
+    min-height:0;
+  }
+  .transcript{ flex:1 1 auto; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-bottom:14px; }
+  .day-divider{ align-self:center; color:var(--text3); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin:2px 0 4px; }
+  .user-msg{
+    align-self:flex-start; max-width:72%;
+    background:var(--surface); border:1px solid var(--border); border-radius:14px 14px 14px 4px;
+    padding:10px 14px; font-size:14.5px;
+  }
+  .assist-line{ display:flex; align-items:flex-start; gap:10px; color:var(--text2); font-size:14px; }
+  .assist-avatar{ width:26px; height:26px; flex:0 0 auto; border-radius:8px; background:var(--indigo-wash); color:var(--indigo-strong); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .assist-line .bubble{ max-width:72%; background:var(--surface); border:1px solid var(--border); border-radius:4px 14px 14px 14px; padding:10px 14px; }
+
+  .ask-card{
+    align-self:flex-start; display:flex; align-items:center; gap:10px; max-width:72%;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 12px;
+    font-size:13px; color:var(--text2);
+  }
+  .ask-card .ask-tag{ color:var(--green); font-weight:600; font-size:12px; }
+  .ask-card .chevron{ margin-left:auto; color:var(--text3); }
+
+  /* Pending-ask thin banner */
+  .pending-banner{
+    margin:0 0 10px; display:none; align-items:center; gap:10px;
+    border:1px solid var(--border); background:var(--surface); border-radius:10px;
+    padding:9px 14px; font-size:13px; color:var(--text2);
+  }
+  .pending-banner .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); flex:0 0 auto; }
+  .pending-banner[hidden]{ display:none; }
+  .pending-banner.shown{ display:flex; }
+
+  /* ── Composer: staged draft → send → session meta ── */
+  .composer{
+    position:relative; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); box-shadow:var(--shadow); transition:box-shadow .12s ease,border-color .12s ease;
+    flex:0 0 auto;
+  }
+  .composer:focus-within{ border-color:var(--indigo); box-shadow:0 0 0 3px rgba(136,145,225,.18), var(--shadow); }
+
+  .composer-body{
+    display:flex; flex-direction:column;
+  }
+  .composer-body textarea{
+    width:100%; border:0; resize:none; background:transparent; outline:none;
+    font:15px/1.5 system-ui,-apple-system,&quot;Segoe UI&quot;,Roboto,sans-serif; color:var(--text);
+    padding:14px 14px 6px; min-height:86px; max-height:220px;
+  }
+  .composer-body textarea::placeholder{ color:var(--text3); }
+  .composer-body textarea:disabled{ cursor:default; opacity:.7; }
+
+  .action-row{
+    display:flex; align-items:center; gap:10px; padding:8px 10px;
+  }
+  .slash{
+    width:38px; height:38px; flex:0 0 auto; border-radius:50%;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    font-size:21px; line-height:1; cursor:pointer;
+  }
+  .slash:hover{ border-color:var(--indigo); color:var(--indigo-strong); }
+  .slash[aria-expanded=&quot;true&quot;]{ border-color:var(--indigo); color:var(--indigo-strong); background:var(--indigo-wash); }
+  .hint{ flex:1; color:var(--text2); font-size:12px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .send{
+    margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:8px;
+    background:var(--indigo); color:#fff; border:0; border-radius:999px;
+    padding:9px 20px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .send:hover{ background:var(--indigo-strong); }
+  .send[disabled]{ background:#dcdce4; color:#fff; cursor:default; }
+  .send .spinner{
+    width:14px; height:14px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff;
+    border-radius:50%; animation:spin .8s linear infinite; display:none;
+  }
+  .send[data-busy=&quot;true&quot;] .spinner{ display:inline-block; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* Session meta rail — seam-docked, calm, does not compete with Send */
+  .session-band{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:9px 10px; border-top:1px solid var(--seam);
+  }
+  .composer[data-busy=&quot;true&quot;] .session-band{ opacity:.55; pointer-events:none; }
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 11px;
+    border:1px solid var(--border); border-radius:999px; background:transparent;
+    color:var(--text2); font-size:12.5px; white-space:nowrap;
+  }
+  .chip.picker{ cursor:pointer; }
+  .chip.picker:hover{ border-color:var(--indigo); color:var(--text); }
+  .chip .caret{ font-size:9px; color:var(--text3); }
+  .chip .mono{ font-family:var(--mono); font-size:12px; }
+  .chip .ws{ display:inline-flex; align-items:center; gap:6px; }
+  .chip .latch{ width:6px; height:6px; border-radius:50%; background:var(--green); }
+
+  /* Menus */
+  .menu{
+    position:absolute; z-index:30; height:auto; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 10px 30px rgba(20,22,30,.12); overflow:hidden;
+    min-width:300px;
+  }
+  .menu[hidden]{ display:none; }
+  .menu .mhead{ padding:8px 13px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text3); border-bottom:1px solid var(--seam); }
+  .menu .opt{
+    display:flex; width:100%; align-items:center; gap:12px; padding:10px 13px;
+    border:0; background:transparent; text-align:left; cursor:pointer; color:var(--text);
+  }
+  .menu .opt:hover{ background:var(--indigo-wash); }
+  .menu .opt[aria-selected=&quot;true&quot;]{ background:var(--indigo-wash); }
+  .menu .opt .grow{ display:flex; flex-direction:column; min-width:0; }
+  .menu .opt .name{ font-size:13.5px; font-weight:600; }
+  .menu .opt .name .mono{ font-family:var(--mono); font-weight:500; }
+  .menu .opt .desc{ font-size:12px; color:var(--text3); }
+  .menu .opt .check{ color:var(--indigo-strong); font-weight:700; }
+  .badge{
+    margin-left:auto; flex:0 0 auto; font-size:10.5px; font-weight:600; letter-spacing:.02em;
+    border-radius:999px; padding:2px 8px; text-transform:uppercase;
+  }
+  .badge.skill{ color:#5a65c9; background:var(--indigo-wash); }
+  .badge.workspace{ color:var(--green); background:var(--green-bg); }
+  .badge.omp{ color:var(--text2); background:var(--bg); }
+  .badge.off{ color:var(--text3); background:var(--bg); }
+  .badge.low{ color:#8a6d3b; background:#f5eeda; }
+  .badge.med{ color:#5a65c9; background:var(--indigo-wash); }
+  .badge.high{ color:var(--green); background:var(--green-bg); }
+  .badge.xhigh{ color:#7c3aed; background:#f0e8ff; }
+
+  /* Menu anchor positions */
+  .menu.slash{ top:0; left:12px; transform:translateY(calc(-100% - 8px)); }
+  .chip-wrap{ position:relative; }
+  .menu.picker{ top:calc(100% + 6px); left:0; }
+
+  .foot{ flex:0 0 auto; text-align:center; color:var(--text3); font-size:12px; padding:4px 0 8px; }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;!-- Fake chat header: interrupt/Esc live here, never in the composer --&gt;
+  &lt;header class=&quot;topbar&quot;&gt;
+    &lt;div&gt;
+      &lt;div class=&quot;thread-title&quot;&gt;powder · triage&lt;/div&gt;
+      &lt;div class=&quot;thread-sub&quot;&gt;4 OMP agents running&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;
+    &lt;span class=&quot;header-stub&quot; title=&quot;Interrupt / Esc live in the chat header, not the composer&quot;&gt;
+      Hold Esc to interrupt
+    &lt;/span&gt;
+  &lt;/header&gt;
+
+  &lt;div class=&quot;statebar&quot; role=&quot;group&quot; aria-label=&quot;Preview states&quot;&gt;
+    &lt;span&gt;Demo states&lt;/span&gt;
+    &lt;button data-state=&quot;quiet&quot; aria-pressed=&quot;true&quot;&gt;Quiet&lt;/button&gt;
+    &lt;button data-state=&quot;slash&quot; aria-pressed=&quot;false&quot;&gt;Slash open&lt;/button&gt;
+    &lt;button data-state=&quot;pending&quot; aria-pressed=&quot;false&quot;&gt;Pending ask&lt;/button&gt;
+    &lt;button data-state=&quot;filled&quot; aria-pressed=&quot;false&quot;&gt;Filled&lt;/button&gt;
+    &lt;button data-state=&quot;busy&quot; aria-pressed=&quot;false&quot;&gt;Busy&lt;/button&gt;
+  &lt;/div&gt;
+
+  &lt;main class=&quot;chat&quot;&gt;
+    &lt;div class=&quot;transcript&quot;&gt;
+      &lt;div class=&quot;day-divider&quot;&gt;Earlier today&lt;/div&gt;
+      &lt;div class=&quot;user-msg&quot;&gt;Can you run a quick triage pass on new powder issues?&lt;/div&gt;
+      &lt;div class=&quot;assist-line&quot;&gt;
+        &lt;span class=&quot;assist-avatar&quot; aria-hidden=&quot;true&quot;&gt;K&lt;/span&gt;
+        &lt;div class=&quot;bubble&quot;&gt;On it. I found 14 open items; here is the short list.&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;user-msg&quot;&gt;Group them by likely severity before you start.&lt;/div&gt;
+      &lt;div class=&quot;assist-line&quot;&gt;
+        &lt;span class=&quot;assist-avatar&quot; aria-hidden=&quot;true&quot;&gt;K&lt;/span&gt;
+        &lt;div class=&quot;bubble&quot;&gt;Done. 3 likely blockers, 5 marginal, 6 noise. Summaries below.&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;ask-card&quot;&gt;
+        &lt;span class=&quot;ask-tag&quot;&gt;Ask&lt;/span&gt;
+        &lt;span&gt;Which workspace should I apply labels to?&lt;/span&gt;
+        &lt;span class=&quot;chevron&quot; aria-hidden=&quot;true&quot;&gt;▾&lt;/span&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;!-- Pending-ask: calm thin banner only, above the box --&gt;
+    &lt;div class=&quot;pending-banner&quot; id=&quot;pendingBanner&quot; hidden&gt;
+      &lt;span class=&quot;dot&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;Waiting on the transcript ask — choose an answer on the Ask card.&lt;/span&gt;
+    &lt;/div&gt;
+
+    &lt;div class=&quot;composer&quot; id=&quot;composer&quot;&gt;
+      &lt;div class=&quot;composer-body&quot;&gt;
+        &lt;textarea id=&quot;ta&quot; rows=&quot;3&quot; placeholder=&quot;Draft a follow-up, then press Enter to send…&quot; aria-label=&quot;Message&quot;&gt;&lt;/textarea&gt;
+        &lt;div class=&quot;action-row&quot;&gt;
+          &lt;button class=&quot;slash&quot; id=&quot;slashBtn&quot; type=&quot;button&quot; aria-haspopup=&quot;listbox&quot; aria-expanded=&quot;false&quot; aria-label=&quot;Slash commands&quot;&gt;+&lt;/button&gt;
+          &lt;span class=&quot;hint&quot;&gt;Type &lt;kbd style=&quot;font-family:var(--mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0 5px&quot;&gt;/&lt;/kbd&gt; for commands&lt;/span&gt;
+          &lt;button class=&quot;send&quot; id=&quot;sendBtn&quot; type=&quot;button&quot; disabled&gt;Send&lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;!-- Session meta rail: workspace read-only, model + thinking editable --&gt;
+      &lt;div class=&quot;session-band&quot; aria-label=&quot;Session controls&quot;&gt;
+        &lt;span class=&quot;chip&quot; title=&quot;Workspace is read-only here&quot;&gt;
+          &lt;span class=&quot;ws&quot;&gt;&lt;span class=&quot;latch&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;powder&lt;/span&gt;
+        &lt;/span&gt;
+        &lt;span class=&quot;chip-wrap&quot;&gt;
+          &lt;button class=&quot;chip picker&quot; id=&quot;modelChip&quot; type=&quot;button&quot; aria-haspopup=&quot;listbox&quot; aria-expanded=&quot;false&quot; aria-label=&quot;Choose model&quot;&gt;
+            &lt;span class=&quot;mono&quot; id=&quot;modelLabel&quot;&gt;anthropic/claude-fable-5&lt;/span&gt;
+            &lt;span class=&quot;caret&quot; aria-hidden=&quot;true&quot;&gt;▾&lt;/span&gt;
+          &lt;/button&gt;
+          &lt;div class=&quot;menu picker&quot; id=&quot;modelMenu&quot; role=&quot;listbox&quot; aria-label=&quot;Model&quot; hidden&gt;&lt;/div&gt;
+        &lt;/span&gt;
+        &lt;span class=&quot;chip-wrap&quot;&gt;
+          &lt;button class=&quot;chip picker&quot; id=&quot;thinkChip&quot; type=&quot;button&quot; aria-haspopup=&quot;listbox&quot; aria-expanded=&quot;false&quot; aria-label=&quot;Choose thinking effort&quot;&gt;
+            thinking &lt;span id=&quot;thinkLabel&quot;&gt;high&lt;/span&gt;
+            &lt;span class=&quot;caret&quot; aria-hidden=&quot;true&quot;&gt;▾&lt;/span&gt;
+          &lt;/button&gt;
+          &lt;div class=&quot;menu picker&quot; id=&quot;thinkMenu&quot; role=&quot;listbox&quot; aria-label=&quot;Thinking effort&quot; hidden&gt;&lt;/div&gt;
+        &lt;/span&gt;
+      &lt;/div&gt;
+
+      &lt;!-- Slash menu --&gt;
+      &lt;div class=&quot;menu slash&quot; id=&quot;slashMenu&quot; role=&quot;listbox&quot; aria-label=&quot;Slash commands&quot; hidden&gt;&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;foot&quot;&gt;Lane A — workflow first · scratch prototype&lt;/div&gt;
+  &lt;/main&gt;
+
+&lt;script&gt;
+(function(){
+  var ta=document.getElementById(&#x27;ta&#x27;), composer=document.getElementById(&#x27;composer&#x27;),
+      sendBtn=document.getElementById(&#x27;sendBtn&#x27;), slashBtn=document.getElementById(&#x27;slashBtn&#x27;),
+      slashMenu=document.getElementById(&#x27;slashMenu&#x27;), pending=document.getElementById(&#x27;pendingBanner&#x27;),
+      modelChip=document.getElementById(&#x27;modelChip&#x27;), modelLabel=document.getElementById(&#x27;modelLabel&#x27;),
+      modelMenu=document.getElementById(&#x27;modelMenu&#x27;),
+      thinkChip=document.getElementById(&#x27;thinkChip&#x27;), thinkLabel=document.getElementById(&#x27;thinkLabel&#x27;),
+      thinkMenu=document.getElementById(&#x27;thinkMenu&#x27;);
+
+  var MODELS=[&#x27;anthropic/claude-fable-5&#x27;,&#x27;openai/gpt-5.3-codex&#x27;,&#x27;google/gemini-3-pro&#x27;];
+  var THINK=[{v:&#x27;off&#x27;,b:&#x27;off&#x27;},{v:&#x27;low&#x27;,b:&#x27;low&#x27;},{v:&#x27;medium&#x27;,b:&#x27;med&#x27;},{v:&#x27;high&#x27;,b:&#x27;high&#x27;},{v:&#x27;xhigh&#x27;,b:&#x27;xhigh&#x27;}];
+  var SLASH=[
+    {name:&#x27;/dispatch&#x27;,src:&#x27;skill&#x27;,badge:&#x27;skill&#x27;,desc:&#x27;Route work to native OMP agents&#x27;},
+    {name:&#x27;/research&#x27;,src:&#x27;skill&#x27;,badge:&#x27;skill&#x27;,desc:&#x27;Bounded research&#x27;},
+    {name:&#x27;/triage&#x27;,src:&#x27;workspace&#x27;,badge:&#x27;workspace&#x27;,desc:&#x27;Label new GitHub issues&#x27;},
+    {name:&#x27;/plan&#x27;,src:&#x27;omp&#x27;,badge:&#x27;omp&#x27;,desc:&#x27;Toggle plan mode&#x27;},
+    {name:&#x27;/settings&#x27;,src:&#x27;omp&#x27;,badge:&#x27;omp&#x27;,desc:&#x27;Open settings&#x27;}
+  ];
+
+  // Build menus
+  function buildMenu(menu, items, opts){
+    menu.innerHTML=&#x27;&#x27;;
+    items.forEach(function(it,i){
+      if(it.head){
+        var h=document.createElement(&#x27;div&#x27;); h.className=&#x27;mhead&#x27;; h.textContent=it.head; menu.appendChild(h);
+        return;
+      }
+      var b=document.createElement(&#x27;button&#x27;); b.type=&#x27;button&#x27;; b.className=&#x27;opt&#x27;;
+      b.setAttribute(&#x27;role&#x27;,&#x27;option&#x27;); b.setAttribute(&#x27;aria-selected&#x27;,&#x27;false&#x27;);
+      b.setAttribute(&#x27;data-i&#x27;, String(i));
+      var grow=document.createElement(&#x27;span&#x27;); grow.className=&#x27;grow&#x27;;
+      var name=document.createElement(&#x27;span&#x27;); name.className=&#x27;name&#x27;;
+      name.innerHTML=opts.monoName?(&#x27;&lt;span class=&quot;mono&quot;&gt;&#x27;+it.name+&#x27;&lt;/span&gt;&#x27;) : it.name;
+      grow.appendChild(name);
+      if(it.desc){ var d=document.createElement(&#x27;span&#x27;); d.className=&#x27;desc&#x27;; d.textContent=it.desc; grow.appendChild(d); }
+      b.appendChild(grow);
+      if(opts.value===undefined &amp;&amp; it.badge){
+        var bg=document.createElement(&#x27;span&#x27;); bg.className=&#x27;badge &#x27;+it.badge; bg.textContent=it.src||&#x27;&#x27;; b.appendChild(bg);
+      }
+      if(opts.check &amp;&amp; opts.value===it.value){
+        var ck=document.createElement(&#x27;span&#x27;); ck.className=&#x27;check&#x27;; ck.textContent=&#x27;✓&#x27;; b.appendChild(ck);
+      }
+      menu.appendChild(b);
+    });
+  }
+  buildMenu(slashMenu, SLASH, {monoName:true});
+  buildMenu(modelMenu, MODELS.map(function(m){return {name:m,value:m};}), {value:modelLabel.textContent, monoName:true, check:true});
+  buildMenu(thinkMenu, THINK.map(function(t){return {name:t.v,value:t.v};}), {value:thinkLabel.textContent, check:true});
+
+  function optsOf(menu){ return Array.prototype.slice.call(menu.querySelectorAll(&#x27;.opt&#x27;)); }
+  function setActive(menu, idx){
+    var os=optsOf(menu);
+    os.forEach(function(o){ o.setAttribute(&#x27;aria-selected&#x27;, o.getAttribute(&#x27;data-i&#x27;)===String(idx) ? &#x27;true&#x27;:&#x27;false&#x27;); });
+    var cur=os[idx]; if(cur) cur.scrollIntoView({block:&#x27;nearest&#x27;});
+    return cur;
+  }
+  var docClickH=null;
+  function openMenu(menu, trigger){
+    menu.hidden=false;
+    var os=optsOf(menu); if(!os.length) return;
+    setActive(menu,0);
+    (trigger||menu).setAttribute(&#x27;aria-expanded&#x27;,&#x27;true&#x27;);
+    menu._trigger=trigger||null;
+    var first=os[0]; try{ first.focus(); }catch(e){ menu.setAttribute(&#x27;tabindex&#x27;,&#x27;-1&#x27;); menu.focus(); }
+    attachClose();
+  }
+  function closeMenu(menu, trigger){
+    if(menu.hidden) return;
+    menu.hidden=true;
+    if(trigger){ trigger.setAttribute(&#x27;aria-expanded&#x27;,&#x27;false&#x27;); if(trigger===slashBtn||trigger===modelChip||trigger===thinkChip){ try{trigger.focus();}catch(e){} } }
+    removeClose();
+  }
+  function closeAll(){ [slashMenu,modelMenu,thinkMenu].forEach(closeMenu); }
+  function attachClose(){ if(docClickH) return;
+    docClickH=function(e){
+      [slashMenu,modelMenu,thinkMenu].forEach(function(m){
+        if(m.hidden) return;
+        var tr=m._trigger;
+        var inside = m.contains(e.target) || (tr &amp;&amp; tr.contains(e.target));
+        if(!inside) closeMenu(m,tr);
+      });
+      if(![slashMenu,modelMenu,thinkMenu].some(function(m){return !m.hidden;})) removeClose();
+    };
+    document.addEventListener(&#x27;mousedown&#x27;,docClickH);
+  }
+  function removeClose(){ if(docClickH){ document.removeEventListener(&#x27;mousedown&#x27;,docClickH); docClickH=null; } }
+
+  // Menu keyboard (arrows/enter/escape) — bound to each visible menu
+  function wireMenuKeys(menu, trigger, selectCb){
+    menu.addEventListener(&#x27;keydown&#x27;, function(e){
+      var os=optsOf(menu).filter(function(o){return !o.hidden;});
+      var cur=optsOf(menu).findIndex(function(o){return o===document.activeElement;});
+      if(e.key===&#x27;ArrowDown&#x27;){ e.preventDefault(); setActive(menu,(cur+1)%os.length); os[(cur+1)%os.length].focus(); }
+      else if(e.key===&#x27;ArrowUp&#x27;){ e.preventDefault(); var n=(cur-1+os.length)%os.length; setActive(menu,n); os[n].focus(); }
+      else if(e.key===&#x27;Escape&#x27;){ e.preventDefault(); closeMenu(menu,trigger); }
+      else if(e.key===&#x27;Enter&#x27;||e.key===&#x27; &#x27;){ e.preventDefault(); var act=document.activeElement; if(!act||act.getAttribute(&#x27;role&#x27;)!==&#x27;option&#x27;) act=optsOf(menu).find(function(o){return o.getAttribute(&#x27;aria-selected&#x27;)===&#x27;true&#x27;;}); if(act) selectCb(act); }
+    });
+  }
+  wireMenuKeys(slashMenu, slashBtn, function(opt){ closeMenu(slashMenu,slashBtn); var n=opt.getAttribute(&#x27;data-i&#x27;); ta.value=SLASH[n].name+&#x27; &#x27;; ta.focus(); });
+  wireMenuKeys(modelMenu, modelChip, function(opt){
+    var v=opt.getAttribute(&#x27;data-i&#x27;); modelLabel.textContent=MODELS[v];
+    buildMenu(modelMenu, MODELS.map(function(m){return {name:m,value:m};}), {value:MODELS[v], monoName:true, check:true});
+    closeMenu(modelMenu,modelChip);
+  });
+  wireMenuKeys(thinkMenu, thinkChip, function(opt){
+    var v=opt.getAttribute(&#x27;data-i&#x27;); thinkLabel.textContent=THINK[v].v;
+    buildMenu(thinkMenu, THINK.map(function(t){return {name:t.v,value:t.v};}), {value:THINK[v].v, check:true});
+    closeMenu(thinkMenu,thinkChip);
+  });
+
+  slashBtn.addEventListener(&#x27;click&#x27;, function(){ slashMenu.hidden? openMenu(slashMenu,slashBtn): closeMenu(slashMenu,slashBtn); });
+  modelChip.addEventListener(&#x27;click&#x27;, function(){ modelMenu.hidden? openMenu(modelMenu,modelChip): closeMenu(modelMenu,modelChip); });
+  thinkChip.addEventListener(&#x27;click&#x27;, function(){ thinkMenu.hidden? openMenu(thinkMenu,thinkChip): closeMenu(thinkMenu,thinkChip); });
+
+  // Cross-close: opening one menu closes the others
+  [slashBtn,modelChip,thinkChip].forEach(function(t){
+    t.addEventListener(&#x27;click&#x27;, function(){ [slashMenu,modelMenu,thinkMenu].forEach(function(m){ if(m._trigger!==t &amp;&amp; !m.hidden) closeMenu(m,m._trigger); }); });
+  });
+
+  // Typing state
+  ta.addEventListener(&#x27;keydown&#x27;, function(e){
+    if(e.key===&#x27;/&#x27; &amp;&amp; ta.value===&#x27;&#x27;){ e.preventDefault(); closeAll(); openMenu(slashMenu,slashBtn); }
+  });
+  ta.addEventListener(&#x27;input&#x27;, updateSend);
+  function updateSend(){
+    var has=ta.value.trim().length&gt;0;
+    if(!(config&amp;&amp;config.busy)) sendBtn.disabled=!has;
+  }
+
+  // States
+  var config={};
+  var stateBtns=Array.prototype.slice.call(document.querySelectorAll(&#x27;.statebar button[data-state]&#x27;));
+  function applyState(s){
+    config={state:s,busy:(s===&#x27;busy&#x27;)};
+    stateBtns.forEach(function(b){ b.setAttribute(&#x27;aria-pressed&#x27;, b.getAttribute(&#x27;data-state&#x27;)===s?&#x27;true&#x27;:&#x27;false&#x27;); });
+    closeAll();
+    composer.setAttribute(&#x27;data-busy&#x27;, config.busy?&#x27;true&#x27;:&#x27;false&#x27;);
+    slashBtn.setAttribute(&#x27;aria-expanded&#x27;,&#x27;false&#x27;);
+    if(s===&#x27;pending&#x27;){
+      pending.hidden=false; pending.classList.add(&#x27;shown&#x27;);
+      ta.value=&#x27;&#x27;; ta.disabled=false; sendBtn.disabled=true; sendBtn.textContent=&#x27;Send&#x27;; sendBtn.removeAttribute(&#x27;data-busy&#x27;);
+    } else {
+      pending.hidden=true; pending.classList.remove(&#x27;shown&#x27;);
+    }
+    ta.disabled=config.busy;
+    if(s===&#x27;slash&#x27;){ ta.value=&#x27;&#x27;; openMenu(slashMenu,slashBtn); }
+    else { slashBtn.setAttribute(&#x27;aria-expanded&#x27;,&#x27;false&#x27;); }
+    if(s===&#x27;filled&#x27;||s===&#x27;busy&#x27;){ ta.value=&#x27;Summarize the open issues in powder&#x27;; }
+    if(s===&#x27;quiet&#x27;){ ta.value=&#x27;&#x27;; }
+    if(s===&#x27;busy&#x27;){ ta.value=&#x27;Summarize the open issues in powder&#x27;; ta.disabled=true; sendBtn.disabled=true; sendBtn.innerHTML=&#x27;&lt;span class=&quot;spinner&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;Sending&#x27;; sendBtn.setAttribute(&#x27;data-busy&#x27;,&#x27;true&#x27;); }
+    else { sendBtn.removeAttribute(&#x27;data-busy&#x27;); sendBtn.innerHTML=&#x27;Send&#x27;; updateSend(); }
+  }
+  stateBtns.forEach(function(b){ b.addEventListener(&#x27;click&#x27;, function(){ applyState(b.getAttribute(&#x27;data-state&#x27;)); }); });
+
+  applyState(&#x27;quiet&#x27;);
+})();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+" loading="lazy"></iframe>
+  </div>
+  <details class="tradeoffs" open>
+    <summary>Tradeoffs</summary>
+    <ul>
+      <li><strong>Gains:</strong> Clear attention staging; session state always visible but subordinate; single primary action.</li>
+      <li><strong>Costs:</strong> Extra vertical row vs single footer; one more glance for meta.</li>
+      <li><strong>Risks:</strong> Tall slash menu floats over transcript; rail can read as a second card if borders are wrong.</li>
+      <li><strong>Rejected defaults:</strong> Chips + send in one competing footer row; ask options inside the box; Interrupt/Esc in composer.</li>
+    </ul>
+  </details>
+  <label class="notes-label">Notes
+    <textarea data-notes="a" rows="3" placeholder="Your feedback on this direction…"></textarea>
+  </label>
+  <div class="dir-actions">
+    <button type="button" class="lock-btn" data-lock="a">Lock this direction</button>
+  </div>
+</section>
+
+
+<section id="direction-b" class="direction" aria-labelledby="direction-b-title" data-dir="b">
+  <header class="dir-head">
+    <h2 id="direction-b-title">B — The Session Story</h2>
+    <p class="thesis">A deliberate writing surface for steering the agent: indigo identity rail + caption, with model and thinking woven into a prose sentence — not a terminal prompt.</p>
+    <p class="lens"><strong>Lead lens:</strong> Product identity and narrative rhythm · skill://improve-ui</p>
+    <p class="structure"><strong>Layout / interaction:</strong> Card with 4px indigo rail. Caption “Follow-up to powder”. Sentence “Guiding with [model] at [thinking] reasoning”. Recessed writing stage. Action row is only + Commands and Send.</p>
+  </header>
+  <div class="preview-wrap" aria-label="Direction B live preview">
+    <iframe title="Direction B preview" class="preview-frame" srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;title&gt;Lane B — The Session Story · Composer prototype&lt;/title&gt;
+&lt;style&gt;
+  :root{
+    --surface:#f3f3f3;
+    --paper:#ffffff;
+    --border:#e0e0e0;
+    --seam:#efefef;
+    --ink:#2d2e30;
+    --ink2:#666666;
+    --ink3:#898989;
+    --brand:#8891e1;
+    --brand-ink:#5b66c8;          /* darker indigo for AA on white text/controls */
+    --brand-tint:#eeeffc;          /* whisper indigo wash */
+    --await-bg:#c1e2ce;
+    --await-fg:#1f6838;           /* darker green: #3c9663 fails AA on #c1e2ce (2.6:1) */
+    --mono:ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+    --sans:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, system-ui, Roboto, sans-serif;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{margin:0}
+  body{
+    background:var(--surface);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- preview shell (not product) ---------- */
+  .shell{
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    align-items:center;
+  }
+  .controls{
+    width:100%;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    padding:10px 16px;
+    background:var(--paper);
+    border-bottom:1px solid var(--border);
+    justify-content:center;
+    font-size:13px;
+  }
+  .controls .ctl-group{display:flex; gap:6px; align-items:center}
+  .controls button{
+    font:inherit;
+    font-size:12px;
+    color:var(--ink2);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:5px 11px;
+    cursor:pointer;
+    transition:background .12s ease;
+  }
+  .controls button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .controls button:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px}
+  .controls .sep{width:1px;height:22px;background:var(--border);margin:0 4px}
+
+  /* ---------- chat column ---------- */
+  .chat{
+    width:100%;
+    max-width:960px;
+    padding:0 24px 40px;
+    margin:0 auto;
+  }
+
+  /* thin header stub — interrupt/Esc live HERE, never in the composer */
+  .chat-head{
+    display:flex;align-items:center;gap:12px;
+    padding:18px 2px 14px;
+  }
+  .ws-avatar{
+    width:36px;height:36px;border-radius:9px;
+    background:hsl(210,45%,92%);
+    display:grid;place-items:center;
+    color:#3a4a7a;font-size:16px;
+  }
+  .titles{flex:1;min-width:0}
+  .titles .eyebrow{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);margin:0}
+  .titles h1{font-size:16px;font-weight:700;margin:1px 0 0;letter-spacing:-.01em;color:var(--ink)}
+  .head-side{font-size:11px;color:var(--ink3);text-align:right;max-width:220px;line-height:1.3}
+  .head-side b{color:var(--ink2);font-weight:600}
+
+  /* ---------- transcript ---------- */
+  .transcript{
+    display:flex;flex-direction:column;gap:14px;
+    padding:6px 2px 18px;
+  }
+  .msg.user{
+    align-self:flex-end;
+    max-width:78%;
+    background:var(--brand-tint);
+    border:1px solid #dfe2f6;
+    border-radius:14px 14px 4px 14px;
+    padding:10px 13px;
+    font-size:14.5px;
+  }
+  .msg.assist{
+    align-self:flex-start;
+    max-width:86%;
+    background:var(--paper);
+    border:1px solid var(--border);
+    border-radius:14px 14px 14px 4px;
+    padding:10px 13px;
+    font-size:14.5px;
+    color:var(--ink);
+  }
+  .msg .who{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);margin:0 0 3px}
+
+  /* Ask card — lives in the transcript, holds the choices */
+  .ask-card{
+    align-self:flex-start;
+    width:100%;max-width:520px;
+    background:var(--paper);
+    border:1px solid var(--border);
+    border-left:3px solid var(--await-fg);
+    border-radius:12px;
+    padding:12px 13px;
+    transition:opacity .18s ease;
+  }
+  .ask-card.collapsed{opacity:.72}
+  .ask-q{font-size:14px;margin:0 0 3px;font-weight:600}
+  .ask-meta{font-size:11px;color:var(--ink2);margin:0 0 9px}
+  .ask-choices{display:flex;flex-direction:column;gap:6px}
+  .ask-choice{
+    display:flex;align-items:center;gap:9px;
+    font-size:13.5px;color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;padding:8px 10px;
+    min-height:42px;
+    cursor:pointer;text-align:left;
+  }
+  .ask-choice:hover{border-color:var(--brand)}
+  .ask-choice:focus-visible{outline:2px solid var(--brand-ink);outline-offset:1px}
+  .ask-choice .m{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-left:auto}
+
+  /* ---------- composer: The Session Story ---------- */
+  .composer{
+    position:relative;
+    background:var(--paper);
+    border:1px solid var(--border);
+    border-radius:16px;
+    box-shadow:0 1px 3px rgba(20,20,24,.05);
+    /* the indigo identity rail runs the full left edge */
+  }
+  .rail{
+    position:absolute;top:0;left:0;bottom:0;width:4px;
+    background:var(--brand);
+    border-radius:16px 0 0 16px;
+  }
+  .composer-inner{padding:2px 2px 2px 26px}
+  .rail-cap{
+    display:flex;align-items:center;gap:7px;
+    padding:16px 14px 0 14px;
+    font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--brand-ink);
+  }
+  .rail-cap .ws{
+    color:var(--ink2);
+    font-family:var(--mono);font-size:11px;letter-spacing:0;
+    text-transform:none;font-weight:500;
+  }
+  .rail-cap::before{content:&quot;&quot;;width:7px;height:7px;border-radius:50%;background:var(--brand)}
+
+  /* session story sentence — the identity move */
+  .story{
+    margin:6px 14px 0;
+    font-size:14px;
+    color:var(--ink2);
+    display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;
+    line-height:1.9;
+    padding-bottom:12px;
+    border-bottom:1px solid var(--seam);
+  }
+  .story .lead{color:var(--ink2);font-size:12.5px}
+  .story .pick{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-bottom:2px solid var(--brand);
+    border-radius:6px;
+    padding:5px 8px;
+    cursor:pointer;
+    max-width:300px;
+    appearance:none;
+    -webkit-appearance:none;
+    transition:border-color .12s ease, box-shadow .12s ease;
+  }
+  .story .pick:hover{border-color:var(--brand)}
+  .story .pick:focus-visible{outline:none;box-shadow:0 0 0 2px var(--brand-tint),0 0 0 1px var(--brand)}
+  .story .pick.think{color:var(--brand-ink);font-family:var(--sans);font-weight:600;font-size:13px;border-bottom-color:var(--brand);text-transform:capitalize}
+  .story .at{color:var(--ink2);font-size:12.5px}
+
+  /* pending-ask thin banner */
+  .pending{
+    margin:12px 14px 0;
+    display:flex;align-items:center;gap:9px;
+    background:var(--await-bg);
+    color:var(--await-fg);
+    border-radius:9px;
+    padding:7px 11px;
+    font-size:13px;
+  }
+  .pending .dot{width:7px;height:7px;border-radius:50%;background:var(--await-fg);animation:pulse 1.6s ease-in-out infinite}
+  .pending .act{margin-left:auto;font-weight:600;cursor:pointer;background:transparent;border:none;color:var(--await-fg);font-size:12.5px;padding:2px 4px}
+  .pending .act:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:4px}
+
+  /* the stage — recessed writing surface */
+  .stage{
+    position:relative;
+    overflow:hidden;
+    margin:12px 14px 0;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    transition:box-shadow .15s ease,border-color .15s ease;
+  }
+  .stage:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-tint)}
+  .stage textarea{
+    width:100%;
+    border:none;outline:none;resize:none;
+    background:transparent;
+    font-family:inherit;font-size:14.5px;line-height:1.5;
+    color:var(--ink);
+    padding:12px 13px;
+    min-height:64px;
+  }
+  .stage textarea::placeholder{color:var(--ink3)}
+
+  /* composer action row — deliberately quiet, two affordances only */
+  .compose-actions{
+    display:flex;align-items:center;gap:8px;
+    padding:12px 14px 14px;
+  }
+  .cmd{
+    display:inline-flex;align-items:center;gap:6px;
+    font:inherit;font-size:13px;color:var(--ink2);
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:7px 11px;min-height:44px;cursor:pointer;
+  }
+  .cmd .plus{font-weight:700;color:var(--brand-ink);font-size:15px;line-height:1}
+  .cmd:hover{border-color:var(--brand);color:var(--ink)}
+  .cmd:focus-visible{outline:2px solid var(--brand-ink);outline-offset:1px}
+  .cmd-hint{font-size:11px;color:var(--ink2)}
+  .spacer{flex:1}
+  .send{
+    display:inline-flex;align-items:center;gap:7px;
+    font:inherit;font-weight:600;font-size:14px;color:#fff;
+    background:var(--brand-ink);border:none;border-radius:9px;
+    padding:9px 16px;min-height:44px;cursor:pointer;
+    transition:background .12s ease,opacity .12s ease;
+  }
+  .send:hover:not(:disabled){background:#4d57c0}
+  .send:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px}
+  .send:disabled{opacity:.4;cursor:default}
+  .send .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;animation:rot .7s linear infinite}
+
+  /* slash popover */
+  .slash{
+    margin:0 14px 4px;
+    background:var(--paper);
+    border:1px solid var(--border);
+    border-radius:10px;
+    box-shadow:0 4px 14px rgba(20,20,24,.08);
+    overflow:hidden;
+  }
+  .slash-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);padding:9px 12px 6px;border-bottom:1px solid var(--seam)}
+  .slash-item{
+    display:flex;align-items:center;gap:10px;width:100%;
+    text-align:left;background:transparent;border:none;
+    padding:10px 12px;min-height:44px;cursor:pointer;border-bottom:1px solid var(--seam);
+  }
+  .slash-item:last-child{border-bottom:none}
+  .slash-item:hover{background:var(--surface)}
+  .slash-item:focus-visible{outline:2px solid var(--brand-ink);outline-offset:-2px}
+  .slash-item .name{font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+  .slash-item .desc{font-size:12.5px;color:var(--ink2)}
+  .badge{flex:none;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:999px}
+  .badge.skill{background:var(--await-bg);color:var(--await-fg)}
+  .badge.omp{background:var(--brand-tint);color:var(--brand-ink)}
+  .badge.workspace{background:var(--surface);color:var(--ink2);border:1px solid var(--border)}
+  .slash-item .src{margin-left:auto}
+
+  /* busy shimmer on stage */
+  .composer.busy .stage::after{
+    content:&quot;&quot;;position:absolute;left:0;right:0;bottom:0;height:2px;
+    background:linear-gradient(90deg,transparent,var(--brand),transparent);
+    background-size:200% 100%;
+    animation:shimmer 1.3s linear infinite;
+  }
+
+  @keyframes rot{to{transform:rotate(360deg)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes shimmer{from{background-position:-200% 0}to{background-position:200% 0}}
+
+  @media (prefers-reduced-motion:reduce){
+    .pending .dot,.send .spin,.composer.busy .stage::after{animation:none}
+    *{transition:none!important}
+  }
+  @media (max-width:560px){
+    .chat{padding:0 14px 30px}
+    .story .pick{max-width:100%}
+    .msg.user,.msg.assist{max-width:92%}
+    .composer-inner{padding-left:20px}
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;shell&quot;&gt;
+
+  &lt;!-- preview shell: state toggles (not product) --&gt;
+  &lt;div class=&quot;controls&quot; role=&quot;group&quot; aria-label=&quot;Preview controls&quot;&gt;
+    &lt;span class=&quot;ctl-group&quot;&gt;
+      &lt;button data-state=&quot;quiet&quot; class=&quot;on&quot;&gt;Quiet&lt;/button&gt;
+      &lt;button data-state=&quot;slash&quot;&gt;Slash menu&lt;/button&gt;
+      &lt;button data-state=&quot;pending&quot;&gt;Pending ask&lt;/button&gt;
+      &lt;button data-state=&quot;filled&quot;&gt;Filled&lt;/button&gt;
+      &lt;button data-state=&quot;busy&quot;&gt;Busy&lt;/button&gt;
+    &lt;/span&gt;
+    &lt;span class=&quot;sep&quot;&gt;&lt;/span&gt;
+    &lt;span class=&quot;ctl-group&quot;&gt;
+      &lt;button id=&quot;fillText&quot;&gt;Fill draft&lt;/button&gt;
+      &lt;button id=&quot;clearDraft&quot;&gt;Clear&lt;/button&gt;
+    &lt;/span&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;chat&quot;&gt;
+    &lt;!-- thin header stub: interrupt/Esc live here, NOT in the composer --&gt;
+    &lt;header class=&quot;chat-head&quot;&gt;
+      &lt;div class=&quot;ws-avatar&quot; aria-hidden=&quot;true&quot;&gt;◆&lt;/div&gt;
+      &lt;div class=&quot;titles&quot;&gt;
+        &lt;p class=&quot;eyebrow&quot;&gt;Session · follow-up&lt;/p&gt;
+        &lt;h1&gt;powder&lt;/h1&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;head-side&quot;&gt;Interrupt &amp;amp; &lt;b&gt;Esc&lt;/b&gt; live in the chat header.&lt;br&gt;&lt;span style=&quot;color:var(--ink3)&quot;&gt;Not part of the composer.&lt;/span&gt;&lt;/div&gt;
+    &lt;/header&gt;
+
+    &lt;!-- transcript: 1 user bubble + 1 short assistant line + collapsed Ask card --&gt;
+    &lt;div class=&quot;transcript&quot;&gt;
+      &lt;div class=&quot;msg user&quot;&gt;Re-check the triage bucketing on /dispatch — it mislabels the low-confidence items as blocked.&lt;/div&gt;
+      &lt;div class=&quot;msg assist&quot;&gt;
+        &lt;p class=&quot;who&quot;&gt;powder · agent&lt;/p&gt;
+        Re-ran dispatch on 12 open items and fixed the low-confidence label. One question before I proceed:
+      &lt;/div&gt;
+      &lt;div class=&quot;ask-card&quot; id=&quot;askCard&quot;&gt;
+        &lt;p class=&quot;ask-q&quot;&gt;How should I treat the 3 items with no matching skill?&lt;/p&gt;
+        &lt;p class=&quot;ask-meta&quot;&gt;Awaiting your choice · choices stay here on the Ask card&lt;/p&gt;
+        &lt;div class=&quot;ask-choices&quot;&gt;
+          &lt;button class=&quot;ask-choice&quot; data-ask=&quot;0&quot;&gt;Route to &lt;b&gt;Main&lt;/b&gt; for manual triage &lt;span class=&quot;m&quot;&gt;Main&lt;/span&gt;&lt;/button&gt;
+          &lt;button class=&quot;ask-choice&quot; data-ask=&quot;1&quot;&gt;Leave unassigned, mark &lt;b&gt;needs-review&lt;/b&gt; &lt;span class=&quot;m&quot;&gt;no-op&lt;/span&gt;&lt;/button&gt;
+          &lt;button class=&quot;ask-choice&quot; data-ask=&quot;2&quot;&gt;Skip and log them to the inbox &lt;span class=&quot;m&quot;&gt;inbox&lt;/span&gt;&lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;!-- composer: The Session Story --&gt;
+    &lt;section class=&quot;composer&quot; id=&quot;composer&quot; aria-label=&quot;Composer&quot;&gt;
+      &lt;div class=&quot;rail&quot; aria-hidden=&quot;true&quot;&gt;&lt;/div&gt;
+      &lt;div class=&quot;composer-inner&quot;&gt;
+
+        &lt;!-- identity caption + session story (editable pickers read as sentence) --&gt;
+        &lt;div class=&quot;rail-cap&quot;&gt;Follow-up to &lt;span class=&quot;ws&quot;&gt;powder&lt;/span&gt;&lt;/div&gt;
+        &lt;div class=&quot;story&quot; aria-label=&quot;Session story&quot;&gt;
+          &lt;span class=&quot;lead&quot;&gt;Guiding&lt;/span&gt;
+          &lt;span class=&quot;at&quot;&gt;with&lt;/span&gt;
+          &lt;select class=&quot;pick&quot; id=&quot;modelSelect&quot; aria-label=&quot;Model&quot;&gt;
+            &lt;option&gt;anthropic/claude-fable-5&lt;/option&gt;
+            &lt;option&gt;openai/gpt-5.3-codex&lt;/option&gt;
+            &lt;option&gt;google/gemini-3-pro&lt;/option&gt;
+          &lt;/select&gt;
+          &lt;span class=&quot;at&quot;&gt;at&lt;/span&gt;
+          &lt;select class=&quot;pick think&quot; id=&quot;thinkSelect&quot; aria-label=&quot;Reasoning effort&quot;&gt;
+            &lt;option value=&quot;off&quot;&gt;off&lt;/option&gt;
+            &lt;option value=&quot;low&quot;&gt;low&lt;/option&gt;
+            &lt;option value=&quot;medium&quot;&gt;medium&lt;/option&gt;
+            &lt;option value=&quot;high&quot; selected&gt;high&lt;/option&gt;
+            &lt;option value=&quot;xhigh&quot;&gt;xhigh&lt;/option&gt;
+          &lt;/select&gt;
+          &lt;span class=&quot;at&quot;&gt;reasoning&lt;/span&gt;
+        &lt;/div&gt;
+
+        &lt;!-- pending-ask thin banner --&gt;
+        &lt;div class=&quot;pending&quot; id=&quot;pendingBanner&quot; hidden&gt;
+          &lt;span class=&quot;dot&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+          The agent is awaiting your choice on the Ask card.
+          &lt;button class=&quot;act&quot; id=&quot;gotoAsk&quot;&gt;Review&lt;/button&gt;
+        &lt;/div&gt;
+
+        &lt;!-- slash popover --&gt;
+        &lt;div class=&quot;slash&quot; id=&quot;slashPanel&quot; hidden&gt;
+          &lt;div class=&quot;slash-head&quot;&gt;Commands · slash only&lt;/div&gt;
+          &lt;button class=&quot;slash-item&quot; data-cmd=&quot;/dispatch&quot;&gt;&lt;span class=&quot;name&quot;&gt;/dispatch&lt;/span&gt;&lt;span class=&quot;desc&quot;&gt;Route work to native OMP agents&lt;/span&gt;&lt;span class=&quot;badge skill src&quot;&gt;skill&lt;/span&gt;&lt;/button&gt;
+          &lt;button class=&quot;slash-item&quot; data-cmd=&quot;/research&quot;&gt;&lt;span class=&quot;name&quot;&gt;/research&lt;/span&gt;&lt;span class=&quot;desc&quot;&gt;Bounded research&lt;/span&gt;&lt;span class=&quot;badge skill src&quot;&gt;skill&lt;/span&gt;&lt;/button&gt;
+          &lt;button class=&quot;slash-item&quot; data-cmd=&quot;/triage&quot;&gt;&lt;span class=&quot;name&quot;&gt;/triage&lt;/span&gt;&lt;span class=&quot;desc&quot;&gt;Label new GitHub issues&lt;/span&gt;&lt;span class=&quot;badge workspace src&quot;&gt;workspace&lt;/span&gt;&lt;/button&gt;
+          &lt;button class=&quot;slash-item&quot; data-cmd=&quot;/plan&quot;&gt;&lt;span class=&quot;name&quot;&gt;/plan&lt;/span&gt;&lt;span class=&quot;desc&quot;&gt;Toggle plan mode&lt;/span&gt;&lt;span class=&quot;badge omp src&quot;&gt;omp&lt;/span&gt;&lt;/button&gt;
+          &lt;button class=&quot;slash-item&quot; data-cmd=&quot;/settings&quot;&gt;&lt;span class=&quot;name&quot;&gt;/settings&lt;/span&gt;&lt;span class=&quot;desc&quot;&gt;Open settings&lt;/span&gt;&lt;span class=&quot;badge omp src&quot;&gt;omp&lt;/span&gt;&lt;/button&gt;
+        &lt;/div&gt;
+
+        &lt;!-- the writing stage --&gt;
+        &lt;div class=&quot;stage&quot; id=&quot;stage&quot;&gt;
+          &lt;textarea id=&quot;draft&quot; aria-label=&quot;Draft direction&quot; placeholder=&quot;Write your next direction to the agent…&quot;&gt;&lt;/textarea&gt;
+        &lt;/div&gt;
+
+        &lt;!-- quiet action row: + slash only, and Send --&gt;
+        &lt;div class=&quot;compose-actions&quot;&gt;
+          &lt;button class=&quot;cmd&quot; id=&quot;slashBtn&quot; aria-expanded=&quot;false&quot;&gt;&lt;span class=&quot;plus&quot;&gt;+&lt;/span&gt; Commands&lt;/button&gt;
+          &lt;span class=&quot;cmd-hint&quot;&gt;slash commands only&lt;/span&gt;
+          &lt;span class=&quot;spacer&quot;&gt;&lt;/span&gt;
+          &lt;button class=&quot;send&quot; id=&quot;sendBtn&quot; disabled&gt;Send &lt;span aria-hidden=&quot;true&quot;&gt;→&lt;/span&gt;&lt;/button&gt;
+        &lt;/div&gt;
+
+      &lt;/div&gt;
+    &lt;/section&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+  var composer=document.getElementById(&#x27;composer&#x27;);
+  var draft=document.getElementById(&#x27;draft&#x27;);
+  var sendBtn=document.getElementById(&#x27;sendBtn&#x27;);
+  var slashBtn=document.getElementById(&#x27;slashBtn&#x27;);
+  var slashPanel=document.getElementById(&#x27;slashPanel&#x27;);
+  var pendingBanner=document.getElementById(&#x27;pendingBanner&#x27;);
+  var askCard=document.getElementById(&#x27;askCard&#x27;);
+
+  function refreshSend(){
+    sendBtn.disabled = draft.value.trim().length===0;
+  }
+  draft.addEventListener(&#x27;input&#x27;,refreshSend);
+  refreshSend();
+
+  /* ---- slash menu ---- */
+  slashBtn.addEventListener(&#x27;click&#x27;,function(){
+    var open=slashPanel.hidden;
+    slashPanel.hidden=!open;
+    slashBtn.setAttribute(&#x27;aria-expanded&#x27;,String(open));
+  });
+  slashPanel.addEventListener(&#x27;click&#x27;,function(e){
+    var item=e.target.closest(&#x27;.slash-item&#x27;);
+    if(!item)return;
+    draft.value=draft.value.replace(/\/\w*$/,&#x27;&#x27;)+item.dataset.cmd+&#x27; &#x27;;
+    slashPanel.hidden=true;
+    slashBtn.setAttribute(&#x27;aria-expanded&#x27;,&#x27;false&#x27;);
+    refreshSend();
+    composer.classList.remove(&#x27;state-slash&#x27;);
+    draft.focus();
+  });
+
+  /* ---- ask review scroll ---- */
+  document.getElementById(&#x27;gotoAsk&#x27;).addEventListener(&#x27;click&#x27;,function(){
+    askCard.scrollIntoView({behavior:&#x27;smooth&#x27;,block:&#x27;nearest&#x27;});
+  });
+  document.querySelectorAll(&#x27;.ask-choice&#x27;).forEach(function(b){
+    b.addEventListener(&#x27;click&#x27;,function(){
+      pendingBanner.hidden=true;
+      askCard.classList.add(&#x27;collapsed&#x27;);
+    });
+  });
+
+  /* ---- demo fill / clear ---- */
+  document.getElementById(&#x27;fillText&#x27;).addEventListener(&#x27;click&#x27;,function(){
+    draft.value=&#x27;Re-run the triage sweep and show the counts by status in the summary.&#x27;;
+    refreshSend();
+  });
+  document.getElementById(&#x27;clearDraft&#x27;).addEventListener(&#x27;click&#x27;,function(){
+    draft.value=&#x27;&#x27;;refreshSend();
+  });
+
+  function quiesce(){
+    slashPanel.hidden=true;slashBtn.setAttribute(&#x27;aria-expanded&#x27;,&#x27;false&#x27;);
+    pendingBanner.hidden=true;
+    askCard.classList.add(&#x27;collapsed&#x27;);
+  }
+
+  /* ---- state switching ---- */
+  document.querySelectorAll(&#x27;.controls [data-state]&#x27;).forEach(function(btn){
+    btn.addEventListener(&#x27;click&#x27;,function(){
+      document.querySelectorAll(&#x27;.controls [data-state]&#x27;).forEach(function(b){b.classList.remove(&#x27;on&#x27;)});
+      btn.classList.add(&#x27;on&#x27;);
+      var s=btn.dataset.state;
+      composer.classList.remove(&#x27;state-slash&#x27;,&#x27;state-busy&#x27;);
+
+      quiesce();
+      if(s===&#x27;slash&#x27;){slashPanel.hidden=false;slashBtn.setAttribute(&#x27;aria-expanded&#x27;,&#x27;true&#x27;);composer.classList.add(&#x27;state-slash&#x27;)}
+      else if(s===&#x27;pending&#x27;){pendingBanner.hidden=false;askCard.classList.remove(&#x27;collapsed&#x27;)}
+      else if(s===&#x27;filled&#x27;){draft.value=&#x27;Re-run the triage sweep and show the counts by status in the summary.&#x27;;refreshSend()}
+      else if(s===&#x27;busy&#x27;){runBusy()}
+      else if(s===&#x27;quiet&#x27;){draft.value=&#x27;&#x27;;refreshSend()}
+    });
+  });
+
+  /* ---- send / busy simulation ---- */
+  sendBtn.addEventListener(&#x27;click&#x27;,runBusy);
+  function runBusy(){
+    composer.classList.add(&#x27;state-busy&#x27;,&#x27;busy&#x27;);
+    var old=sendBtn.innerHTML;
+    sendBtn.innerHTML=&#x27;&lt;span class=&quot;spin&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt; Sending&#x27;;
+    sendBtn.disabled=true;
+    setTimeout(function(){
+      composer.classList.remove(&#x27;busy&#x27;,&#x27;state-busy&#x27;);
+      sendBtn.innerHTML=old;
+      draft.value=&#x27;&#x27;;refreshSend();
+    },1400);
+  }
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+" loading="lazy"></iframe>
+  </div>
+  <details class="tradeoffs" open>
+    <summary>Tradeoffs</summary>
+    <ul>
+      <li><strong>Gains:</strong> Session controls legible as prose; strong identity; calm primary action; airy rhythm.</li>
+      <li><strong>Costs:</strong> ~15% more vertical chrome; sentence-selects hide conventional picker affordance; long model ids wrap.</li>
+      <li><strong>Risks:</strong> May feel decorative to speed-first operators; caption assumes one workspace; native select popups stay OS-styled.</li>
+      <li><strong>Rejected defaults:</strong> Dense chip toolbar; ask choices in composer; attach/permissions/Interrupt/Esc in composer; model/thinking in a separate sheet.</li>
+    </ul>
+  </details>
+  <label class="notes-label">Notes
+    <textarea data-notes="b" rows="3" placeholder="Your feedback on this direction…"></textarea>
+  </label>
+  <div class="dir-actions">
+    <button type="button" class="lock-btn" data-lock="b">Lock this direction</button>
+  </div>
+</section>
+
+
+<section id="direction-c" class="direction" aria-labelledby="direction-c-title" data-dir="c">
+  <header class="dir-head">
+    <h2 id="direction-c-title">C — Docked Ops Band</h2>
+    <p class="thesis">One docked operations band: every control (workspace, model, thinking, slash, input, send) owns a stable spatial slot on one baseline for muscle memory and keyboard reach.</p>
+    <p class="lens"><strong>Lead lens:</strong> Dense operations and spatial scanning · skill://baseline-ui</p>
+    <p class="structure"><strong>Layout / interaction:</strong> Single horizontal band [workspace][model][thinking][+] [input] [Send] + 26px status/hint bar (~74px chrome). Popovers open upward. No stacked rails.</p>
+  </header>
+  <div class="preview-wrap" aria-label="Direction C live preview">
+    <iframe title="Direction C preview" class="preview-frame" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;title&gt;Kelpie Composer — C · Dense Ops&lt;/title&gt;
+&lt;style&gt;
+  /* ============ Codex-aligned tokens (Kelpie draft palette) ============ */
+  :root{
+    --shell:      #f3f3f3;
+    --surface:    #ffffff;
+    --border:     #e0e0e0;
+    --seam:       #efefef;
+    --text:       #2d2e30;
+    --text-2:     #666666;
+    --text-3:     #898989;
+    --accent:     #8891e1;
+    --accent-ink: #5b63c9;
+    --green-bg:   #c1e2ce;
+    --green-ink:  #3c9663;
+    --mono: ui-monospace, &quot;SF Mono&quot;, &quot;Cascadia Mono&quot;, Menlo, Consolas, monospace;
+    --sans: -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+    --z-bar: 10;
+    --z-banner: 20;
+    --z-menu: 30;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    font-family:var(--sans);
+    color:var(--text);
+    background:var(--shell);
+    display:flex; justify-content:center;
+  }
+
+  /* ============ Preview shell (not product — demo toolbar) ============ */
+  .shell-canvas{ position:fixed; inset:0; }
+  .preview-toolbar{
+    position:absolute; top:0; left:0; right:0; z-index:var(--z-bar);
+    height:52px; display:flex; align-items:center; gap:14px;
+    padding:0 18px; background:#ececec; border-bottom:1px solid var(--border);
+    font-size:13px; color:var(--text-2);
+  }
+  .preview-toolbar strong{ color:var(--text); font-family:var(--mono); font-weight:600; }
+  .state-tabs{ display:flex; gap:4px; margin-left:auto; }
+  .state-tabs button{
+    font:12px/1 var(--sans); color:var(--text-2);
+    border:1px solid var(--border); background:var(--surface);
+    padding:7px 11px; border-radius:7px; cursor:pointer;
+  }
+  .state-tabs button[aria-pressed=&quot;true&quot;]{
+    background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;
+  }
+  .toolbar-note{ font-size:11px; color:var(--text-3); }
+
+  /* ============ Product column ============ */
+  .column{
+    position:absolute; top:52px; bottom:0; width:1000px; max-width:100%;
+    display:flex; flex-direction:column;
+    background:var(--shell);
+  }
+
+  /* ---- thin fake header stub (interrupt/esc live HERE, not in composer) ---- */
+  .app-header{
+    height:42px; flex:none;
+    display:flex; align-items:center; gap:10px;
+    padding:0 14px; border-bottom:1px solid var(--seam);
+    background:var(--surface);
+    font-size:12px; color:var(--text-2);
+  }
+  .app-header .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  .app-header .ws{ font-family:var(--mono); color:var(--text); }
+  .app-header .spacer{ flex:1; }
+  .header-only{ color:var(--text-3); }
+  .header-only button{
+    font:12px/1 var(--sans); color:var(--text-3);
+    border:1px solid var(--border); background:var(--surface); border-radius:6px;
+    padding:5px 9px; cursor:default; opacity:.7;
+  }
+  .header-only kbd{ background:transparent; border:none; padding:0 2px; color:var(--text-3); }
+
+  /* ---- transcript (fixture only) ---- */
+  .transcript{
+    flex:1; overflow:auto; padding:18px 20px 12px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .msg{ max-width:74%; font-size:14px; line-height:1.5; border-radius:12px; padding:10px 13px; }
+  .msg.user{ align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+  .msg.assistant{ align-self:flex-start; background:var(--surface); border:1px solid var(--border); color:var(--text); border-bottom-left-radius:4px; }
+  .msg.assistant .model{ font-family:var(--mono); font-size:11px; color:var(--text-3); display:block; margin-bottom:4px; }
+
+  /* ---- Ask card (transcript) — collapsible; choices live here ---- */
+  details.ask{
+    align-self:flex-start; width:min(560px,92%);
+    background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--green-ink);
+    border-radius:10px; overflow:hidden; font-size:13px;
+  }
+  details.ask summary{
+    cursor:pointer; padding:9px 12px; color:var(--text);
+    list-style:none; display:flex; align-items:center; gap:8px;
+  }
+  details.ask summary::-webkit-details-marker{ display:none; }
+  details.ask summary .tag{
+    font-family:var(--mono); font-size:11px; color:var(--green-ink); font-weight:600;
+  }
+  details.ask summary .chev{ margin-left:auto; color:var(--text-3); }
+  .ask-body{ padding:2px 12px 12px; border-top:1px solid var(--seam); }
+  .ask-options{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .ask-options button{
+    text-align:left; font:13px/1.4 var(--sans); color:var(--text);
+    background:var(--shell); border:1px solid var(--border); border-radius:8px;
+    padding:8px 11px; cursor:pointer;
+  }
+  .ask-options button:hover, .ask-options button:focus-visible{ border-color:var(--accent); }
+  .ask-options button .hint{ display:block; font:11px/1.2 var(--mono); color:var(--text-3); margin-top:3px; }
+
+  /* ---- pending-ask thin banner (above composer ONLY) ---- */
+  .pending-banner{
+    flex:none; height:30px; display:flex; align-items:center; gap:8px;
+    margin:0 12px 8px; padding:0 11px;
+    background:var(--green-bg); color:#245c3c;
+    border-radius:8px; font-size:12px;
+  }
+  .pending-banner[hidden]{ display:none; }
+  .pending-banner .pulse{
+    width:7px; height:7px; border-radius:50%; background:var(--green-ink); flex:none;
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+  .pending-banner b{ font-weight:600; }
+  .pending-banner code{ font-family:var(--mono); font-size:11px; background:rgba(60,150,99,.14); padding:1px 5px; border-radius:5px; }
+
+  /* ============ Composer — single dense band ============ */
+  .composer{
+    flex:none; background:var(--surface); border-top:1px solid var(--border);
+  }
+  .band{
+    display:flex; align-items:flex-start; gap:8px; padding:8px 10px;
+  }
+
+  /* ---- session control slots: stable spatial anchors ---- */
+  .slots{ display:flex; align-items:center; gap:5px; padding-top:5px; }
+  .slot{
+    position:relative; display:inline-flex; align-items:center; gap:6px;
+    height:30px; padding:0 9px; border-radius:7px;
+    font-family:var(--mono); font-size:12px;
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    white-space:nowrap;
+  }
+  .slot .k{
+    font-size:8px; line-height:1; padding:1px 4px 2px; border-radius:4px;
+    background:var(--shell); border:1px solid var(--border); color:var(--text-3);
+    position:absolute; top:-7px; right:-7px;
+  }
+  .slot.ws{ cursor:default; color:var(--text-2); }
+  .slot.ws .lock{ color:var(--text-3); font-size:10px; }
+  .slot.pick{ cursor:pointer; }
+  .slot.pick:hover, .slot.pick:focus-visible, .slot.pick[aria-expanded=&quot;true&quot;]{
+    border-color:var(--accent); color:var(--text);
+  }
+  .slot.pick .caret{ color:var(--text-3); font-size:9px; }
+
+  /* ---- + slash trigger ---- */
+  .plus{
+    flex:none;
+    width:30px; height:30px; font:600 16px/1 var(--mono); color:var(--text);
+    background:var(--surface); border:1px solid var(--border); border-radius:7px; cursor:pointer;
+  }
+  .plus:hover, .plus:focus-visible, .plus[aria-expanded=&quot;true&quot;]{ border-color:var(--accent); color:var(--accent-ink); }
+
+  /* ============ Popovers (open upward, over transcript) ============ */
+  .pop-menu{
+    position:absolute; left:0; bottom:calc(100% + 22px); z-index:var(--z-menu);
+    min-width:250px; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 6px 24px rgba(0,0,0,.10);
+    opacity:0; transform:translateY(6px); pointer-events:none;
+    transition:opacity .14s ease-out, transform .14s ease-out;
+  }
+  .pop-menu.wide{ min-width:330px; }
+  .slot[aria-expanded=&quot;true&quot;] .pop-menu, .plus[aria-expanded=&quot;true&quot;] + .pop-menu{ opacity:1; transform:none; pointer-events:auto; }
+  .pop-menu .menu-title{
+    font:11px/1 var(--sans); font-weight:600; letter-spacing:.02em; text-transform:uppercase;
+    color:var(--text-3); padding:9px 12px 6px;
+  }
+  .pop-options{ max-height:340px; overflow:auto; padding:2px 6px 6px; }
+  .opt{
+    display:flex; flex-direction:column; align-items:stretch; gap:2px; width:100%;
+    text-align:left; font:12.5px/1.3 var(--mono); color:var(--text);
+    background:transparent; border:none; border-radius:7px; padding:7px 9px; cursor:pointer;
+  }
+  .opt:hover, .opt:focus-visible, .opt.cur{ background:rgba(136,145,225,.14); }
+  .opt .prov{ color:var(--text-3); font-size:11px; }
+  .opt .sub{ display:block; width:100%; font:11px/1.3 var(--sans); color:var(--text-2); margin-top:3px; white-space:normal; }
+  .opt .bdg{ font:10px/1 var(--mono); padding:2px 6px; border-radius:5px; flex:none; margin-left:auto; }
+  .bdg.skill{ background:rgba(136,145,225,.15); color:var(--accent-ink); }
+  .bdg.workspace{ background:rgba(60,150,99,.13); color:var(--green-ink); }
+  .bdg.omp{ background:var(--shell); color:var(--text-2); }
+  .opt .check{ margin-left:auto; color:var(--accent-ink); font-size:11px; }
+  .opt-row{ display:flex; align-items:center; gap:8px; width:100%; }
+  .opt-sub{ font:11px/1.3 var(--sans); color:var(--text-2); margin-top:3px; }
+  .slash-anchor{ position:relative; }
+  .pop-foot{
+    display:flex; gap:4px; padding:6px 10px 8px; border-top:1px solid var(--seam);
+    font-size:11px; color:var(--text-3); align-items:center;
+  }
+  .pop-foot .keys{ margin-left:auto; }
+
+  /* ============ Input ============ */
+  .input-wrap{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  textarea.input{
+    width:100%; min-height:40px; max-height:180px;
+    border:none; outline:none; resize:none; background:transparent;
+    font:15px/1.5 var(--sans); color:var(--text); padding:9px 4px 4px;
+  }
+  textarea.input::placeholder{ color:var(--text-3); }
+  textarea.input:disabled{ color:var(--text-3); cursor:wait; }
+
+  /* ============ Send ============ */
+  .send{
+    flex:none; align-self:flex-end; height:34px; min-width:66px; padding:0 14px;
+    font:600 13px/1 var(--sans); color:var(--text-2);
+    background:var(--surface); border:1px solid var(--border); border-radius:8px; cursor:pointer;
+    margin-top:3px;
+  }
+  .send:disabled{ opacity:.5; cursor:not-allowed; }
+  .composer[data-filled=&quot;true&quot;] .send{
+    background:var(--accent); border-color:var(--accent); color:#fff;
+  }
+  .composer[data-busy=&quot;true&quot;] .send{ color:transparent; }
+  .spinner{
+    display:none; width:14px; height:14px; border-radius:50%; margin:0 auto;
+    border:2px solid rgba(255,255,255,.35); border-top-color:#fff;
+    animation:spin .7s linear infinite;
+  }
+  .composer[data-busy=&quot;true&quot;] .spinner{ display:block; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* ============ Status / keycap hint bar (reused slot) ============ */
+  .bar{
+    height:26px; display:flex; align-items:center; gap:6px;
+    padding:0 12px; border-top:1px solid var(--seam);
+    font:11px/1 var(--mono); color:var(--text-3);
+  }
+  .bar .keys{ margin-left:auto; display:flex; gap:5px; align-items:center; }
+  kbd{
+    font:10.5px/1 var(--mono); color:var(--text-2);
+    background:var(--shell); border:1px solid var(--border); border-bottom-width:2px;
+    border-radius:4px; padding:2px 5px;
+  }
+  .bar.busy{ color:var(--green-ink); }
+  .bar.busy .spin-dot{
+    width:7px; height:7px; border-radius:50%;
+    border:2px solid var(--green-bg); border-top-color:var(--green-ink);
+    animation:spin .7s linear infinite;
+  }
+
+  /* graceful narrow-width degradation (desktop-first target) */
+  @media (max-width: 640px){
+    .band{ flex-wrap:wrap; gap:6px; }
+    .slots{ order:1; width:100%; padding-top:0; flex-wrap:wrap; }
+    .input-wrap{ order:2; flex-basis:100%; }
+    .send{ order:3; margin-left:auto; }
+    .slots .k{ top:auto; right:auto; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;shell-canvas&quot;&gt;
+  &lt;!-- Preview shell (Demo chrome — not part of the product) --&gt;
+  &lt;div class=&quot;preview-toolbar&quot;&gt;
+    &lt;strong&gt;Kelpie · Composer&lt;/strong&gt;
+    &lt;span&gt;Lane C — Dense Ops&lt;/span&gt;
+    &lt;span class=&quot;toolbar-note&quot;&gt;states:&lt;/span&gt;
+    &lt;div class=&quot;state-tabs&quot; role=&quot;tablist&quot; aria-label=&quot;Composer states&quot;&gt;
+      &lt;button data-state=&quot;quiet&quot; aria-pressed=&quot;true&quot;&gt;quiet&lt;/button&gt;
+      &lt;button data-state=&quot;slash&quot; aria-pressed=&quot;false&quot;&gt;slash menu&lt;/button&gt;
+      &lt;button data-state=&quot;pending&quot; aria-pressed=&quot;false&quot;&gt;pending-ask&lt;/button&gt;
+      &lt;button data-state=&quot;filled&quot; aria-pressed=&quot;false&quot;&gt;filled&lt;/button&gt;
+      &lt;button data-state=&quot;busy&quot; aria-pressed=&quot;false&quot;&gt;sending&lt;/button&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;column&quot;&gt;
+
+    &lt;!-- Thin fake header stub: interrupt / Esc live HERE, not in the composer --&gt;
+    &lt;header class=&quot;app-header&quot;&gt;
+      &lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;
+      &lt;span class=&quot;ws&quot;&gt;powder&lt;/span&gt;
+      &lt;span&gt;kelpie · trio&lt;/span&gt;
+      &lt;span class=&quot;spacer&quot;&gt;&lt;/span&gt;
+      &lt;span class=&quot;header-only&quot;&gt;&lt;button title=&quot;Lives in header, not in composer&quot;&gt;⏹ Interrupt&lt;/button&gt;
+        &lt;button title=&quot;Lives in header, not in composer&quot;&gt;Esc &lt;kbd&gt;esc&lt;/kbd&gt;&lt;/button&gt;&lt;/span&gt;
+    &lt;/header&gt;
+
+    &lt;!-- Fixture transcript --&gt;
+    &lt;main class=&quot;transcript&quot; aria-label=&quot;Conversation&quot;&gt;
+      &lt;details class=&quot;ask&quot; id=&quot;ask-card&quot;&gt;
+        &lt;summary&gt;&lt;span class=&quot;tag&quot;&gt;ASK · awaiting&lt;/span&gt; Pick how to proceed &lt;span class=&quot;chev&quot;&gt;▾&lt;/span&gt;&lt;/summary&gt;
+        &lt;div class=&quot;ask-body&quot;&gt;
+          Continue and file the summary.
+          &lt;div class=&quot;ask-options&quot;&gt;
+            &lt;button type=&quot;button&quot;&gt;Continue triage &lt;span class=&quot;hint&quot;&gt;runs /dispatch on all open issues&lt;/span&gt;&lt;/button&gt;
+            &lt;button type=&quot;button&quot;&gt;Hold for a better model &lt;span class=&quot;hint&quot;&gt;switches to gpt-5.3-codex&lt;/span&gt;&lt;/button&gt;
+            &lt;button type=&quot;button&quot;&gt;Ask me first &lt;span class=&quot;hint&quot;&gt;waits for explicit go / no-go&lt;/span&gt;&lt;/button&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/details&gt;
+
+      &lt;div class=&quot;msg user&quot;&gt;Kick off the research and file a short summary.&lt;/div&gt;
+      &lt;div class=&quot;msg assistant&quot;&gt;&lt;span class=&quot;model&quot;&gt;anthropic/claude-fable-5&lt;/span&gt;Scanned 4 issue labels. Ready to run /dispatch on the open set.&lt;/div&gt;
+    &lt;/main&gt;
+
+    &lt;!-- Pending-ask thin banner (above composer only) --&gt;
+    &lt;div class=&quot;pending-banner&quot; id=&quot;pending-banner&quot; hidden&gt;
+      &lt;span class=&quot;pulse&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;b&gt;Answer requested&lt;/b&gt; — the agent is waiting. Choices are on the card above; or type to take over.&lt;/span&gt;
+      &lt;code&gt;/triage&lt;/code&gt;
+    &lt;/div&gt;
+
+    &lt;!-- ===================== COMPOSER ===================== --&gt;
+    &lt;footer class=&quot;composer&quot; id=&quot;composer&quot;&gt;
+      &lt;div class=&quot;band&quot;&gt;
+
+        &lt;!-- session control slots: stable spatial anchors --&gt;
+        &lt;div class=&quot;slots&quot;&gt;
+          &lt;div class=&quot;slot ws&quot; tabindex=&quot;-1&quot;&gt;&lt;span class=&quot;lock&quot;&gt;◈&lt;/span&gt;workspace:powder&lt;/div&gt;
+
+          &lt;!-- Model picker --&gt;
+          &lt;div class=&quot;slot pick&quot; id=&quot;model-pop&quot; tabindex=&quot;0&quot; role=&quot;listbox&quot; aria-haspopup=&quot;listbox&quot; aria-expanded=&quot;false&quot; aria-label=&quot;Model&quot;&gt;
+            &lt;span id=&quot;model-chip&quot;&gt;claude-fable-5&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;m&lt;/span&gt;&lt;span class=&quot;caret&quot;&gt;▾&lt;/span&gt;
+            &lt;div class=&quot;pop-menu&quot; role=&quot;presentation&quot;&gt;
+              &lt;div class=&quot;menu-title&quot;&gt;Model&lt;/div&gt;
+              &lt;div class=&quot;pop-options&quot; role=&quot;presentation&quot;&gt;&lt;/div&gt;
+              &lt;div class=&quot;pop-foot&quot;&gt;choose a run model&lt;span class=&quot;keys&quot;&gt;&lt;kbd&gt;↑↓&lt;/kbd&gt;&lt;kbd&gt;↵&lt;/kbd&gt;&lt;kbd&gt;esc&lt;/kbd&gt;&lt;/span&gt;&lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+
+          &lt;!-- Thinking picker --&gt;
+          &lt;div class=&quot;slot pick&quot; id=&quot;think-pop&quot; tabindex=&quot;0&quot; role=&quot;listbox&quot; aria-haspopup=&quot;listbox&quot; aria-expanded=&quot;false&quot; aria-label=&quot;Thinking effort&quot;&gt;
+            &lt;span&gt;thinking:&lt;/span&gt;&lt;span id=&quot;think-chip&quot; style=&quot;color:var(--accent-ink)&quot;&gt;high&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;t&lt;/span&gt;&lt;span class=&quot;caret&quot;&gt;▾&lt;/span&gt;
+            &lt;div class=&quot;pop-menu&quot; role=&quot;presentation&quot;&gt;
+              &lt;div class=&quot;menu-title&quot;&gt;Thinking effort&lt;/div&gt;
+              &lt;div class=&quot;pop-options&quot; role=&quot;presentation&quot;&gt;&lt;/div&gt;
+              &lt;div class=&quot;pop-foot&quot;&gt;spend controls depth&lt;span class=&quot;keys&quot;&gt;&lt;kbd&gt;↑↓&lt;/kbd&gt;&lt;kbd&gt;↵&lt;/kbd&gt;&lt;kbd&gt;esc&lt;/kbd&gt;&lt;/span&gt;&lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+
+          &lt;!-- Slash (leading + = commands only) --&gt;
+          &lt;div class=&quot;slash-anchor&quot;&gt;
+            &lt;button class=&quot;plus&quot; id=&quot;slash-pop&quot; aria-haspopup=&quot;listbox&quot; aria-expanded=&quot;false&quot; aria-label=&quot;Slash commands&quot;&gt;+&lt;/button&gt;
+            &lt;div class=&quot;pop-menu wide&quot; id=&quot;slash-menu&quot; role=&quot;presentation&quot;&gt;
+              &lt;div class=&quot;menu-title&quot;&gt;Commands&lt;/div&gt;
+              &lt;div class=&quot;pop-options&quot; role=&quot;presentation&quot;&gt;&lt;/div&gt;
+              &lt;div class=&quot;pop-foot&quot;&gt;leading + = slash only · no file attach&lt;span class=&quot;keys&quot;&gt;&lt;kbd&gt;↑↓&lt;/kbd&gt;&lt;kbd&gt;↵&lt;/kbd&gt;&lt;kbd&gt;esc&lt;/kbd&gt;&lt;/span&gt;&lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;!-- Input --&gt;
+        &lt;div class=&quot;input-wrap&quot;&gt;
+          &lt;textarea class=&quot;input&quot; id=&quot;input&quot; rows=&quot;1&quot; placeholder=&quot;Draft a follow-up, or type / for a command…&quot; aria-label=&quot;Message&quot;&gt;&lt;/textarea&gt;
+        &lt;/div&gt;
+
+        &lt;!-- Send --&gt;
+        &lt;button class=&quot;send&quot; id=&quot;send&quot; disabled&gt;Send&lt;span class=&quot;spinner&quot;&gt;&lt;/span&gt;&lt;/button&gt;
+      &lt;/div&gt;
+
+      &lt;!-- status / keycap hint bar (one reused slot) --&gt;
+      &lt;div class=&quot;bar&quot; id=&quot;bar&quot;&gt;
+        &lt;span id=&quot;bar-msg&quot;&gt;Tab between session slots&lt;/span&gt;
+        &lt;span class=&quot;keys&quot;&gt;
+          &lt;span id=&quot;bar-send&quot;&gt;&lt;kbd&gt;↵&lt;/kbd&gt; send&lt;/span&gt;&lt;span&gt;&lt;kbd&gt;⇧↵&lt;/kbd&gt; line&lt;/span&gt;
+        &lt;/span&gt;
+      &lt;/div&gt;
+    &lt;/footer&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+(function(){
+  &quot;use strict&quot;;
+  var composer=document.getElementById(&#x27;composer&#x27;),
+      input=document.getElementById(&#x27;input&#x27;),
+      send=document.getElementById(&#x27;send&#x27;),
+      banner=document.getElementById(&#x27;pending-banner&#x27;),
+      ask=document.getElementById(&#x27;ask-card&#x27;),
+      barMsg=document.getElementById(&#x27;bar-msg&#x27;),
+      bar=document.getElementById(&#x27;bar&#x27;),
+      modelChip=document.getElementById(&#x27;model-chip&#x27;),
+      thinkChip=document.getElementById(&#x27;think-chip&#x27;);
+
+  /* ---------- fixture data ---------- */
+  var MODELS=[
+    {id:&#x27;anthropic/claude-fable-5&#x27;, short:&#x27;claude-fable-5&#x27;, prov:&#x27;anthropic&#x27;},
+    {id:&#x27;openai/gpt-5.3-codex&#x27;,     short:&#x27;gpt-5.3-codex&#x27;,  prov:&#x27;openai&#x27;},
+    {id:&#x27;google/gemini-3-pro&#x27;,      short:&#x27;gemini-3-pro&#x27;,   prov:&#x27;google&#x27;}
+  ];
+  var THINK=[&#x27;off&#x27;,&#x27;low&#x27;,&#x27;medium&#x27;,&#x27;high&#x27;,&#x27;xhigh&#x27;];
+  var CMDS=[
+    {name:&#x27;dispatch&#x27;, src:&#x27;skill&#x27;,     bdg:&#x27;skill&#x27;,     desc:&#x27;Route work to native OMP agents&#x27;},
+    {name:&#x27;research&#x27;, src:&#x27;skill&#x27;,     bdg:&#x27;skill&#x27;,     desc:&#x27;Bounded research&#x27;},
+    {name:&#x27;triage&#x27;,   src:&#x27;workspace&#x27;, bdg:&#x27;workspace&#x27;, desc:&#x27;Label new GitHub issues&#x27;},
+    {name:&#x27;plan&#x27;,     src:&#x27;omp&#x27;,       bdg:&#x27;omp&#x27;,       desc:&#x27;Toggle plan mode&#x27;},
+    {name:&#x27;settings&#x27;, src:&#x27;omp&#x27;,       bdg:&#x27;omp&#x27;,       desc:&#x27;Open settings&#x27;}
+  ];
+  var state={ model:MODELS[0].id, think:&#x27;high&#x27;, slashOpen:false };
+
+  /* ---------- generic popover build ---------- */
+  function buildList(pop, items, render, onPick, activeSel){
+    var box=pop.querySelector(&#x27;.pop-options&#x27;);
+    box.innerHTML=&#x27;&#x27;;
+    var nodes=[];
+    items.forEach(function(item,idx){
+      var b=document.createElement(&#x27;button&#x27;);
+      b.type=&#x27;button&#x27;; b.className=&#x27;opt&#x27;+(activeSel(item)?&#x27; active&#x27;:&#x27;&#x27;); b.setAttribute(&#x27;role&#x27;,&#x27;option&#x27;);
+      b.innerHTML=render(item);
+      b.addEventListener(&#x27;click&#x27;,function(){ onPick(item); closePops(); pop.focus(); });
+      b.addEventListener(&#x27;mousemove&#x27;,function(){ nodes.forEach(function(n){n.classList.remove(&#x27;cur&#x27;);}); b.classList.add(&#x27;cur&#x27;); });
+      box.appendChild(b); nodes.push(b);
+    });
+    function focusAt(i){ nodes[i].classList.add(&#x27;cur&#x27;); nodes[i].focus(); }
+    function move(dir){ var i=nodes.indexOf(document.activeElement); focusAt(Math.max(0,Math.min(nodes.length-1,(i&lt;0?0:i)+dir))); }
+    box.addEventListener(&#x27;keydown&#x27;,function(e){
+      if(e.key===&#x27;ArrowDown&#x27;){ e.preventDefault(); move(1); }
+      else if(e.key===&#x27;ArrowUp&#x27;){ e.preventDefault(); move(-1); }
+      else if(e.key===&#x27;Enter&#x27;||e.key===&#x27; &#x27;){ e.preventDefault(); nodes.forEach(function(n){ if(n.classList.contains(&#x27;cur&#x27;)){n.click();} }); }
+      else if(e.key===&#x27;Escape&#x27;){ e.preventDefault(); closePops(); pop.focus(); }
+    });
+    return {nodes:nodes, focusAt:focusAt};
+  }
+
+  /* ---------- wire model ---------- */
+  var modelList=buildList(document.getElementById(&#x27;model-pop&#x27;), MODELS,
+    function(m){ return &#x27;&lt;span class=&quot;opt-row&quot;&gt;&lt;span&gt;&#x27;+m.short+&#x27;&lt;/span&gt;&lt;span class=&quot;prov&quot;&gt;&#x27;+m.prov+&#x27;&lt;/span&gt;&lt;/span&gt;&#x27;; },
+    function(m){ state.model=m.id; modelChip.textContent=m.short; },
+    function(m){ return m.id===state.model; });
+
+  /* ---------- wire thinking ---------- */
+  var thinkList=buildList(document.getElementById(&#x27;think-pop&#x27;), THINK,
+    function(t){ return &#x27;&lt;span class=&quot;opt-row&quot;&gt;&lt;span&gt;&#x27;+t+&#x27;&lt;/span&gt;&#x27;+(t===state.think?&#x27;&lt;span class=&quot;check&quot;&gt;●&lt;/span&gt;&#x27;:&#x27;&#x27;)+&#x27;&lt;/span&gt;&#x27;; },
+    function(t){ state.think=t; thinkChip.textContent=t; },
+    function(t){ return t===state.think; });
+
+  /* ---------- wire slash (+): includes slash-pop trigger + separate menu ---------- */
+  var slashPop=document.getElementById(&#x27;slash-pop&#x27;), slashMenu=document.getElementById(&#x27;slash-menu&#x27;);
+  var slashNodes=[];
+  CMDS.forEach(function(c){
+    var b=document.createElement(&#x27;button&#x27;);
+    b.type=&#x27;button&#x27;; b.className=&#x27;opt&#x27;; b.setAttribute(&#x27;role&#x27;,&#x27;option&#x27;);
+    b.innerHTML=&#x27;&lt;span class=&quot;opt-row&quot;&gt;&lt;span&gt;/&#x27;+c.name+&#x27;&lt;/span&gt;&lt;span class=&quot;bdg &#x27;+c.bdg+&#x27;&quot;&gt;&#x27;+c.src+&#x27;&lt;/span&gt;&lt;/span&gt;&lt;span class=&quot;opt-sub&quot;&gt;&#x27;+c.desc+&#x27;&lt;/span&gt;&#x27;;
+    b.addEventListener(&#x27;click&#x27;,function(){ closePops(); slashPop.focus(); });
+    b.addEventListener(&#x27;mousemove&#x27;,function(){ slashNodes.forEach(function(n){n.classList.remove(&#x27;cur&#x27;);}); b.classList.add(&#x27;cur&#x27;); });
+    slashMenu.querySelector(&#x27;.pop-options&#x27;).appendChild(b); slashNodes.push(b);
+  });
+  slashMenu.addEventListener(&#x27;keydown&#x27;,function(e){
+    var i=slashNodes.indexOf(document.activeElement);
+    if(e.key===&#x27;ArrowDown&#x27;){ e.preventDefault(); slashNodes[Math.min(slashNodes.length-1,i+1)].classList.add(&#x27;cur&#x27;); slashNodes[Math.min(slashNodes.length-1,i+1)].focus(); }
+    else if(e.key===&#x27;ArrowUp&#x27;){ e.preventDefault(); slashNodes[Math.max(0,i-1)].classList.add(&#x27;cur&#x27;); slashNodes[Math.max(0,i-1)].focus(); }
+    else if(e.key===&#x27;Escape&#x27;){ e.preventDefault(); closePops(); slashPop.focus(); }
+  });
+
+  /* ---------- open / close ---------- */
+  var pops=[document.getElementById(&#x27;model-pop&#x27;), document.getElementById(&#x27;think-pop&#x27;), slashPop];
+  function openSlash(){
+    closePops(); slashPop.setAttribute(&#x27;aria-expanded&#x27;,&#x27;true&#x27;);
+    requestAnimationFrame(function(){ slashNodes[0].focus(); });
+  }
+  function openSelector(pop, list){
+    closePops(); pop.setAttribute(&#x27;aria-expanded&#x27;,&#x27;true&#x27;);
+    var i=list.nodes.indexOf(list.nodes.filter(function(n){return n.classList.contains(&#x27;active&#x27;);})[0]);
+    if(i&lt;0)i=0; requestAnimationFrame(function(){ list.focusAt(i); });
+  }
+  function closePops(){
+    pops.forEach(function(p){ p.setAttribute(&#x27;aria-expanded&#x27;,&#x27;false&#x27;); });
+  }
+  document.getElementById(&#x27;model-pop&#x27;).addEventListener(&#x27;click&#x27;,function(e){ if(e.target.closest(&#x27;.pop-menu&#x27;))return; openSelector(this,modelList); });
+  document.getElementById(&#x27;think-pop&#x27;).addEventListener(&#x27;click&#x27;,function(e){ if(e.target.closest(&#x27;.pop-menu&#x27;))return; openSelector(this,thinkList); });
+  slashPop.addEventListener(&#x27;click&#x27;,function(e){ e.stopPropagation(); openSlash(); });
+
+  pops.forEach(function(p){
+    p.addEventListener(&#x27;keydown&#x27;,function(e){
+      if(e.key===&#x27;ArrowDown&#x27;||e.key===&#x27; &#x27;||e.key===&#x27;Enter&#x27;){
+        e.preventDefault();
+        if(p===slashPop){ openSlash(); }
+        else{ openSelector(p, p===document.getElementById(&#x27;model-pop&#x27;)?modelList:thinkList); }
+      }
+    });
+  });
+  document.addEventListener(&#x27;click&#x27;,function(e){
+    if(e.target.closest(&#x27;.preview-toolbar&#x27;))return; // state tabs drive demo states
+    if(!e.target.closest(&#x27;.pop-menu&#x27;) &amp;&amp; !e.target.closest(&#x27;.slot.pick&#x27;) &amp;&amp; e.target!==slashPop &amp;&amp; !slashMenu.contains(e.target) &amp;&amp; !slashPop.contains(e.target)){
+      closePops();
+    }
+  });
+
+  /* ---------- input / send state ---------- */
+  function updateSend(){
+    var has=input.value.trim().length&gt;0;
+    composer.dataset.filled=has?&#x27;true&#x27;:&#x27;false&#x27;;
+    if(composer.dataset.busy!==&#x27;true&#x27;){ send.disabled=!has; }
+  }
+  input.addEventListener(&#x27;input&#x27;,updateSend);
+  send.addEventListener(&#x27;click&#x27;,function(){
+    if(composer.dataset.busy===&#x27;true&#x27;)return;
+    composer.dataset.busy=&#x27;true&#x27;; composer.dataset.filled=&#x27;false&#x27;; send.disabled=true; input.disabled=true;
+    bar.className=&#x27;bar busy&#x27;; document.getElementById(&#x27;bar-send&#x27;).textContent=&#x27;&#x27;;
+    barMsg.textContent=&#x27;⟳ Sending to &#x27;+MODELS.filter(function(m){return m.id===state.model;})[0].short+&#x27; · thinking &#x27;+state.think;
+    setTimeout(function(){
+      composer.dataset.busy=&#x27;false&#x27;; input.disabled=false;
+      bar.className=&#x27;bar&#x27;; document.getElementById(&#x27;bar-send&#x27;).innerHTML=&#x27;&lt;kbd&gt;↵&lt;/kbd&gt; send&#x27;;
+      barMsg.textContent=&#x27;Tab between session slots&#x27;;
+      input.value=&#x27;&#x27;; updateSend();
+    },1500);
+  });
+
+  /* ---------- state tabs (demo scrubber) ---------- */
+  var FILL=&#x27;Run the triage pass and route the open set to /dispatch.&#x27;;
+  var tabs=document.querySelectorAll(&#x27;.state-tabs button&#x27;);
+  tabs.forEach(function(btn){
+    btn.addEventListener(&#x27;click&#x27;,function(){
+      tabs.forEach(function(b){ b.setAttribute(&#x27;aria-pressed&#x27;,String(b===btn)); });
+      var s=btn.getAttribute(&#x27;data-state&#x27;);
+      closePops();
+      banner.hidden = !(s===&#x27;pending&#x27;);
+      ask.open = (s===&#x27;pending&#x27;);
+      composer.dataset.busy=&#x27;false&#x27;; input.disabled=false; bar.className=&#x27;bar&#x27;;
+      barMsg.textContent = (s===&#x27;pending&#x27;) ? &#x27;answer pending — type to take over&#x27; : &#x27;Tab between session slots&#x27;;
+      if(s===&#x27;slash&#x27;){ openSlash(); }
+      else if(s===&#x27;filled&#x27;){ input.value=FILL; }
+      else if(s===&#x27;busy&#x27;){
+        input.value=FILL; input.disabled=true; composer.dataset.busy=&#x27;true&#x27;; composer.dataset.filled=&#x27;false&#x27;; send.disabled=true;
+        bar.className=&#x27;bar busy&#x27;; document.getElementById(&#x27;bar-send&#x27;).textContent=&#x27;&#x27;;
+        barMsg.textContent=&#x27;⟳ Sending to claude-fable-5 · thinking high&#x27;;
+      }
+      else { input.value=&#x27;&#x27;; }
+      updateSend();
+    });
+  });
+  updateSend();
+})();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+" loading="lazy"></iframe>
+  </div>
+  <details class="tradeoffs" open>
+    <summary>Tradeoffs</summary>
+    <ul>
+      <li><strong>Gains:</strong> Lowest chrome; stable slots; keyboard-first lists with m/t hints; more transcript visible.</li>
+      <li><strong>Costs:</strong> Toolbar-dense feel; less inviting for long narrative drafts; less room for helper text beside the box.</li>
+      <li><strong>Risks:</strong> One row can over-stuff; keycap badges crowd on narrow widths; depends on header owning Interrupt/Esc.</li>
+      <li><strong>Rejected defaults:</strong> Tall card above a control rail; attach/permissions cluster; ask-option strip in box; two-row band by default.</li>
+    </ul>
+  </details>
+  <label class="notes-label">Notes
+    <textarea data-notes="c" rows="3" placeholder="Your feedback on this direction…"></textarea>
+  </label>
+  <div class="dir-actions">
+    <button type="button" class="lock-btn" data-lock="c">Lock this direction</button>
+  </div>
+</section>
+
+
+  <aside id="lock-record" aria-live="polite">
+    <h2>Lock record</h2>
+    <p id="lock-body">No direction locked. Browse the three previews, leave notes, then lock one candidate.</p>
+    <button type="button" class="clear-lock" id="clear-lock" hidden>Clear lock</button>
+  </aside>
+</main>
+<script>
+(function () {
+  const KEY = 'kelpie.composer.prototype.v1';
+  const order = ['a', 'b', 'c'];
+  const titles = {
+    a: 'A — Workflow first',
+    b: 'B — The Session Story',
+    c: 'C — Docked Ops Band',
+  };
+  const store = JSON.parse(localStorage.getItem(KEY) || '{}');
+
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(store));
+  }
+
+  // Notes
+  document.querySelectorAll('textarea[data-notes]').forEach((ta) => {
+    const id = ta.getAttribute('data-notes');
+    ta.value = (store.notes && store.notes[id]) || '';
+    ta.addEventListener('input', () => {
+      store.notes = store.notes || {};
+      store.notes[id] = ta.value;
+      save();
+    });
+  });
+
+  function setCurrent(id, pushHash) {
+    document.querySelectorAll('.nav-btn').forEach((b) => {
+      b.setAttribute('aria-current', b.getAttribute('data-nav') === id ? 'true' : 'false');
+    });
+    if (pushHash) history.replaceState(null, '', '#direction-' + id);
+    store.current = id;
+    save();
+  }
+
+  function go(id) {
+    const el = document.getElementById('direction-' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setCurrent(id, true);
+  }
+
+  document.querySelectorAll('.nav-btn').forEach((b) => {
+    b.addEventListener('click', () => go(b.getAttribute('data-nav')));
+  });
+  document.querySelectorAll('[data-step]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const cur = store.current || 'a';
+      const i = order.indexOf(cur);
+      const n = order[(i + Number(b.getAttribute('data-step')) + order.length) % order.length];
+      go(n);
+    });
+  });
+
+  // Intersection observer for nav highlight
+  const io = new IntersectionObserver((entries) => {
+    const vis = entries.filter((e) => e.isIntersecting).sort((a,b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (vis) setCurrent(vis.target.getAttribute('data-dir'), false);
+  }, { rootMargin: '-20% 0px -55% 0px', threshold: [0.2, 0.5, 0.8] });
+  document.querySelectorAll('.direction').forEach((s) => io.observe(s));
+
+  function renderLock() {
+    const rec = document.getElementById('lock-record');
+    const body = document.getElementById('lock-body');
+    const clear = document.getElementById('clear-lock');
+    document.querySelectorAll('.direction').forEach((s) => s.classList.remove('is-locked'));
+    if (!store.lock) {
+      rec.classList.remove('locked');
+      body.textContent = 'No direction locked. Browse the three previews, leave notes, then lock one candidate.';
+      clear.hidden = true;
+      return;
+    }
+    const id = store.lock;
+    const sec = document.getElementById('direction-' + id);
+    if (sec) sec.classList.add('is-locked');
+    rec.classList.add('locked');
+    const note = (store.notes && store.notes[id]) || '(no notes)';
+    body.innerHTML =
+      '<strong>Candidate lock:</strong> ' + titles[id] + '<br>' +
+      '<strong>Rationale notes:</strong> ' + note.replace(/</g,'&lt;') + '<br>' +
+      '<strong>Constraints retained:</strong> model+thinking editable; workspace read-only; + = slash; no Interrupt/Esc in composer; pending-ask banner only.<br>' +
+      '<strong>Rejected (for now):</strong> ' + order.filter((x) => x !== id).map((x) => titles[x]).join(' · ') + '<br>' +
+      '<em>Browser lock is a candidate only. Confirm in chat before production work.</em>';
+    clear.hidden = false;
+  }
+
+  document.querySelectorAll('[data-lock]').forEach((b) => {
+    b.addEventListener('click', () => {
+      store.lock = b.getAttribute('data-lock');
+      save();
+      renderLock();
+      document.getElementById('lock-record').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  });
+  document.getElementById('clear-lock').addEventListener('click', () => {
+    delete store.lock;
+    save();
+    document.querySelectorAll('.direction').forEach((s) => s.classList.remove('is-locked'));
+    renderLock();
+  });
+
+  // Hash deep-link
+  const hash = (location.hash || '').replace('#direction-', '');
+  if (order.includes(hash)) go(hash);
+  else setCurrent(store.current || 'a', false);
+  renderLock();
+})();
+</script>
+</body>
+</html>

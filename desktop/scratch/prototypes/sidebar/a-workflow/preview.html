@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Sidebar A — Workflow</title><style>
+:root{
+  --bg:#f3f3f3; --surface:#ffffff; --border:#e0e0e0; --seam:#efefef;
+  --text:#2d2e30; --soft:#666666; --faint:#898989;
+  --brand:#8891e1; --brand-bg:#eef1ff; --brand-ink:#5b66c8;
+  --ok:#3c9663; --ok-bg:#e8f6ee; --ok-border:#a2ccb4;
+  --err:#c44; --err-bg:#fdecec; --err-border:#f0b4b4;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);color:var(--text);background:#dfe3ea;display:flex;height:100%}
+button{font:inherit;color:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin .7s linear infinite}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.app{display:flex;width:min(1100px,100%);height:min(820px,100%);margin:auto;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 12px 40px rgba(20,22,30,.12)}
+.main{flex:1;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13px;border-left:1px solid var(--seam)}
+.sb{width:300px;flex:none;display:flex;flex-direction:column;background:var(--bg);min-height:0}
+.sb-head{flex:none;padding:12px 14px 10px;border-bottom:1px solid var(--seam)}
+.sb-head h1{margin:0;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.sb-head .sub{margin-top:2px;font-size:12px;color:var(--soft)}
+.sb-list{flex:1;overflow:auto;padding:8px}
+.sb-foot{flex:none;border-top:1px solid var(--seam);padding:10px;font-size:12px;color:var(--faint)}
+
+.sb{width:304px}
+.needs-strip{margin:0 0 10px;padding:8px 10px;border:1px solid var(--ok-border);background:var(--ok-bg);border-radius:10px}
+.needs-strip .lab{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ok);margin-bottom:6px}
+.needs-item{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;border:0;background:transparent;padding:6px 4px;border-radius:8px;cursor:pointer}
+.needs-item:hover,.needs-item.sel{background:rgba(255,255,255,.7)}
+.needs-item .t{font-size:13px;font-weight:600;color:var(--text)}
+.needs-item .m{font-size:11.5px;color:var(--soft);font-family:var(--mono)}
+.ws{margin-bottom:14px}
+.ws-h{display:flex;align-items:baseline;gap:8px;padding:6px 8px 4px;position:sticky;top:0;background:var(--bg);z-index:2}
+.ws-h button.tog{border:0;background:transparent;padding:0;cursor:pointer;display:flex;align-items:baseline;gap:8px;width:100%;text-align:left}
+.ws-name{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.ws-count{font-size:11px;color:var(--faint)}
+.ws.collapsed .ws-body{display:none}
+.ws.collapsed .chev::before{content:'▸'}
+.chev::before{content:'▾';font-size:10px;color:var(--faint)}
+.row{display:grid;grid-template-columns:14px 1fr auto;grid-template-rows:auto auto;column-gap:8px;row-gap:1px;width:100%;padding:7px 8px;border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer;text-align:left;align-items:start}
+.row:hover{background:var(--surface)}
+.row.sel{background:var(--surface);border-color:var(--border);box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.row .ico{grid-row:1 / span 2;grid-column:1;margin-top:3px;width:10px;height:10px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
+.row .ico.needs{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+.row .ico.working{background:transparent}
+.row .ico.working .ring{width:10px;height:10px;border:2px solid #c3cdf6;border-top-color:var(--brand-ink);border-radius:50%;display:block}
+.row .ico.idle{background:var(--border)}
+.row .ico.done{background:#c8c8c8}
+.row .title{grid-column:2;grid-row:1;font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row .cwd{grid-column:2;grid-row:2;font-size:11.5px;font-family:var(--mono);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .time{grid-column:3;grid-row:1 / span 2;align-self:center;font-size:11px;font-family:var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.row .chip{display:none}
+.row.needs-row .title{color:#1f6838}
+</style></head><body>
+<div class="app" role="application">
+<aside class="sb" aria-label="Fleet sidebar">
+  <div class="sb-head"><h1>Fleet</h1><div class="sub">Grouped by workspace · attention inside</div></div>
+  <div class="sb-list"><div class="needs-strip"><div class="lab">Needs you</div><button class="needs-item" data-id="p1" type="button">
+              <span class="t">π ! iron-forest</span>
+              <span class="m">iron-forest · Development/iron-forest</span>
+            </button></div><section class="ws" data-ws="iron-forest">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">iron-forest</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row needs-row" data-id="p1">
+              <span class="ico needs" aria-hidden="true"></span>
+              <span class="title">π ! iron-forest</span>
+              <span class="cwd" title="/home/phaedrus/Development/iron-forest">Development/iron-forest</span>
+              <span class="time">2m</span>
+            </button></div></section><section class="ws" data-ws="olympus">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">olympus</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row sel" data-id="p2">
+              <span class="ico working" aria-hidden="true"><span class="ring spin"></span></span>
+              <span class="title">Simplify service implementation strategy</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/wA">demo/wA</span>
+              <span class="time">5m</span>
+            </button></div></section><section class="ws" data-ws="kelpie">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">kelpie</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p3">
+              <span class="ico working" aria-hidden="true"><span class="ring spin"></span></span>
+              <span class="title">kelpie</span>
+              <span class="cwd" title="/home/phaedrus/Development/misty-step/kelpie">misty-step/kelpie</span>
+              <span class="time">7m</span>
+            </button></div></section><section class="ws" data-ws="bluetooth-demo">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">bluetooth-demo</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p4">
+              <span class="ico working" aria-hidden="true"><span class="ring spin"></span></span>
+              <span class="title">Improve Bluetooth connection reliability</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/bt">demo/bt</span>
+              <span class="time">12m</span>
+            </button></div></section><section class="ws" data-ws="time-tracker">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">time-tracker</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p5">
+              <span class="ico idle" aria-hidden="true"></span>
+              <span class="title">Initialize TI-101 remediation tasks</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/wC">demo/wC</span>
+              <span class="time">1h</span>
+            </button></div></section><section class="ws" data-ws="canary">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">canary</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p6">
+              <span class="ico idle" aria-hidden="true"></span>
+              <span class="title">Repair canary host connectivity</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/wF">demo/wF</span>
+              <span class="time">2h</span>
+            </button></div></section><section class="ws" data-ws="cantrip">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">cantrip</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p7">
+              <span class="ico idle" aria-hidden="true"></span>
+              <span class="title">Investigate cloud STT credentials</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/wJ">demo/wJ</span>
+              <span class="time">3h</span>
+            </button></div></section><section class="ws" data-ws="mint">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">mint</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p8">
+              <span class="ico idle" aria-hidden="true"></span>
+              <span class="title">Reconcile agent work with Mint security</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/wK">demo/wK</span>
+              <span class="time">4h</span>
+            </button></div></section><section class="ws" data-ws="habitat">
+          <div class="ws-h"><button type="button" class="tog" aria-expanded="true"><span class="chev"></span><span class="ws-name">habitat</span><span class="ws-count">1</span></button></div>
+          <div class="ws-body"><button type="button" class="row" data-id="p9">
+              <span class="ico done" aria-hidden="true"></span>
+              <span class="title">Plan webhook outbox and deployment</span>
+              <span class="cwd" title="/home/phaedrus/Development/demo/wB">demo/wB</span>
+              <span class="time">1d</span>
+            </button></div></section></div>
+  <div class="sb-foot">A · Workflow hierarchy</div>
+</aside>
+<main class="main" id="main">Select an agent</main>
+</div>
+<script>
+document.querySelectorAll('.tog').forEach(b=>b.addEventListener('click',()=>{
+  const ws=b.closest('.ws'); ws.classList.toggle('collapsed');
+  b.setAttribute('aria-expanded', ws.classList.contains('collapsed')?'false':'true');
+}));
+function select(id){
+  document.querySelectorAll('.row,.needs-item').forEach(el=>el.classList.toggle('sel', el.dataset.id===id));
+  const t=document.querySelector(`[data-id="${id}"] .title, [data-id="${id}"] .t`);
+  document.getElementById('main').textContent = t? t.textContent : id;
+}
+document.querySelectorAll('.row,[data-id]').forEach(el=>el.addEventListener('click',e=>{
+  if(el.classList.contains('tog')) return;
+  const id=el.dataset.id; if(id) select(id);
+}));
+const init=document.querySelector('.row.sel'); if(init) select(init.dataset.id);
+</script></body></html>

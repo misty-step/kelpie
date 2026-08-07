@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kelpie Composer — C · Dense Ops</title>
+<style>
+  /* ============ Codex-aligned tokens (Kelpie draft palette) ============ */
+  :root{
+    --shell:      #f3f3f3;
+    --surface:    #ffffff;
+    --border:     #e0e0e0;
+    --seam:       #efefef;
+    --text:       #2d2e30;
+    --text-2:     #666666;
+    --text-3:     #898989;
+    --accent:     #8891e1;
+    --accent-ink: #5b63c9;
+    --green-bg:   #c1e2ce;
+    --green-ink:  #3c9663;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --z-bar: 10;
+    --z-banner: 20;
+    --z-menu: 30;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    font-family:var(--sans);
+    color:var(--text);
+    background:var(--shell);
+    display:flex; justify-content:center;
+  }
+
+  /* ============ Preview shell (not product — demo toolbar) ============ */
+  .shell-canvas{ position:fixed; inset:0; }
+  .preview-toolbar{
+    position:absolute; top:0; left:0; right:0; z-index:var(--z-bar);
+    height:52px; display:flex; align-items:center; gap:14px;
+    padding:0 18px; background:#ececec; border-bottom:1px solid var(--border);
+    font-size:13px; color:var(--text-2);
+  }
+  .preview-toolbar strong{ color:var(--text); font-family:var(--mono); font-weight:600; }
+  .state-tabs{ display:flex; gap:4px; margin-left:auto; }
+  .state-tabs button{
+    font:12px/1 var(--sans); color:var(--text-2);
+    border:1px solid var(--border); background:var(--surface);
+    padding:7px 11px; border-radius:7px; cursor:pointer;
+  }
+  .state-tabs button[aria-pressed="true"]{
+    background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;
+  }
+  .toolbar-note{ font-size:11px; color:var(--text-3); }
+
+  /* ============ Product column ============ */
+  .column{
+    position:absolute; top:52px; bottom:0; width:1000px; max-width:100%;
+    display:flex; flex-direction:column;
+    background:var(--shell);
+  }
+
+  /* ---- thin fake header stub (interrupt/esc live HERE, not in composer) ---- */
+  .app-header{
+    height:42px; flex:none;
+    display:flex; align-items:center; gap:10px;
+    padding:0 14px; border-bottom:1px solid var(--seam);
+    background:var(--surface);
+    font-size:12px; color:var(--text-2);
+  }
+  .app-header .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  .app-header .ws{ font-family:var(--mono); color:var(--text); }
+  .app-header .spacer{ flex:1; }
+  .header-only{ color:var(--text-3); }
+  .header-only button{
+    font:12px/1 var(--sans); color:var(--text-3);
+    border:1px solid var(--border); background:var(--surface); border-radius:6px;
+    padding:5px 9px; cursor:default; opacity:.7;
+  }
+  .header-only kbd{ background:transparent; border:none; padding:0 2px; color:var(--text-3); }
+
+  /* ---- transcript (fixture only) ---- */
+  .transcript{
+    flex:1; overflow:auto; padding:18px 20px 12px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .msg{ max-width:74%; font-size:14px; line-height:1.5; border-radius:12px; padding:10px 13px; }
+  .msg.user{ align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+  .msg.assistant{ align-self:flex-start; background:var(--surface); border:1px solid var(--border); color:var(--text); border-bottom-left-radius:4px; }
+  .msg.assistant .model{ font-family:var(--mono); font-size:11px; color:var(--text-3); display:block; margin-bottom:4px; }
+
+  /* ---- Ask card (transcript) — collapsible; choices live here ---- */
+  details.ask{
+    align-self:flex-start; width:min(560px,92%);
+    background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--green-ink);
+    border-radius:10px; overflow:hidden; font-size:13px;
+  }
+  details.ask summary{
+    cursor:pointer; padding:9px 12px; color:var(--text);
+    list-style:none; display:flex; align-items:center; gap:8px;
+  }
+  details.ask summary::-webkit-details-marker{ display:none; }
+  details.ask summary .tag{
+    font-family:var(--mono); font-size:11px; color:var(--green-ink); font-weight:600;
+  }
+  details.ask summary .chev{ margin-left:auto; color:var(--text-3); }
+  .ask-body{ padding:2px 12px 12px; border-top:1px solid var(--seam); }
+  .ask-options{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .ask-options button{
+    text-align:left; font:13px/1.4 var(--sans); color:var(--text);
+    background:var(--shell); border:1px solid var(--border); border-radius:8px;
+    padding:8px 11px; cursor:pointer;
+  }
+  .ask-options button:hover, .ask-options button:focus-visible{ border-color:var(--accent); }
+  .ask-options button .hint{ display:block; font:11px/1.2 var(--mono); color:var(--text-3); margin-top:3px; }
+
+  /* ---- pending-ask thin banner (above composer ONLY) ---- */
+  .pending-banner{
+    flex:none; height:30px; display:flex; align-items:center; gap:8px;
+    margin:0 12px 8px; padding:0 11px;
+    background:var(--green-bg); color:#245c3c;
+    border-radius:8px; font-size:12px;
+  }
+  .pending-banner[hidden]{ display:none; }
+  .pending-banner .pulse{
+    width:7px; height:7px; border-radius:50%; background:var(--green-ink); flex:none;
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+  .pending-banner b{ font-weight:600; }
+  .pending-banner code{ font-family:var(--mono); font-size:11px; background:rgba(60,150,99,.14); padding:1px 5px; border-radius:5px; }
+
+  /* ============ Composer — single dense band ============ */
+  .composer{
+    flex:none; background:var(--surface); border-top:1px solid var(--border);
+  }
+  .band{
+    display:flex; align-items:flex-start; gap:8px; padding:8px 10px;
+  }
+
+  /* ---- session control slots: stable spatial anchors ---- */
+  .slots{ display:flex; align-items:center; gap:5px; padding-top:5px; }
+  .slot{
+    position:relative; display:inline-flex; align-items:center; gap:6px;
+    height:30px; padding:0 9px; border-radius:7px;
+    font-family:var(--mono); font-size:12px;
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    white-space:nowrap;
+  }
+  .slot .k{
+    font-size:8px; line-height:1; padding:1px 4px 2px; border-radius:4px;
+    background:var(--shell); border:1px solid var(--border); color:var(--text-3);
+    position:absolute; top:-7px; right:-7px;
+  }
+  .slot.ws{ cursor:default; color:var(--text-2); }
+  .slot.ws .lock{ color:var(--text-3); font-size:10px; }
+  .slot.pick{ cursor:pointer; }
+  .slot.pick:hover, .slot.pick:focus-visible, .slot.pick[aria-expanded="true"]{
+    border-color:var(--accent); color:var(--text);
+  }
+  .slot.pick .caret{ color:var(--text-3); font-size:9px; }
+
+  /* ---- + slash trigger ---- */
+  .plus{
+    flex:none;
+    width:30px; height:30px; font:600 16px/1 var(--mono); color:var(--text);
+    background:var(--surface); border:1px solid var(--border); border-radius:7px; cursor:pointer;
+  }
+  .plus:hover, .plus:focus-visible, .plus[aria-expanded="true"]{ border-color:var(--accent); color:var(--accent-ink); }
+
+  /* ============ Popovers (open upward, over transcript) ============ */
+  .pop-menu{
+    position:absolute; left:0; bottom:calc(100% + 22px); z-index:var(--z-menu);
+    min-width:250px; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 6px 24px rgba(0,0,0,.10);
+    opacity:0; transform:translateY(6px); pointer-events:none;
+    transition:opacity .14s ease-out, transform .14s ease-out;
+  }
+  .pop-menu.wide{ min-width:330px; }
+  .slot[aria-expanded="true"] .pop-menu, .plus[aria-expanded="true"] + .pop-menu{ opacity:1; transform:none; pointer-events:auto; }
+  .pop-menu .menu-title{
+    font:11px/1 var(--sans); font-weight:600; letter-spacing:.02em; text-transform:uppercase;
+    color:var(--text-3); padding:9px 12px 6px;
+  }
+  .pop-options{ max-height:340px; overflow:auto; padding:2px 6px 6px; }
+  .opt{
+    display:flex; flex-direction:column; align-items:stretch; gap:2px; width:100%;
+    text-align:left; font:12.5px/1.3 var(--mono); color:var(--text);
+    background:transparent; border:none; border-radius:7px; padding:7px 9px; cursor:pointer;
+  }
+  .opt:hover, .opt:focus-visible, .opt.cur{ background:rgba(136,145,225,.14); }
+  .opt .prov{ color:var(--text-3); font-size:11px; }
+  .opt .sub{ display:block; width:100%; font:11px/1.3 var(--sans); color:var(--text-2); margin-top:3px; white-space:normal; }
+  .opt .bdg{ font:10px/1 var(--mono); padding:2px 6px; border-radius:5px; flex:none; margin-left:auto; }
+  .bdg.skill{ background:rgba(136,145,225,.15); color:var(--accent-ink); }
+  .bdg.workspace{ background:rgba(60,150,99,.13); color:var(--green-ink); }
+  .bdg.omp{ background:var(--shell); color:var(--text-2); }
+  .opt .check{ margin-left:auto; color:var(--accent-ink); font-size:11px; }
+  .opt-row{ display:flex; align-items:center; gap:8px; width:100%; }
+  .opt-sub{ font:11px/1.3 var(--sans); color:var(--text-2); margin-top:3px; }
+  .slash-anchor{ position:relative; }
+  .pop-foot{
+    display:flex; gap:4px; padding:6px 10px 8px; border-top:1px solid var(--seam);
+    font-size:11px; color:var(--text-3); align-items:center;
+  }
+  .pop-foot .keys{ margin-left:auto; }
+
+  /* ============ Input ============ */
+  .input-wrap{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  textarea.input{
+    width:100%; min-height:40px; max-height:180px;
+    border:none; outline:none; resize:none; background:transparent;
+    font:15px/1.5 var(--sans); color:var(--text); padding:9px 4px 4px;
+  }
+  textarea.input::placeholder{ color:var(--text-3); }
+  textarea.input:disabled{ color:var(--text-3); cursor:wait; }
+
+  /* ============ Send ============ */
+  .send{
+    flex:none; align-self:flex-end; height:34px; min-width:66px; padding:0 14px;
+    font:600 13px/1 var(--sans); color:var(--text-2);
+    background:var(--surface); border:1px solid var(--border); border-radius:8px; cursor:pointer;
+    margin-top:3px;
+  }
+  .send:disabled{ opacity:.5; cursor:not-allowed; }
+  .composer[data-filled="true"] .send{
+    background:var(--accent); border-color:var(--accent); color:#fff;
+  }
+  .composer[data-busy="true"] .send{ color:transparent; }
+  .spinner{
+    display:none; width:14px; height:14px; border-radius:50%; margin:0 auto;
+    border:2px solid rgba(255,255,255,.35); border-top-color:#fff;
+    animation:spin .7s linear infinite;
+  }
+  .composer[data-busy="true"] .spinner{ display:block; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* ============ Status / keycap hint bar (reused slot) ============ */
+  .bar{
+    height:26px; display:flex; align-items:center; gap:6px;
+    padding:0 12px; border-top:1px solid var(--seam);
+    font:11px/1 var(--mono); color:var(--text-3);
+  }
+  .bar .keys{ margin-left:auto; display:flex; gap:5px; align-items:center; }
+  kbd{
+    font:10.5px/1 var(--mono); color:var(--text-2);
+    background:var(--shell); border:1px solid var(--border); border-bottom-width:2px;
+    border-radius:4px; padding:2px 5px;
+  }
+  .bar.busy{ color:var(--green-ink); }
+  .bar.busy .spin-dot{
+    width:7px; height:7px; border-radius:50%;
+    border:2px solid var(--green-bg); border-top-color:var(--green-ink);
+    animation:spin .7s linear infinite;
+  }
+
+  /* graceful narrow-width degradation (desktop-first target) */
+  @media (max-width: 640px){
+    .band{ flex-wrap:wrap; gap:6px; }
+    .slots{ order:1; width:100%; padding-top:0; flex-wrap:wrap; }
+    .input-wrap{ order:2; flex-basis:100%; }
+    .send{ order:3; margin-left:auto; }
+    .slots .k{ top:auto; right:auto; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="shell-canvas">
+  <!-- Preview shell (Demo chrome — not part of the product) -->
+  <div class="preview-toolbar">
+    <strong>Kelpie · Composer</strong>
+    <span>Lane C — Dense Ops</span>
+    <span class="toolbar-note">states:</span>
+    <div class="state-tabs" role="tablist" aria-label="Composer states">
+      <button data-state="quiet" aria-pressed="true">quiet</button>
+      <button data-state="slash" aria-pressed="false">slash menu</button>
+      <button data-state="pending" aria-pressed="false">pending-ask</button>
+      <button data-state="filled" aria-pressed="false">filled</button>
+      <button data-state="busy" aria-pressed="false">sending</button>
+    </div>
+  </div>
+
+  <div class="column">
+
+    <!-- Thin fake header stub: interrupt / Esc live HERE, not in the composer -->
+    <header class="app-header">
+      <span class="dot"></span>
+      <span class="ws">powder</span>
+      <span>kelpie · trio</span>
+      <span class="spacer"></span>
+      <span class="header-only"><button title="Lives in header, not in composer">⏹ Interrupt</button>
+        <button title="Lives in header, not in composer">Esc <kbd>esc</kbd></button></span>
+    </header>
+
+    <!-- Fixture transcript -->
+    <main class="transcript" aria-label="Conversation">
+      <details class="ask" id="ask-card">
+        <summary><span class="tag">ASK · awaiting</span> Pick how to proceed <span class="chev">▾</span></summary>
+        <div class="ask-body">
+          Continue and file the summary.
+          <div class="ask-options">
+            <button type="button">Continue triage <span class="hint">runs /dispatch on all open issues</span></button>
+            <button type="button">Hold for a better model <span class="hint">switches to gpt-5.3-codex</span></button>
+            <button type="button">Ask me first <span class="hint">waits for explicit go / no-go</span></button>
+          </div>
+        </div>
+      </details>
+
+      <div class="msg user">Kick off the research and file a short summary.</div>
+      <div class="msg assistant"><span class="model">anthropic/claude-fable-5</span>Scanned 4 issue labels. Ready to run /dispatch on the open set.</div>
+    </main>
+
+    <!-- Pending-ask thin banner (above composer only) -->
+    <div class="pending-banner" id="pending-banner" hidden>
+      <span class="pulse"></span>
+      <span><b>Answer requested</b> — the agent is waiting. Choices are on the card above; or type to take over.</span>
+      <code>/triage</code>
+    </div>
+
+    <!-- ===================== COMPOSER ===================== -->
+    <footer class="composer" id="composer">
+      <div class="band">
+
+        <!-- session control slots: stable spatial anchors -->
+        <div class="slots">
+          <div class="slot ws" tabindex="-1"><span class="lock">◈</span>workspace:powder</div>
+
+          <!-- Model picker -->
+          <div class="slot pick" id="model-pop" tabindex="0" role="listbox" aria-haspopup="listbox" aria-expanded="false" aria-label="Model">
+            <span id="model-chip">claude-fable-5</span><span class="k">m</span><span class="caret">▾</span>
+            <div class="pop-menu" role="presentation">
+              <div class="menu-title">Model</div>
+              <div class="pop-options" role="presentation"></div>
+              <div class="pop-foot">choose a run model<span class="keys"><kbd>↑↓</kbd><kbd>↵</kbd><kbd>esc</kbd></span></div>
+            </div>
+          </div>
+
+          <!-- Thinking picker -->
+          <div class="slot pick" id="think-pop" tabindex="0" role="listbox" aria-haspopup="listbox" aria-expanded="false" aria-label="Thinking effort">
+            <span>thinking:</span><span id="think-chip" style="color:var(--accent-ink)">high</span><span class="k">t</span><span class="caret">▾</span>
+            <div class="pop-menu" role="presentation">
+              <div class="menu-title">Thinking effort</div>
+              <div class="pop-options" role="presentation"></div>
+              <div class="pop-foot">spend controls depth<span class="keys"><kbd>↑↓</kbd><kbd>↵</kbd><kbd>esc</kbd></span></div>
+            </div>
+          </div>
+
+          <!-- Slash (leading + = commands only) -->
+          <div class="slash-anchor">
+            <button class="plus" id="slash-pop" aria-haspopup="listbox" aria-expanded="false" aria-label="Slash commands">+</button>
+            <div class="pop-menu wide" id="slash-menu" role="presentation">
+              <div class="menu-title">Commands</div>
+              <div class="pop-options" role="presentation"></div>
+              <div class="pop-foot">leading + = slash only · no file attach<span class="keys"><kbd>↑↓</kbd><kbd>↵</kbd><kbd>esc</kbd></span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="input-wrap">
+          <textarea class="input" id="input" rows="1" placeholder="Draft a follow-up, or type / for a command…" aria-label="Message"></textarea>
+        </div>
+
+        <!-- Send -->
+        <button class="send" id="send" disabled>Send<span class="spinner"></span></button>
+      </div>
+
+      <!-- status / keycap hint bar (one reused slot) -->
+      <div class="bar" id="bar">
+        <span id="bar-msg">Tab between session slots</span>
+        <span class="keys">
+          <span id="bar-send"><kbd>↵</kbd> send</span><span><kbd>⇧↵</kbd> line</span>
+        </span>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var composer=document.getElementById('composer'),
+      input=document.getElementById('input'),
+      send=document.getElementById('send'),
+      banner=document.getElementById('pending-banner'),
+      ask=document.getElementById('ask-card'),
+      barMsg=document.getElementById('bar-msg'),
+      bar=document.getElementById('bar'),
+      modelChip=document.getElementById('model-chip'),
+      thinkChip=document.getElementById('think-chip');
+
+  /* ---------- fixture data ---------- */
+  var MODELS=[
+    {id:'anthropic/claude-fable-5', short:'claude-fable-5', prov:'anthropic'},
+    {id:'openai/gpt-5.3-codex',     short:'gpt-5.3-codex',  prov:'openai'},
+    {id:'google/gemini-3-pro',      short:'gemini-3-pro',   prov:'google'}
+  ];
+  var THINK=['off','low','medium','high','xhigh'];
+  var CMDS=[
+    {name:'dispatch', src:'skill',     bdg:'skill',     desc:'Route work to native OMP agents'},
+    {name:'research', src:'skill',     bdg:'skill',     desc:'Bounded research'},
+    {name:'triage',   src:'workspace', bdg:'workspace', desc:'Label new GitHub issues'},
+    {name:'plan',     src:'omp',       bdg:'omp',       desc:'Toggle plan mode'},
+    {name:'settings', src:'omp',       bdg:'omp',       desc:'Open settings'}
+  ];
+  var state={ model:MODELS[0].id, think:'high', slashOpen:false };
+
+  /* ---------- generic popover build ---------- */
+  function buildList(pop, items, render, onPick, activeSel){
+    var box=pop.querySelector('.pop-options');
+    box.innerHTML='';
+    var nodes=[];
+    items.forEach(function(item,idx){
+      var b=document.createElement('button');
+      b.type='button'; b.className='opt'+(activeSel(item)?' active':''); b.setAttribute('role','option');
+      b.innerHTML=render(item);
+      b.addEventListener('click',function(){ onPick(item); closePops(); pop.focus(); });
+      b.addEventListener('mousemove',function(){ nodes.forEach(function(n){n.classList.remove('cur');}); b.classList.add('cur'); });
+      box.appendChild(b); nodes.push(b);
+    });
+    function focusAt(i){ nodes[i].classList.add('cur'); nodes[i].focus(); }
+    function move(dir){ var i=nodes.indexOf(document.activeElement); focusAt(Math.max(0,Math.min(nodes.length-1,(i<0?0:i)+dir))); }
+    box.addEventListener('keydown',function(e){
+      if(e.key==='ArrowDown'){ e.preventDefault(); move(1); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); move(-1); }
+      else if(e.key==='Enter'||e.key===' '){ e.preventDefault(); nodes.forEach(function(n){ if(n.classList.contains('cur')){n.click();} }); }
+      else if(e.key==='Escape'){ e.preventDefault(); closePops(); pop.focus(); }
+    });
+    return {nodes:nodes, focusAt:focusAt};
+  }
+
+  /* ---------- wire model ---------- */
+  var modelList=buildList(document.getElementById('model-pop'), MODELS,
+    function(m){ return '<span class="opt-row"><span>'+m.short+'</span><span class="prov">'+m.prov+'</span></span>'; },
+    function(m){ state.model=m.id; modelChip.textContent=m.short; },
+    function(m){ return m.id===state.model; });
+
+  /* ---------- wire thinking ---------- */
+  var thinkList=buildList(document.getElementById('think-pop'), THINK,
+    function(t){ return '<span class="opt-row"><span>'+t+'</span>'+(t===state.think?'<span class="check">●</span>':'')+'</span>'; },
+    function(t){ state.think=t; thinkChip.textContent=t; },
+    function(t){ return t===state.think; });
+
+  /* ---------- wire slash (+): includes slash-pop trigger + separate menu ---------- */
+  var slashPop=document.getElementById('slash-pop'), slashMenu=document.getElementById('slash-menu');
+  var slashNodes=[];
+  CMDS.forEach(function(c){
+    var b=document.createElement('button');
+    b.type='button'; b.className='opt'; b.setAttribute('role','option');
+    b.innerHTML='<span class="opt-row"><span>/'+c.name+'</span><span class="bdg '+c.bdg+'">'+c.src+'</span></span><span class="opt-sub">'+c.desc+'</span>';
+    b.addEventListener('click',function(){ closePops(); slashPop.focus(); });
+    b.addEventListener('mousemove',function(){ slashNodes.forEach(function(n){n.classList.remove('cur');}); b.classList.add('cur'); });
+    slashMenu.querySelector('.pop-options').appendChild(b); slashNodes.push(b);
+  });
+  slashMenu.addEventListener('keydown',function(e){
+    var i=slashNodes.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){ e.preventDefault(); slashNodes[Math.min(slashNodes.length-1,i+1)].classList.add('cur'); slashNodes[Math.min(slashNodes.length-1,i+1)].focus(); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); slashNodes[Math.max(0,i-1)].classList.add('cur'); slashNodes[Math.max(0,i-1)].focus(); }
+    else if(e.key==='Escape'){ e.preventDefault(); closePops(); slashPop.focus(); }
+  });
+
+  /* ---------- open / close ---------- */
+  var pops=[document.getElementById('model-pop'), document.getElementById('think-pop'), slashPop];
+  function openSlash(){
+    closePops(); slashPop.setAttribute('aria-expanded','true');
+    requestAnimationFrame(function(){ slashNodes[0].focus(); });
+  }
+  function openSelector(pop, list){
+    closePops(); pop.setAttribute('aria-expanded','true');
+    var i=list.nodes.indexOf(list.nodes.filter(function(n){return n.classList.contains('active');})[0]);
+    if(i<0)i=0; requestAnimationFrame(function(){ list.focusAt(i); });
+  }
+  function closePops(){
+    pops.forEach(function(p){ p.setAttribute('aria-expanded','false'); });
+  }
+  document.getElementById('model-pop').addEventListener('click',function(e){ if(e.target.closest('.pop-menu'))return; openSelector(this,modelList); });
+  document.getElementById('think-pop').addEventListener('click',function(e){ if(e.target.closest('.pop-menu'))return; openSelector(this,thinkList); });
+  slashPop.addEventListener('click',function(e){ e.stopPropagation(); openSlash(); });
+
+  pops.forEach(function(p){
+    p.addEventListener('keydown',function(e){
+      if(e.key==='ArrowDown'||e.key===' '||e.key==='Enter'){
+        e.preventDefault();
+        if(p===slashPop){ openSlash(); }
+        else{ openSelector(p, p===document.getElementById('model-pop')?modelList:thinkList); }
+      }
+    });
+  });
+  document.addEventListener('click',function(e){
+    if(e.target.closest('.preview-toolbar'))return; // state tabs drive demo states
+    if(!e.target.closest('.pop-menu') && !e.target.closest('.slot.pick') && e.target!==slashPop && !slashMenu.contains(e.target) && !slashPop.contains(e.target)){
+      closePops();
+    }
+  });
+
+  /* ---------- input / send state ---------- */
+  function updateSend(){
+    var has=input.value.trim().length>0;
+    composer.dataset.filled=has?'true':'false';
+    if(composer.dataset.busy!=='true'){ send.disabled=!has; }
+  }
+  input.addEventListener('input',updateSend);
+  send.addEventListener('click',function(){
+    if(composer.dataset.busy==='true')return;
+    composer.dataset.busy='true'; composer.dataset.filled='false'; send.disabled=true; input.disabled=true;
+    bar.className='bar busy'; document.getElementById('bar-send').textContent='';
+    barMsg.textContent='⟳ Sending to '+MODELS.filter(function(m){return m.id===state.model;})[0].short+' · thinking '+state.think;
+    setTimeout(function(){
+      composer.dataset.busy='false'; input.disabled=false;
+      bar.className='bar'; document.getElementById('bar-send').innerHTML='<kbd>↵</kbd> send';
+      barMsg.textContent='Tab between session slots';
+      input.value=''; updateSend();
+    },1500);
+  });
+
+  /* ---------- state tabs (demo scrubber) ---------- */
+  var FILL='Run the triage pass and route the open set to /dispatch.';
+  var tabs=document.querySelectorAll('.state-tabs button');
+  tabs.forEach(function(btn){
+    btn.addEventListener('click',function(){
+      tabs.forEach(function(b){ b.setAttribute('aria-pressed',String(b===btn)); });
+      var s=btn.getAttribute('data-state');
+      closePops();
+      banner.hidden = !(s==='pending');
+      ask.open = (s==='pending');
+      composer.dataset.busy='false'; input.disabled=false; bar.className='bar';
+      barMsg.textContent = (s==='pending') ? 'answer pending — type to take over' : 'Tab between session slots';
+      if(s==='slash'){ openSlash(); }
+      else if(s==='filled'){ input.value=FILL; }
+      else if(s==='busy'){
+        input.value=FILL; input.disabled=true; composer.dataset.busy='true'; composer.dataset.filled='false'; send.disabled=true;
+        bar.className='bar busy'; document.getElementById('bar-send').textContent='';
+        barMsg.textContent='⟳ Sending to claude-fable-5 · thinking high';
+      }
+      else { input.value=''; }
+      updateSend();
+    });
+  });
+  updateSend();
+})();
+</script>
+</body>
+</html>

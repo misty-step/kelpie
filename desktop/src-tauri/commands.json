@@ -1,0 +1,322 @@
+{
+ "commands": [
+  {
+   "name": "settings",
+   "aliases": [],
+   "description": "Open settings menu"
+  },
+  {
+   "name": "setup",
+   "aliases": [
+    "providers"
+   ],
+   "description": "Open provider setup"
+  },
+  {
+   "name": "plan",
+   "aliases": [],
+   "description": "Toggle plan mode (agent plans before executing)"
+  },
+  {
+   "name": "plan-review",
+   "aliases": [],
+   "description": "Re-open the plan review for the latest plan (plan mode only)"
+  },
+  {
+   "name": "vibe",
+   "aliases": [],
+   "description": "Toggle vibe mode (direct persistent fast/good worker sessions; read-only toolset)"
+  },
+  {
+   "name": "goal",
+   "aliases": [],
+   "description": "Toggle goal mode (persistent autonomous objective for this session)"
+  },
+  {
+   "name": "guided-goal",
+   "aliases": [],
+   "description": "Interview and refine a goal before enabling goal mode"
+  },
+  {
+   "name": "loop",
+   "aliases": [],
+   "description": "Toggle loop mode. While enabled, the next prompt you send re-submits after every yield. Esc cancels the current iteration; /loop again to disable."
+  },
+  {
+   "name": "queue",
+   "aliases": [],
+   "description": "Queue a message for after the agent yields"
+  },
+  {
+   "name": "model",
+   "aliases": [
+    "models"
+   ],
+   "description": "Switch model for this session"
+  },
+  {
+   "name": "switch",
+   "aliases": [],
+   "description": "Switch model for this session (same as alt+p)"
+  },
+  {
+   "name": "fast",
+   "aliases": [],
+   "description": "Toggle priority service tier (OpenAI service_tier=priority, Anthropic speed=fast)"
+  },
+  {
+   "name": "prewalk",
+   "aliases": [],
+   "description": "Switch to a fast/cheap model at the next action (works even without --prewalk)"
+  },
+  {
+   "name": "advisor",
+   "aliases": [],
+   "description": "Toggle the advisor (a second model that reviews each turn and injects notes)"
+  },
+  {
+   "name": "export",
+   "aliases": [],
+   "description": "Export session to HTML file"
+  },
+  {
+   "name": "dump",
+   "aliases": [],
+   "description": "Copy session transcript to clipboard (and write LLM request JSON to tmp)"
+  },
+  {
+   "name": "share",
+   "aliases": [],
+   "description": "Share session via an encrypted link (share server or secret gist)"
+  },
+  {
+   "name": "collab",
+   "aliases": [],
+   "description": "Share this session live via a relay"
+  },
+  {
+   "name": "join",
+   "aliases": [],
+   "description": "Join a shared collab session"
+  },
+  {
+   "name": "leave",
+   "aliases": [],
+   "description": "Leave the collab session"
+  },
+  {
+   "name": "browser",
+   "aliases": [],
+   "description": "Toggle browser headless vs visible mode"
+  },
+  {
+   "name": "copy",
+   "aliases": [],
+   "description": "Pick text or code from the conversation to copy"
+  },
+  {
+   "name": "todo",
+   "aliases": [],
+   "description": "View or modify the agent's todo list"
+  },
+  {
+   "name": "session",
+   "aliases": [],
+   "description": "Session management commands"
+  },
+  {
+   "name": "jobs",
+   "aliases": [],
+   "description": "Show async background jobs status"
+  },
+  {
+   "name": "usage",
+   "aliases": [],
+   "description": "Show provider usage and limits"
+  },
+  {
+   "name": "stats",
+   "aliases": [],
+   "description": "Launch the local stats dashboard"
+  },
+  {
+   "name": "changelog",
+   "aliases": [],
+   "description": "Show changelog entries"
+  },
+  {
+   "name": "hotkeys",
+   "aliases": [],
+   "description": "Show all keyboard shortcuts"
+  },
+  {
+   "name": "tools",
+   "aliases": [],
+   "description": "Show tools currently visible to the agent"
+  },
+  {
+   "name": "context",
+   "aliases": [],
+   "description": "Show estimated context usage breakdown"
+  },
+  {
+   "name": "extensions",
+   "aliases": [
+    "status"
+   ],
+   "description": "Open Extension Control Center dashboard"
+  },
+  {
+   "name": "agents",
+   "aliases": [],
+   "description": "Open Agent Control Center dashboard"
+  },
+  {
+   "name": "branch",
+   "aliases": [],
+   "description": "Create a new branch from a previous message"
+  },
+  {
+   "name": "fork",
+   "aliases": [],
+   "description": "Create a new fork from a previous message"
+  },
+  {
+   "name": "tree",
+   "aliases": [],
+   "description": "Navigate session tree (switch branches)"
+  },
+  {
+   "name": "login",
+   "aliases": [],
+   "description": "Login with OAuth provider"
+  },
+  {
+   "name": "logout",
+   "aliases": [],
+   "description": "Logout from OAuth provider"
+  },
+  {
+   "name": "mcp",
+   "aliases": [],
+   "description": "Manage MCP servers (add, list, remove, test)"
+  },
+  {
+   "name": "ssh",
+   "aliases": [],
+   "description": "Manage SSH hosts (add, list, remove)"
+  },
+  {
+   "name": "new",
+   "aliases": [],
+   "description": "Start a new session"
+  },
+  {
+   "name": "fresh",
+   "aliases": [],
+   "description": "Reset provider stream state without changing the local transcript"
+  },
+  {
+   "name": "drop",
+   "aliases": [],
+   "description": "Delete the current session and start a new one"
+  },
+  {
+   "name": "compact",
+   "aliases": [],
+   "description": "Manually compact the session context"
+  },
+  {
+   "name": "shake",
+   "aliases": [],
+   "description": "Drop heavy content from context (tool results, large blocks)"
+  },
+  {
+   "name": "handoff",
+   "aliases": [],
+   "description": "Hand off session context to a new session"
+  },
+  {
+   "name": "resume",
+   "aliases": [],
+   "description": "Resume a different session"
+  },
+  {
+   "name": "btw",
+   "aliases": [],
+   "description": "Ask an ephemeral side question using the current session context"
+  },
+  {
+   "name": "tan",
+   "aliases": [],
+   "description": "Run a full background agent on tangential work"
+  },
+  {
+   "name": "omfg",
+   "aliases": [],
+   "description": "Forge a TTSR rule from a complaint to stop a recurring behavior"
+  },
+  {
+   "name": "retry",
+   "aliases": [],
+   "description": "Retry the last failed agent turn"
+  },
+  {
+   "name": "debug",
+   "aliases": [],
+   "description": "Open debug tools selector"
+  },
+  {
+   "name": "memory",
+   "aliases": [],
+   "description": "Inspect and operate memory maintenance"
+  },
+  {
+   "name": "rename",
+   "aliases": [],
+   "description": "Rename the current session"
+  },
+  {
+   "name": "move",
+   "aliases": [],
+   "description": "Move the current session to a different directory"
+  },
+  {
+   "name": "exit",
+   "aliases": [],
+   "description": "Exit the application"
+  },
+  {
+   "name": "marketplace",
+   "aliases": [],
+   "description": "Manage marketplace plugin sources and installed plugins"
+  },
+  {
+   "name": "plugins",
+   "aliases": [],
+   "description": "View and manage installed plugins"
+  },
+  {
+   "name": "reload-plugins",
+   "aliases": [],
+   "description": "Reload all plugins (skills, commands, hooks, tools, agents, MCP)"
+  },
+  {
+   "name": "force",
+   "aliases": [
+    "force:"
+   ],
+   "description": "Force next turn to use a specific tool"
+  },
+  {
+   "name": "pause",
+   "aliases": [],
+   "description": "Freeze all agents (main, subagents, advisor) until resumed"
+  },
+  {
+   "name": "quit",
+   "aliases": [],
+   "description": "Quit the application"
+  }
+ ]
+}

@@ -1,0 +1,150 @@
+{
+ "workspaces": [
+  {
+   "id": "wA",
+   "label": "olympus",
+   "status": "working",
+   "active_tab_id": "wA:t1"
+  },
+  {
+   "id": "wB",
+   "label": "habitat",
+   "status": "done",
+   "active_tab_id": "wB:t1"
+  },
+  {
+   "id": "wC",
+   "label": "time-tracker",
+   "status": "idle",
+   "active_tab_id": "wC:t1"
+  },
+  {
+   "id": "wF",
+   "label": "canary",
+   "status": "idle",
+   "active_tab_id": "wF:t1"
+  },
+  {
+   "id": "wJ",
+   "label": "cantrip",
+   "status": "idle",
+   "active_tab_id": "wJ:t3"
+  },
+  {
+   "id": "wK",
+   "label": "mint",
+   "status": "idle",
+   "active_tab_id": "wK:t1"
+  },
+  {
+   "id": "wP",
+   "label": "iron-forest",
+   "status": "blocked",
+   "active_tab_id": "wP:t1"
+  },
+  {
+   "id": "wR",
+   "label": "kelpie",
+   "status": "working",
+   "active_tab_id": "wR:t1"
+  },
+  {
+   "id": "wS",
+   "label": "mirrodin",
+   "status": "working",
+   "active_tab_id": "wS:t1"
+  }
+ ],
+ "panes": [
+  {
+   "pane_id": "wA:p1",
+   "workspace_id": "wA",
+   "status": "working",
+   "task": "\u03c0 \u2827 Simplify service implementation strategy",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764239940000,
+   "cwd": "/home/phaedrus/Development/demo/wA"
+  },
+  {
+   "pane_id": "wB:p1",
+   "workspace_id": "wB",
+   "status": "done",
+   "task": "\u03c0 > Plan webhook outbox and deployment integration",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764239700000,
+   "cwd": "/home/phaedrus/Development/demo/wB"
+  },
+  {
+   "pane_id": "wC:p1",
+   "workspace_id": "wC",
+   "status": "idle",
+   "task": "\u03c0 > Initialize TI-101 remediation tasks",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764239220000,
+   "cwd": "/home/phaedrus/Development/demo/wC"
+  },
+  {
+   "pane_id": "wF:p1",
+   "workspace_id": "wF",
+   "status": "idle",
+   "task": "\u03c0 > Repair canary host connectivity and reporters",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764238980000,
+   "cwd": "/home/phaedrus/Development/demo/wF"
+  },
+  {
+   "pane_id": "wJ:p6",
+   "workspace_id": "wJ",
+   "status": "idle",
+   "task": "\u03c0 > Investigate cloud STT credentials and adapters",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764238500000,
+   "cwd": "/home/phaedrus/Development/demo/wJ"
+  },
+  {
+   "pane_id": "wK:p1",
+   "workspace_id": "wK",
+   "status": "idle",
+   "task": "\u03c0 > Reconcile agent work with Mint security",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764238260000,
+   "cwd": "/home/phaedrus/Development/demo/wK"
+  },
+  {
+   "pane_id": "wP:p1",
+   "workspace_id": "wP",
+   "status": "blocked",
+   "task": "\u03c0 ! iron-forest",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764238020000,
+   "cwd": "/home/phaedrus/Development/demo/wP"
+  },
+  {
+   "pane_id": "wR:p1",
+   "workspace_id": "wR",
+   "status": "working",
+   "task": "\u03c0 \u2819 kelpie",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764237780000,
+   "cwd": "/home/phaedrus/Development/demo/wR"
+  },
+  {
+   "pane_id": "wS:p1",
+   "workspace_id": "wS",
+   "status": "working",
+   "task": "\u03c0 \u2838 Improve Bluetooth connection reliability",
+   "pending_ask": false,
+   "snippet": null,
+   "updated_ms": 1764237540000,
+   "cwd": "/home/phaedrus/Development/demo/wS"
+  }
+ ]
+}

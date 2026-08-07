@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kelpie Composer — A: Workflow first</title>
+<style>
+  :root{
+    --bg:#f3f3f3; --surface:#ffffff; --border:#e0e0e0; --seam:#efefef;
+    --text:#2d2e30; --text2:#666; --text3:#898989;
+    --indigo:#8891e1; --indigo-strong:#7d87dd; --indigo-wash:#eef0fb;
+    --green-bg:#c1e2ce; --green:#3c9663;
+    --radius:12px;
+    --mono: ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --shadow: 0 1px 2px rgba(20,22,30,.04), 0 10px 28px rgba(20,22,30,.06);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column;
+  }
+  button{ font:inherit; }
+  :focus-visible{ outline:2px solid var(--indigo); outline-offset:2px; }
+
+  /* ── Shell chrome ── */
+  .topbar{
+    height:56px; flex:0 0 auto; display:flex; align-items:center; gap:14px;
+    padding:0 20px; background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .thread-title{ font-weight:600; font-size:14px; color:var(--text); }
+  .thread-sub{ color:var(--text3); font-size:12.5px; margin-top:1px; }
+  .topbar .spacer{ flex:1; }
+  .header-stub{
+    display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--text3);
+    border:1px dashed var(--border); border-radius:999px; padding:5px 11px;
+  }
+  .statebar{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:10px 20px; background:var(--bg);
+  }
+  .statebar > span{ color:var(--text3); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .statebar button{
+    border:1px solid var(--border); background:var(--surface); color:var(--text2);
+    border-radius:999px; padding:6px 13px; font-size:13px; cursor:pointer;
+  }
+  .statebar button:hover{ border-color:var(--indigo); color:var(--text); }
+  .statebar button[aria-pressed="true"]{
+    background:var(--indigo); border-color:var(--indigo); color:#fff; font-weight:600;
+  }
+
+  /* ── Chat column ── */
+  .chat{
+    flex:1 1 auto; width:100%; max-width:920px; margin:0 auto;
+    display:flex; flex-direction:column; gap:4px;
+    padding:22px 24px 18px;
+    min-height:0;
+  }
+  .transcript{ flex:1 1 auto; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-bottom:14px; }
+  .day-divider{ align-self:center; color:var(--text3); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin:2px 0 4px; }
+  .user-msg{
+    align-self:flex-start; max-width:72%;
+    background:var(--surface); border:1px solid var(--border); border-radius:14px 14px 14px 4px;
+    padding:10px 14px; font-size:14.5px;
+  }
+  .assist-line{ display:flex; align-items:flex-start; gap:10px; color:var(--text2); font-size:14px; }
+  .assist-avatar{ width:26px; height:26px; flex:0 0 auto; border-radius:8px; background:var(--indigo-wash); color:var(--indigo-strong); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .assist-line .bubble{ max-width:72%; background:var(--surface); border:1px solid var(--border); border-radius:4px 14px 14px 14px; padding:10px 14px; }
+
+  .ask-card{
+    align-self:flex-start; display:flex; align-items:center; gap:10px; max-width:72%;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 12px;
+    font-size:13px; color:var(--text2);
+  }
+  .ask-card .ask-tag{ color:var(--green); font-weight:600; font-size:12px; }
+  .ask-card .chevron{ margin-left:auto; color:var(--text3); }
+
+  /* Pending-ask thin banner */
+  .pending-banner{
+    margin:0 0 10px; display:none; align-items:center; gap:10px;
+    border:1px solid var(--border); background:var(--surface); border-radius:10px;
+    padding:9px 14px; font-size:13px; color:var(--text2);
+  }
+  .pending-banner .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); flex:0 0 auto; }
+  .pending-banner[hidden]{ display:none; }
+  .pending-banner.shown{ display:flex; }
+
+  /* ── Composer: staged draft → send → session meta ── */
+  .composer{
+    position:relative; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); box-shadow:var(--shadow); transition:box-shadow .12s ease,border-color .12s ease;
+    flex:0 0 auto;
+  }
+  .composer:focus-within{ border-color:var(--indigo); box-shadow:0 0 0 3px rgba(136,145,225,.18), var(--shadow); }
+
+  .composer-body{
+    display:flex; flex-direction:column;
+  }
+  .composer-body textarea{
+    width:100%; border:0; resize:none; background:transparent; outline:none;
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--text);
+    padding:14px 14px 6px; min-height:86px; max-height:220px;
+  }
+  .composer-body textarea::placeholder{ color:var(--text3); }
+  .composer-body textarea:disabled{ cursor:default; opacity:.7; }
+
+  .action-row{
+    display:flex; align-items:center; gap:10px; padding:8px 10px;
+  }
+  .slash{
+    width:38px; height:38px; flex:0 0 auto; border-radius:50%;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    font-size:21px; line-height:1; cursor:pointer;
+  }
+  .slash:hover{ border-color:var(--indigo); color:var(--indigo-strong); }
+  .slash[aria-expanded="true"]{ border-color:var(--indigo); color:var(--indigo-strong); background:var(--indigo-wash); }
+  .hint{ flex:1; color:var(--text2); font-size:12px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .send{
+    margin-left:auto; flex:0 0 auto; display:inline-flex; align-items:center; gap:8px;
+    background:var(--indigo); color:#fff; border:0; border-radius:999px;
+    padding:9px 20px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .send:hover{ background:var(--indigo-strong); }
+  .send[disabled]{ background:#dcdce4; color:#fff; cursor:default; }
+  .send .spinner{
+    width:14px; height:14px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff;
+    border-radius:50%; animation:spin .8s linear infinite; display:none;
+  }
+  .send[data-busy="true"] .spinner{ display:inline-block; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* Session meta rail — seam-docked, calm, does not compete with Send */
+  .session-band{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:9px 10px; border-top:1px solid var(--seam);
+  }
+  .composer[data-busy="true"] .session-band{ opacity:.55; pointer-events:none; }
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 11px;
+    border:1px solid var(--border); border-radius:999px; background:transparent;
+    color:var(--text2); font-size:12.5px; white-space:nowrap;
+  }
+  .chip.picker{ cursor:pointer; }
+  .chip.picker:hover{ border-color:var(--indigo); color:var(--text); }
+  .chip .caret{ font-size:9px; color:var(--text3); }
+  .chip .mono{ font-family:var(--mono); font-size:12px; }
+  .chip .ws{ display:inline-flex; align-items:center; gap:6px; }
+  .chip .latch{ width:6px; height:6px; border-radius:50%; background:var(--green); }
+
+  /* Menus */
+  .menu{
+    position:absolute; z-index:30; height:auto; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 10px 30px rgba(20,22,30,.12); overflow:hidden;
+    min-width:300px;
+  }
+  .menu[hidden]{ display:none; }
+  .menu .mhead{ padding:8px 13px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text3); border-bottom:1px solid var(--seam); }
+  .menu .opt{
+    display:flex; width:100%; align-items:center; gap:12px; padding:10px 13px;
+    border:0; background:transparent; text-align:left; cursor:pointer; color:var(--text);
+  }
+  .menu .opt:hover{ background:var(--indigo-wash); }
+  .menu .opt[aria-selected="true"]{ background:var(--indigo-wash); }
+  .menu .opt .grow{ display:flex; flex-direction:column; min-width:0; }
+  .menu .opt .name{ font-size:13.5px; font-weight:600; }
+  .menu .opt .name .mono{ font-family:var(--mono); font-weight:500; }
+  .menu .opt .desc{ font-size:12px; color:var(--text3); }
+  .menu .opt .check{ color:var(--indigo-strong); font-weight:700; }
+  .badge{
+    margin-left:auto; flex:0 0 auto; font-size:10.5px; font-weight:600; letter-spacing:.02em;
+    border-radius:999px; padding:2px 8px; text-transform:uppercase;
+  }
+  .badge.skill{ color:#5a65c9; background:var(--indigo-wash); }
+  .badge.workspace{ color:var(--green); background:var(--green-bg); }
+  .badge.omp{ color:var(--text2); background:var(--bg); }
+  .badge.off{ color:var(--text3); background:var(--bg); }
+  .badge.low{ color:#8a6d3b; background:#f5eeda; }
+  .badge.med{ color:#5a65c9; background:var(--indigo-wash); }
+  .badge.high{ color:var(--green); background:var(--green-bg); }
+  .badge.xhigh{ color:#7c3aed; background:#f0e8ff; }
+
+  /* Menu anchor positions */
+  .menu.slash{ top:0; left:12px; transform:translateY(calc(-100% - 8px)); }
+  .chip-wrap{ position:relative; }
+  .menu.picker{ top:calc(100% + 6px); left:0; }
+
+  .foot{ flex:0 0 auto; text-align:center; color:var(--text3); font-size:12px; padding:4px 0 8px; }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+</style>
+</head>
+<body>
+  <!-- Fake chat header: interrupt/Esc live here, never in the composer -->
+  <header class="topbar">
+    <div>
+      <div class="thread-title">powder · triage</div>
+      <div class="thread-sub">4 OMP agents running</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="header-stub" title="Interrupt / Esc live in the chat header, not the composer">
+      Hold Esc to interrupt
+    </span>
+  </header>
+
+  <div class="statebar" role="group" aria-label="Preview states">
+    <span>Demo states</span>
+    <button data-state="quiet" aria-pressed="true">Quiet</button>
+    <button data-state="slash" aria-pressed="false">Slash open</button>
+    <button data-state="pending" aria-pressed="false">Pending ask</button>
+    <button data-state="filled" aria-pressed="false">Filled</button>
+    <button data-state="busy" aria-pressed="false">Busy</button>
+  </div>
+
+  <main class="chat">
+    <div class="transcript">
+      <div class="day-divider">Earlier today</div>
+      <div class="user-msg">Can you run a quick triage pass on new powder issues?</div>
+      <div class="assist-line">
+        <span class="assist-avatar" aria-hidden="true">K</span>
+        <div class="bubble">On it. I found 14 open items; here is the short list.</div>
+      </div>
+      <div class="user-msg">Group them by likely severity before you start.</div>
+      <div class="assist-line">
+        <span class="assist-avatar" aria-hidden="true">K</span>
+        <div class="bubble">Done. 3 likely blockers, 5 marginal, 6 noise. Summaries below.</div>
+      </div>
+      <div class="ask-card">
+        <span class="ask-tag">Ask</span>
+        <span>Which workspace should I apply labels to?</span>
+        <span class="chevron" aria-hidden="true">▾</span>
+      </div>
+    </div>
+
+    <!-- Pending-ask: calm thin banner only, above the box -->
+    <div class="pending-banner" id="pendingBanner" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      <span>Waiting on the transcript ask — choose an answer on the Ask card.</span>
+    </div>
+
+    <div class="composer" id="composer">
+      <div class="composer-body">
+        <textarea id="ta" rows="3" placeholder="Draft a follow-up, then press Enter to send…" aria-label="Message"></textarea>
+        <div class="action-row">
+          <button class="slash" id="slashBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Slash commands">+</button>
+          <span class="hint">Type <kbd style="font-family:var(--mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0 5px">/</kbd> for commands</span>
+          <button class="send" id="sendBtn" type="button" disabled>Send</button>
+        </div>
+      </div>
+
+      <!-- Session meta rail: workspace read-only, model + thinking editable -->
+      <div class="session-band" aria-label="Session controls">
+        <span class="chip" title="Workspace is read-only here">
+          <span class="ws"><span class="latch" aria-hidden="true"></span>powder</span>
+        </span>
+        <span class="chip-wrap">
+          <button class="chip picker" id="modelChip" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose model">
+            <span class="mono" id="modelLabel">anthropic/claude-fable-5</span>
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="menu picker" id="modelMenu" role="listbox" aria-label="Model" hidden></div>
+        </span>
+        <span class="chip-wrap">
+          <button class="chip picker" id="thinkChip" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose thinking effort">
+            thinking <span id="thinkLabel">high</span>
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="menu picker" id="thinkMenu" role="listbox" aria-label="Thinking effort" hidden></div>
+        </span>
+      </div>
+
+      <!-- Slash menu -->
+      <div class="menu slash" id="slashMenu" role="listbox" aria-label="Slash commands" hidden></div>
+    </div>
+    <div class="foot">Lane A — workflow first · scratch prototype</div>
+  </main>
+
+<script>
+(function(){
+  var ta=document.getElementById('ta'), composer=document.getElementById('composer'),
+      sendBtn=document.getElementById('sendBtn'), slashBtn=document.getElementById('slashBtn'),
+      slashMenu=document.getElementById('slashMenu'), pending=document.getElementById('pendingBanner'),
+      modelChip=document.getElementById('modelChip'), modelLabel=document.getElementById('modelLabel'),
+      modelMenu=document.getElementById('modelMenu'),
+      thinkChip=document.getElementById('thinkChip'), thinkLabel=document.getElementById('thinkLabel'),
+      thinkMenu=document.getElementById('thinkMenu');
+
+  var MODELS=['anthropic/claude-fable-5','openai/gpt-5.3-codex','google/gemini-3-pro'];
+  var THINK=[{v:'off',b:'off'},{v:'low',b:'low'},{v:'medium',b:'med'},{v:'high',b:'high'},{v:'xhigh',b:'xhigh'}];
+  var SLASH=[
+    {name:'/dispatch',src:'skill',badge:'skill',desc:'Route work to native OMP agents'},
+    {name:'/research',src:'skill',badge:'skill',desc:'Bounded research'},
+    {name:'/triage',src:'workspace',badge:'workspace',desc:'Label new GitHub issues'},
+    {name:'/plan',src:'omp',badge:'omp',desc:'Toggle plan mode'},
+    {name:'/settings',src:'omp',badge:'omp',desc:'Open settings'}
+  ];
+
+  // Build menus
+  function buildMenu(menu, items, opts){
+    menu.innerHTML='';
+    items.forEach(function(it,i){
+      if(it.head){
+        var h=document.createElement('div'); h.className='mhead'; h.textContent=it.head; menu.appendChild(h);
+        return;
+      }
+      var b=document.createElement('button'); b.type='button'; b.className='opt';
+      b.setAttribute('role','option'); b.setAttribute('aria-selected','false');
+      b.setAttribute('data-i', String(i));
+      var grow=document.createElement('span'); grow.className='grow';
+      var name=document.createElement('span'); name.className='name';
+      name.innerHTML=opts.monoName?('<span class="mono">'+it.name+'</span>') : it.name;
+      grow.appendChild(name);
+      if(it.desc){ var d=document.createElement('span'); d.className='desc'; d.textContent=it.desc; grow.appendChild(d); }
+      b.appendChild(grow);
+      if(opts.value===undefined && it.badge){
+        var bg=document.createElement('span'); bg.className='badge '+it.badge; bg.textContent=it.src||''; b.appendChild(bg);
+      }
+      if(opts.check && opts.value===it.value){
+        var ck=document.createElement('span'); ck.className='check'; ck.textContent='✓'; b.appendChild(ck);
+      }
+      menu.appendChild(b);
+    });
+  }
+  buildMenu(slashMenu, SLASH, {monoName:true});
+  buildMenu(modelMenu, MODELS.map(function(m){return {name:m,value:m};}), {value:modelLabel.textContent, monoName:true, check:true});
+  buildMenu(thinkMenu, THINK.map(function(t){return {name:t.v,value:t.v};}), {value:thinkLabel.textContent, check:true});
+
+  function optsOf(menu){ return Array.prototype.slice.call(menu.querySelectorAll('.opt')); }
+  function setActive(menu, idx){
+    var os=optsOf(menu);
+    os.forEach(function(o){ o.setAttribute('aria-selected', o.getAttribute('data-i')===String(idx) ? 'true':'false'); });
+    var cur=os[idx]; if(cur) cur.scrollIntoView({block:'nearest'});
+    return cur;
+  }
+  var docClickH=null;
+  function openMenu(menu, trigger){
+    menu.hidden=false;
+    var os=optsOf(menu); if(!os.length) return;
+    setActive(menu,0);
+    (trigger||menu).setAttribute('aria-expanded','true');
+    menu._trigger=trigger||null;
+    var first=os[0]; try{ first.focus(); }catch(e){ menu.setAttribute('tabindex','-1'); menu.focus(); }
+    attachClose();
+  }
+  function closeMenu(menu, trigger){
+    if(menu.hidden) return;
+    menu.hidden=true;
+    if(trigger){ trigger.setAttribute('aria-expanded','false'); if(trigger===slashBtn||trigger===modelChip||trigger===thinkChip){ try{trigger.focus();}catch(e){} } }
+    removeClose();
+  }
+  function closeAll(){ [slashMenu,modelMenu,thinkMenu].forEach(closeMenu); }
+  function attachClose(){ if(docClickH) return;
+    docClickH=function(e){
+      [slashMenu,modelMenu,thinkMenu].forEach(function(m){
+        if(m.hidden) return;
+        var tr=m._trigger;
+        var inside = m.contains(e.target) || (tr && tr.contains(e.target));
+        if(!inside) closeMenu(m,tr);
+      });
+      if(![slashMenu,modelMenu,thinkMenu].some(function(m){return !m.hidden;})) removeClose();
+    };
+    document.addEventListener('mousedown',docClickH);
+  }
+  function removeClose(){ if(docClickH){ document.removeEventListener('mousedown',docClickH); docClickH=null; } }
+
+  // Menu keyboard (arrows/enter/escape) — bound to each visible menu
+  function wireMenuKeys(menu, trigger, selectCb){
+    menu.addEventListener('keydown', function(e){
+      var os=optsOf(menu).filter(function(o){return !o.hidden;});
+      var cur=optsOf(menu).findIndex(function(o){return o===document.activeElement;});
+      if(e.key==='ArrowDown'){ e.preventDefault(); setActive(menu,(cur+1)%os.length); os[(cur+1)%os.length].focus(); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); var n=(cur-1+os.length)%os.length; setActive(menu,n); os[n].focus(); }
+      else if(e.key==='Escape'){ e.preventDefault(); closeMenu(menu,trigger); }
+      else if(e.key==='Enter'||e.key===' '){ e.preventDefault(); var act=document.activeElement; if(!act||act.getAttribute('role')!=='option') act=optsOf(menu).find(function(o){return o.getAttribute('aria-selected')==='true';}); if(act) selectCb(act); }
+    });
+  }
+  wireMenuKeys(slashMenu, slashBtn, function(opt){ closeMenu(slashMenu,slashBtn); var n=opt.getAttribute('data-i'); ta.value=SLASH[n].name+' '; ta.focus(); });
+  wireMenuKeys(modelMenu, modelChip, function(opt){
+    var v=opt.getAttribute('data-i'); modelLabel.textContent=MODELS[v];
+    buildMenu(modelMenu, MODELS.map(function(m){return {name:m,value:m};}), {value:MODELS[v], monoName:true, check:true});
+    closeMenu(modelMenu,modelChip);
+  });
+  wireMenuKeys(thinkMenu, thinkChip, function(opt){
+    var v=opt.getAttribute('data-i'); thinkLabel.textContent=THINK[v].v;
+    buildMenu(thinkMenu, THINK.map(function(t){return {name:t.v,value:t.v};}), {value:THINK[v].v, check:true});
+    closeMenu(thinkMenu,thinkChip);
+  });
+
+  slashBtn.addEventListener('click', function(){ slashMenu.hidden? openMenu(slashMenu,slashBtn): closeMenu(slashMenu,slashBtn); });
+  modelChip.addEventListener('click', function(){ modelMenu.hidden? openMenu(modelMenu,modelChip): closeMenu(modelMenu,modelChip); });
+  thinkChip.addEventListener('click', function(){ thinkMenu.hidden? openMenu(thinkMenu,thinkChip): closeMenu(thinkMenu,thinkChip); });
+
+  // Cross-close: opening one menu closes the others
+  [slashBtn,modelChip,thinkChip].forEach(function(t){
+    t.addEventListener('click', function(){ [slashMenu,modelMenu,thinkMenu].forEach(function(m){ if(m._trigger!==t && !m.hidden) closeMenu(m,m._trigger); }); });
+  });
+
+  // Typing state
+  ta.addEventListener('keydown', function(e){
+    if(e.key==='/' && ta.value===''){ e.preventDefault(); closeAll(); openMenu(slashMenu,slashBtn); }
+  });
+  ta.addEventListener('input', updateSend);
+  function updateSend(){
+    var has=ta.value.trim().length>0;
+    if(!(config&&config.busy)) sendBtn.disabled=!has;
+  }
+
+  // States
+  var config={};
+  var stateBtns=Array.prototype.slice.call(document.querySelectorAll('.statebar button[data-state]'));
+  function applyState(s){
+    config={state:s,busy:(s==='busy')};
+    stateBtns.forEach(function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-state')===s?'true':'false'); });
+    closeAll();
+    composer.setAttribute('data-busy', config.busy?'true':'false');
+    slashBtn.setAttribute('aria-expanded','false');
+    if(s==='pending'){
+      pending.hidden=false; pending.classList.add('shown');
+      ta.value=''; ta.disabled=false; sendBtn.disabled=true; sendBtn.textContent='Send'; sendBtn.removeAttribute('data-busy');
+    } else {
+      pending.hidden=true; pending.classList.remove('shown');
+    }
+    ta.disabled=config.busy;
+    if(s==='slash'){ ta.value=''; openMenu(slashMenu,slashBtn); }
+    else { slashBtn.setAttribute('aria-expanded','false'); }
+    if(s==='filled'||s==='busy'){ ta.value='Summarize the open issues in powder'; }
+    if(s==='quiet'){ ta.value=''; }
+    if(s==='busy'){ ta.value='Summarize the open issues in powder'; ta.disabled=true; sendBtn.disabled=true; sendBtn.innerHTML='<span class="spinner" aria-hidden="true"></span>Sending'; sendBtn.setAttribute('data-busy','true'); }
+    else { sendBtn.removeAttribute('data-busy'); sendBtn.innerHTML='Send'; updateSend(); }
+  }
+  stateBtns.forEach(function(b){ b.addEventListener('click', function(){ applyState(b.getAttribute('data-state')); }); });
+
+  applyState('quiet');
+})();
+</script>
+</body>
+</html>

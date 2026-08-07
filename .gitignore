@@ -2,3 +2,6 @@
 /frontend/target
 /explorations
 .DS_Store
+/desktop/node_modules
+/desktop/dist
+/desktop/src-tauri/target

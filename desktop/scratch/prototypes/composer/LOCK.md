@@ -1,0 +1,22 @@
+# Prototype lock
+
+- **Question:** How should Kelpie’s chat input area look and behave for draft + session controls?
+- **Selected direction:** A — Workflow first (staged `draft → send → session rail`)
+- **Why it wins:** Primary task (draft + send) owns the top of the card; session meta stays visible but subordinate on a seam-docked rail. Best match for triage speed without losing model/thinking controls. Operator explicit lock.
+- **Constraints retained:**
+  - Chrome + session controls
+  - Model + thinking editable; workspace read-only
+  - `+` opens slash commands only (no attach)
+  - Interrupt / Esc stay in chat header (not in composer)
+  - Pending-ask = thin banner only above the box
+  - Codex light tokens; desktop-first
+- **Directions rejected and why:**
+  - **B — The Session Story:** Strong identity, but airy prose sentence costs vertical space and softens picker affordances for speed-first ops.
+  - **C — Docked Ops Band:** Highest density, but single-row toolbar competes with draft focus and underplays the staged hierarchy the operator preferred.
+- **Open implementation risks:**
+  - Model/thinking pickers need real omp control wiring (or honest “not wired” until commands exist) — ship fixture-quality UI with best available session hooks.
+  - Slash menu anchoring above the card must not clip.
+  - Long model ids need truncation on the session rail.
+- **Catalog source:** `desktop/scratch/prototypes/composer/catalog.html`
+- **Locked by:** operator confirmation in chat (“Workflow first. Lock it”)
+- **Date:** 2026-08-05

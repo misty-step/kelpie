@@ -1,0 +1,20 @@
+[package]
+name = "kelpie-desktop"
+version = "0.1.0"
+description = "Kelpie desktop — operator console for herdr + omp"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["full"] }
+gtk = "0.18"
+
+[profile.release]
+lto = true
+strip = true
