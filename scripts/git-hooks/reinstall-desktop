@@ -1,0 +1,14 @@
+#!/bin/sh
+# Reads changed paths on stdin. When any of them belong to the desktop app,
+# kicks a background rebuild + reinstall so `kelpie` on this machine never
+# lags the committed tree.
+set -eu
+
+if ! grep -qE '^desktop/(src/|src-tauri/|package(-lock)?\.json|index\.html|vite\.config)'; then
+  exit 0
+fi
+
+root="$(git rev-parse --show-toplevel)"
+log="${TMPDIR:-/tmp}/kelpie-install.log"
+setsid nohup "$root/scripts/install-desktop.sh" >"$log" 2>&1 </dev/null &
+echo "kelpie: desktop sources changed — rebuilding and reinstalling in background ($log)"

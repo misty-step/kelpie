@@ -1,0 +1,5 @@
+#!/bin/sh
+# Same as post-commit, for changes arriving through pull/merge.
+set -eu
+hooks="$(dirname "$0")"
+git diff --name-only HEAD@{1} HEAD | "$hooks/reinstall-desktop"

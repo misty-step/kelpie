@@ -1,0 +1,5 @@
+#!/bin/sh
+# Keep the installed `kelpie` in step with what was just committed.
+set -eu
+hooks="$(dirname "$0")"
+git diff-tree --no-commit-id --name-only -r HEAD | "$hooks/reinstall-desktop"
