@@ -12,5 +12,10 @@ export function useTheme(): Theme {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
+  // Dark tokens live on :root[data-theme="dark"], so the attribute belongs on
+  // the document element — an app-level wrapper would leave them unresolved.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
   return theme;
 }

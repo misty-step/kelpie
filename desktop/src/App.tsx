@@ -305,7 +305,7 @@ export default function App() {
     : "Workspace";
 
   return (
-    <div className="app" data-theme={theme}>
+    <div className="app">
       <TitleBar />
       <ErrorBoundary>
         <div className="body">
