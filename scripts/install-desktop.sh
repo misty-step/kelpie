@@ -23,9 +23,12 @@ case "${1:-}" in
     ;;
 esac
 
+umask 077
+runtime_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/kelpie"
+install -d -m 700 "$runtime_dir"
 log() { printf '%s install-desktop: %s\n' "$(date +%H:%M:%S)" "$*"; }
 
-exec 9>"${TMPDIR:-/tmp}/kelpie-install.lock"
+exec 9>"$runtime_dir/install.lock"
 flock 9
 
 was_running=0
@@ -58,5 +61,5 @@ fi
 log "relaunching the running app"
 pkill -fx "$target" || true
 sleep 1
-setsid nohup "$target" >"${TMPDIR:-/tmp}/kelpie-app.log" 2>&1 </dev/null 9>&- &
+setsid nohup "$target" >"$runtime_dir/app.log" 2>&1 </dev/null 9>&- &
 log "relaunched"
