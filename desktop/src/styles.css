@@ -157,9 +157,8 @@ button {
   height: 36px;
   flex: none;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
+  align-items: stretch;
+  padding-left: 12px;
   background: var(--bg);
   border-bottom: 1px solid var(--seam);
   user-select: none;
@@ -176,113 +175,42 @@ button {
 .titlebar a,
 .titlebar input,
 .titlebar .tb-windows,
-.titlebar .tb-btn,
 .titlebar .tb-win {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 
-.tb-brand {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 4px;
-  color: var(--brand-soft);
-}
-
-.kelpie-mark {
+.tb-title {
   display: inline-flex;
-  color: var(--brand-soft);
-}
-
-.tb-wordmark {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--brand-soft);
-}
-
-.tb-actions {
-  display: flex;
   align-items: center;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.015em;
+  color: var(--text-soft);
 }
 
 .tb-drag-fill {
   flex: 1;
-  align-self: stretch;
   min-width: 12px;
 }
 
-.tb-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  font-size: 12.5px;
-  color: var(--text-soft);
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-
-.tb-btn:hover, .tb-btn.active { background: var(--surface); border-color: var(--border); color: var(--text); }
-
-.tb-badge {
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--err-bg);
-  border: 1px solid var(--err-border);
-  color: var(--err);
-  font-size: 10.5px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-}
-
-.tb-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.tb-herdr {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-right: 6px;
-}
-
-.tb-herdr.down { color: var(--err); }
-
 .tb-windows {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
   flex: none;
 }
+
 .tb-win {
-  width: 30px;
-  height: 28px;
+  width: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-soft);
-  border-radius: var(--radius-sm);
 }
 
-.tb-win:hover { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
-.tb-win.close:hover { background: #e5484d; border-color: #e5484d; color: #fff; }
+.tb-win:hover { background: rgba(0, 0, 0, 0.07); color: var(--text); }
+[data-theme="dark"] .tb-win:hover { background: rgba(255, 255, 255, 0.1); }
+.tb-win.close:hover { background: #e5484d; color: #fff; }
 
 .win-restore {
   width: 9px;

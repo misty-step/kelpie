@@ -5,7 +5,7 @@ import type { Fleet, Pane } from "./types";
 
 const RANK: Record<string, number> = { blocked: 0, working: 1, idle: 2, done: 3, unknown: 4 };
 
-export function paneRank(pane: Pane): number {
+function paneRank(pane: Pane): number {
   if (pane.pending_ask || pane.status === "blocked") return 0;
   return RANK[pane.status] ?? 4;
 }

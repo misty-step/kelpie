@@ -1,32 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Gauge, LayoutGrid, Minus, Settings, Square, X } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 import { isTauri } from "../api";
 import { win } from "../windowApi";
-import { paneRank } from "../fleetSort";
-import type { Fleet, HerdrStatus } from "../types";
 
-// Top strip: drag region, product mark, primary nav, herdr status, and —
-// with system decorations off — the window controls. Terminal toggle lives
-// only on the chat header (one place, one meaning).
+// Plain window bar: product name on the left, drag surface across the middle,
+// and — with system decorations off — the window controls on the right.
+// Navigation lives in the sidebar, the chat header, and the command palette;
+// herdr connection state lives in Settings.
 //
 // Drag regions stay on non-interactive surfaces only. Buttons never sit under
 // data-tauri-drag-region / app-region:drag, or min/max/close clicks are eaten.
 
-export function TitleBar({
-  fleet,
-  herdr,
-  onBackToFleet,
-  onOpenUsage,
-  onOpenSettings,
-  activeViewKind,
-}: {
-  fleet: Fleet | null;
-  herdr: HerdrStatus;
-  onBackToFleet: () => void;
-  onOpenUsage: () => void;
-  onOpenSettings: () => void;
-  activeViewKind?: string;
-}) {
+export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
   const offsRef = useRef<Array<() => void>>([]);
 
@@ -62,55 +47,14 @@ export function TitleBar({
     };
   }, []);
 
-  const count = fleet?.panes.length ?? 0;
-  const needs = fleet?.panes.filter((p) => paneRank(p) === 0).length ?? 0;
   const windowApi = win();
 
   return (
     <div className="titlebar">
-      <div className="tb-brand" data-tauri-drag-region>
-        <span className="tb-wordmark">kelpie</span>
-      </div>
-
-      <div className="tb-actions">
-        <button
-          type="button"
-          className={`tb-btn ${activeViewKind === "fleet" ? "active" : ""}`}
-          onClick={onBackToFleet}
-          title="Back to fleet"
-        >
-          <LayoutGrid size={14} />
-          <span>Fleet{count ? ` ${count}` : ""}</span>
-          {needs > 0 && <span className="tb-badge">{needs}</span>}
-        </button>
-
-        <button type="button" className="tb-btn" onClick={onOpenUsage} title="Provider usage">
-          <Gauge size={14} />
-          <span>Usage</span>
-        </button>
-        <button
-          type="button"
-          className={`tb-btn ${activeViewKind === "settings" ? "active" : ""}`}
-          onClick={onOpenSettings}
-          title="Application settings"
-        >
-          <Settings size={14} />
-          <span>Settings</span>
-        </button>
-        <div className="tb-drag-fill" data-tauri-drag-region aria-hidden="true" />
-      </div>
-
-      <div className="tb-right">
-        <span
-          className={`tb-herdr ${herdr.ok ? "ok" : "down"}`}
-          title={herdr.message}
-          data-tauri-drag-region
-        >
-          <span className={`status-dot tiny ${herdr.ok ? "working" : "blocked"}`} />
-          {herdr.ok ? "connected" : "disconnected"}
-        </span>
-      </div>
-
+      <span className="tb-title" data-tauri-drag-region>
+        kelpie
+      </span>
+      <div className="tb-drag-fill" data-tauri-drag-region aria-hidden="true" />
       {windowApi && (
         <div className="tb-windows">
           <button

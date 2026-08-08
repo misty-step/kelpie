@@ -306,14 +306,7 @@ export default function App() {
 
   return (
     <div className="app" data-theme={theme}>
-      <TitleBar
-        fleet={fleet}
-        herdr={herdr}
-        activeViewKind={view.kind}
-        onBackToFleet={() => setView({ kind: "fleet" })}
-        onOpenUsage={() => setUsageOpen(true)}
-        onOpenSettings={() => setView({ kind: "settings" })}
-      />
+      <TitleBar />
       <ErrorBoundary>
         <div className="body">
           <Sidebar
