@@ -46,14 +46,14 @@ export function ensureWorkspaceIcons(
   workspaceIds: readonly string[],
   icons: WorkspaceIconMap,
 ): WorkspaceIconMap {
-  let changed = false;
+  let next = icons;
   for (const workspaceId of workspaceIds) {
-    if (!workspaceId || icons[workspaceId]) continue;
-    icons[workspaceId] = randomDefaultIcon();
-    changed = true;
+    if (!workspaceId || next[workspaceId]) continue;
+    if (next === icons) next = { ...icons };
+    next[workspaceId] = randomDefaultIcon();
   }
-  if (changed) writeStorage(icons);
-  return icons;
+  if (next !== icons) writeStorage(next);
+  return next;
 }
 
 export function saveWorkspaceIcon(workspaceId: string, iconName: unknown): WorkspaceIconMap {
