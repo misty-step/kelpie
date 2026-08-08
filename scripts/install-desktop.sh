@@ -62,5 +62,5 @@ fi
 log "relaunching the running app"
 pkill -fx "$target" || true
 sleep 1
-setsid nohup "$target" >"${TMPDIR:-/tmp}/kelpie-app.log" 2>&1 </dev/null &
+setsid nohup "$target" >"${TMPDIR:-/tmp}/kelpie-app.log" 2>&1 </dev/null 9>&- &
 log "relaunched"
