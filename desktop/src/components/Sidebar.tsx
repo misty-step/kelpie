@@ -2,9 +2,11 @@ import {
   Settings,
   Loader2,
 } from "lucide-react";
+import type { IconName } from "lucide-react/dynamic";
 import type { Fleet, Pane } from "../types";
 import { attentionSort } from "../fleetSort";
 import { ThinkingIcon } from "./ThinkingIcon";
+import { WorkspaceIcon } from "./WorkspaceIcon";
 
 function WorkingSpinner() {
   return (
@@ -33,45 +35,59 @@ function PaneRow({
   selected,
   onSelect,
   workspaceLabel,
+  workspaceIcon,
+  onOpenWorkspaceIcon,
 }: {
   pane: Pane;
   selected: boolean;
   onSelect: (paneId: string) => void;
   workspaceLabel?: string;
+  workspaceIcon?: IconName;
+  onOpenWorkspaceIcon: (workspaceId: string) => void;
 }) {
   const wsName = workspaceLabel ?? pane.workspace_id;
   const provider = pane.provider ? pane.provider.toLowerCase() : null;
   const modelName = pane.model;
   const effort = pane.effort;
-
   const hasMeta = Boolean(modelName || effort);
 
   return (
-    <button
-      type="button"
-      className={`pane-row-card${selected ? " selected" : ""}`}
-      data-pane-id={pane.pane_id}
-      onClick={() => onSelect(pane.pane_id)}
-      title={pane.task ?? pane.pane_id}
-      aria-pressed={selected}
-    >
-      <div className="pane-row-top">
-        <StatusRing pane={pane} />
-        <span className="pane-ws-name">{wsName}</span>
-        {provider && <span className="pane-provider-tag">{provider}</span>}
-      </div>
-      {hasMeta && (
-        <div className="pane-row-meta">
-          {modelName && <span className="pane-model-name">{modelName}</span>}
-          {effort && (
-            <span className="pane-effort-pill">
-              <ThinkingIcon level={effort} size={11} />
-              <span>{effort.toLowerCase()}</span>
-            </span>
-          )}
+    <div className="pane-row-shell">
+      <button
+        type="button"
+        className={`pane-row-card${selected ? " selected" : ""}`}
+        data-pane-id={pane.pane_id}
+        onClick={() => onSelect(pane.pane_id)}
+        title={pane.task ?? pane.pane_id}
+        aria-pressed={selected}
+      >
+        <div className="pane-row-top">
+          <span className="pane-ws-name">{wsName}</span>
+          <StatusRing pane={pane} />
+          {provider && <span className="pane-provider-tag">{provider}</span>}
         </div>
-      )}
-    </button>
+        {hasMeta && (
+          <div className="pane-row-meta">
+            {modelName && <span className="pane-model-name">{modelName}</span>}
+            {effort && (
+              <span className="pane-effort-pill">
+                <ThinkingIcon level={effort} size={11} />
+                <span>{effort.toLowerCase()}</span>
+              </span>
+            )}
+          </div>
+        )}
+      </button>
+      <button
+        type="button"
+        className="pane-workspace-icon"
+        aria-label={`Change icon for ${wsName}`}
+        title={`Change icon for ${wsName}`}
+        onClick={() => onOpenWorkspaceIcon(pane.workspace_id)}
+      >
+        <WorkspaceIcon name={workspaceIcon} size={18} />
+      </button>
+    </div>
   );
 }
 
@@ -79,17 +95,20 @@ export function Sidebar({
   fleet,
   selectedPaneId,
   onSelectPane,
+  onOpenWorkspaceIcon,
   onOpenSettings,
+  workspaceIcons,
 }: {
   fleet: Fleet | null;
   selectedPaneId: string | null;
   onSelectPane: (paneId: string) => void;
+  onOpenWorkspaceIcon: (workspaceId: string) => void;
   onOpenUsage?: () => void;
   onOpenSettings: () => void;
+  workspaceIcons: Readonly<Record<string, IconName>>;
 }) {
   const totalPanes = fleet?.panes.length ?? 0;
   const wsLabelMap = new Map(fleet?.workspaces.map((w) => [w.id, w.label]) ?? []);
-
   const sortedPanes = fleet ? attentionSort(fleet.panes) : [];
   const urgencyPanes = sortedPanes.filter((p) => p.pending_ask || p.status === "blocked");
   const normalPanes = sortedPanes.filter((p) => !p.pending_ask && p.status !== "blocked");
@@ -131,6 +150,8 @@ export function Sidebar({
                 pane={pane}
                 selected={pane.pane_id === selectedPaneId}
                 onSelect={onSelectPane}
+                onOpenWorkspaceIcon={onOpenWorkspaceIcon}
+                workspaceIcon={workspaceIcons[pane.workspace_id]}
                 workspaceLabel={wsLabelMap.get(pane.workspace_id)}
               />
             ))}
@@ -150,6 +171,8 @@ export function Sidebar({
                 pane={pane}
                 selected={pane.pane_id === selectedPaneId}
                 onSelect={onSelectPane}
+                onOpenWorkspaceIcon={onOpenWorkspaceIcon}
+                workspaceIcon={workspaceIcons[pane.workspace_id]}
                 workspaceLabel={wsLabelMap.get(pane.workspace_id)}
               />
             ))}

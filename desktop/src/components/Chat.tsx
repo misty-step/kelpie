@@ -17,9 +17,12 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { ThinkingIcon } from "./ThinkingIcon";
+import { WorkspaceIcon } from "./WorkspaceIcon";
 import { Markdown } from "../markdown";
 import type { IndexedEntry, Pane, SessionPage } from "../types";
+import type { IconName } from "lucide-react/dynamic";
 import type { Theme } from "../theme";
+
 import { Composer } from "./Composer";
 import { statusLabel } from "../status";
 import { taskTitle } from "../taskTitle";
@@ -130,14 +133,21 @@ function ThinkingBlock({ entry, theme, last }: { entry: IndexedEntry; theme: The
 export function Chat({
   pane,
   theme,
+  workspaceLabel,
+  workspaceIcon,
+  onOpenWorkspaceIcon,
   onToggleTerminal,
   terminalOpen,
 }: {
   pane: Pane;
   theme: Theme;
+  workspaceLabel: string;
+  workspaceIcon?: IconName;
+  onOpenWorkspaceIcon: (workspaceId: string) => void;
   onToggleTerminal: () => void;
   terminalOpen: boolean;
 }) {
+
   const [page, setPage] = useState<SessionPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,6 +218,18 @@ export function Chat({
     <div className="chat">
       <header className="chat-head">
         <div className="chat-head-left">
+          <div className="chat-workspace">
+            <button
+              type="button"
+              className="chat-workspace-icon"
+              aria-label={`Change icon for ${workspaceLabel}`}
+              title={`Change icon for ${workspaceLabel}`}
+              onClick={() => onOpenWorkspaceIcon(pane.workspace_id)}
+            >
+              <WorkspaceIcon name={workspaceIcon} size={18} />
+            </button>
+            <span className="chat-workspace-label">{workspaceLabel}</span>
+          </div>
           <h2 className="chat-title" title={pane.task ?? pane.pane_id}>
             {taskText}
           </h2>

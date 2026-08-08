@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import type { IconName } from "lucide-react/dynamic";
 import type { Fleet, HerdrStatus, Pane } from "./types";
 import type { Theme } from "./theme";
 import { useTheme } from "./theme";
@@ -11,6 +12,8 @@ import { SettingsView, applyOpacitySetting, getSavedOpacity } from "./components
 import { TerminalPanel } from "./components/TerminalPanel";
 import { UsagePanel } from "./components/UsagePanel";
 import { CommandPalette } from "./components/CommandPalette";
+import { WorkspaceIconPicker } from "./components/WorkspaceIconPicker";
+import { ensureWorkspaceIcons, readWorkspaceIcons, saveWorkspaceIcon } from "./workspaceIcons";
 import { attentionSort, sidebarOrder } from "./fleetSort";
 import { win } from "./windowApi";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -36,14 +39,21 @@ export default function App() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [workspaceIcons, setWorkspaceIcons] = useState(() => readWorkspaceIcons());
+  const [iconPickerWorkspaceId, setIconPickerWorkspaceId] = useState<string | null>(null);
   const [, setNow] = useState(0);
 
   const fleetLive = useRef(fleet);
   const viewLive = useRef(view);
-  const overlayLive = useRef({ palette: false, usage: false, terminal: false });
+  const overlayLive = useRef({ palette: false, usage: false, terminal: false, workspaceIcon: false });
   fleetLive.current = fleet;
   viewLive.current = view;
-  overlayLive.current = { palette: paletteOpen, usage: usageOpen, terminal: terminalOpen };
+  overlayLive.current = {
+    palette: paletteOpen,
+    usage: usageOpen,
+    terminal: terminalOpen,
+    workspaceIcon: iconPickerWorkspaceId !== null,
+  };
 
   const openPane = (paneId: string) => {
     setView({ kind: "chat", paneId });
@@ -54,6 +64,10 @@ export default function App() {
         .querySelector<HTMLElement>(`[data-pane-id="${CSS.escape(paneId)}"]`)
         ?.scrollIntoView({ block: "nearest" });
     });
+  };
+  const syncWorkspaceIcons = (f: Fleet) => {
+    const workspaceIds = [...f.workspaces.map((workspace) => workspace.id), ...f.panes.map((pane) => pane.workspace_id)];
+    setWorkspaceIcons(ensureWorkspaceIcons([...new Set(workspaceIds)]));
   };
 
   useEffect(() => {
@@ -72,12 +86,14 @@ export default function App() {
       .fleet()
       .then((f) => {
         if (!alive) return;
+        syncWorkspaceIcons(f);
         setFleet(f);
         maybeAutoOpen(f);
       })
       .catch(() => {});
     const offFleet = api.onFleet((f) => {
       if (!alive) return;
+      syncWorkspaceIcons(f);
       setFleet(f);
       maybeAutoOpen(f);
     });
@@ -123,9 +139,10 @@ export default function App() {
       // Always-on: palette, quit, text size, escape
       if (hasMod && !e.altKey && lower === "k") {
         e.preventDefault();
-        setPaletteOpen((open) => !open);
+        if (!overlayLive.current.workspaceIcon) setPaletteOpen((open) => !open);
         return;
       }
+
       if (hasMod && !e.altKey && lower === "q") {
         e.preventDefault();
         void quit();
@@ -150,6 +167,11 @@ export default function App() {
       }
 
       if (key === "Escape") {
+        if (overlayLive.current.workspaceIcon) {
+          e.preventDefault();
+          setIconPickerWorkspaceId(null);
+          return;
+        }
         if (overlayLive.current.palette) {
           e.preventDefault();
           setPaletteOpen(false);
@@ -179,8 +201,7 @@ export default function App() {
       }
 
       // Editable fields keep plain keys. Modifier chords still navigate.
-      const blockPlain = typing || overlayLive.current.palette;
-
+      const blockPlain = typing || overlayLive.current.palette || overlayLive.current.workspaceIcon;
       // Agent navigation (sidebar order)
       // Alt/Ctrl/Cmd + ↑↓, Alt+[ ], Alt+J/K — safe while typing
       if ((e.altKey || hasMod) && key === "ArrowDown") {
@@ -266,6 +287,20 @@ export default function App() {
 
   const selectedPane: Pane | null =
     view.kind === "chat" ? (fleet?.panes.find((p) => p.pane_id === view.paneId) ?? null) : null;
+  const selectedWorkspace = selectedPane
+    ? fleet?.workspaces.find((workspace) => workspace.id === selectedPane.workspace_id)
+    : undefined;
+  const selectedWorkspaceLabel = selectedWorkspace?.label ?? selectedPane?.workspace_id ?? "Workspace";
+  const openWorkspaceIconPicker = (workspaceId: string) => setIconPickerWorkspaceId(workspaceId);
+  const selectWorkspaceIcon = (iconName: IconName) => {
+    if (iconPickerWorkspaceId === null) return;
+    setWorkspaceIcons(saveWorkspaceIcon(iconPickerWorkspaceId, iconName));
+    setIconPickerWorkspaceId(null);
+  };
+  const pickerWorkspaceLabel =
+    fleet?.workspaces.find((workspace) => workspace.id === iconPickerWorkspaceId)?.label ??
+    iconPickerWorkspaceId ??
+    "Workspace";
 
   return (
     <div className="app" data-theme={theme}>
@@ -283,8 +318,10 @@ export default function App() {
             fleet={fleet}
             selectedPaneId={view.kind === "chat" ? view.paneId : null}
             onSelectPane={(paneId) => setView({ kind: "chat", paneId })}
+            onOpenWorkspaceIcon={openWorkspaceIconPicker}
             onOpenUsage={() => setUsageOpen(true)}
             onOpenSettings={() => setView({ kind: "settings" })}
+            workspaceIcons={workspaceIcons}
           />
           <main className="main">
             {view.kind === "settings" ? (
@@ -293,6 +330,9 @@ export default function App() {
               <Chat
                 pane={selectedPane}
                 theme={theme}
+                workspaceLabel={selectedWorkspaceLabel}
+                workspaceIcon={workspaceIcons[selectedPane.workspace_id]}
+                onOpenWorkspaceIcon={openWorkspaceIconPicker}
                 onToggleTerminal={() => setTerminalOpen((o) => !o)}
                 terminalOpen={terminalOpen}
               />
@@ -315,6 +355,14 @@ export default function App() {
           onOpenSettings={() => setView({ kind: "settings" })}
           onToggleTerminal={() => setTerminalOpen((open) => !open)}
           onBackToFleet={() => setView({ kind: "fleet" })}
+        />
+      )}
+      {iconPickerWorkspaceId !== null && (
+        <WorkspaceIconPicker
+          workspaceLabel={pickerWorkspaceLabel}
+          selectedIcon={workspaceIcons[iconPickerWorkspaceId]}
+          onSelect={selectWorkspaceIcon}
+          onClose={() => setIconPickerWorkspaceId(null)}
         />
       )}
     </div>
