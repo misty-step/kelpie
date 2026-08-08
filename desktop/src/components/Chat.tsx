@@ -57,15 +57,6 @@ function timeOf(ts?: string | null): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function WorkingSpinner() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" className="spin st-spinner" aria-hidden="true">
-      <circle cx="8" cy="8" r="6" fill="none" stroke="var(--brand-soft)" strokeWidth="2" opacity="0.35" />
-      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function ToolStatus({ status }: { status: "pending" | "ok" | "error" }) {
   if (status === "pending") {
     return (
@@ -254,7 +245,7 @@ export function Chat({
             title={statusLabel(pane.pending_ask ? "blocked" : pane.status)}
           >
             {pane.status === "working" && !pane.pending_ask ? (
-              <WorkingSpinner />
+              <Loader2 size={12} className="spin" aria-hidden="true" />
             ) : (
               <span className="head-status-dot" />
             )}

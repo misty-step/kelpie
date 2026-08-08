@@ -9,15 +9,6 @@ import type { WorkspaceIconMap } from "../workspaceIcons";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { WorkspaceIcon } from "./WorkspaceIcon";
 
-function WorkingSpinner() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" className="spin st-spinner" aria-hidden="true">
-      <circle cx="8" cy="8" r="6" fill="none" stroke="var(--brand-soft)" strokeWidth="2" opacity="0.35" />
-      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function StatusRing({ pane }: { pane: Pane }) {
   if (pane.pending_ask) {
     return <span className="st-ring needs pulse" title="Needs input" />;
@@ -26,7 +17,7 @@ function StatusRing({ pane }: { pane: Pane }) {
     return <span className="st-ring blocked" title="Blocked" />;
   }
   if (pane.status === "working") {
-    return <WorkingSpinner />;
+    return <Loader2 size={12} className="spin" aria-hidden="true" />;
   }
   return <span className="st-ring done" title="Done" />;
 }

@@ -171,11 +171,6 @@ export default function App() {
       }
 
       if (key === "Escape") {
-        if (overlayLive.current.workspaceIcon) {
-          e.preventDefault();
-          setIconPickerWorkspaceId(null);
-          return;
-        }
         if (overlayLive.current.palette) {
           e.preventDefault();
           setPaletteOpen(false);
