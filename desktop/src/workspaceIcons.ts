@@ -42,8 +42,11 @@ function randomDefaultIcon(): IconName {
   return iconNames[Math.floor(Math.random() * iconNames.length)];
 }
 
-export function ensureWorkspaceIcons(workspaceIds: readonly string[]): WorkspaceIconMap {
-  const icons = readWorkspaceIcons();
+export function ensureWorkspaceIcons(
+  workspaceIds: readonly string[],
+  knownIcons?: WorkspaceIconMap,
+): WorkspaceIconMap {
+  const icons = knownIcons ?? readWorkspaceIcons();
   let changed = false;
   for (const workspaceId of workspaceIds) {
     if (!workspaceId || icons[workspaceId]) continue;

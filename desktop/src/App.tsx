@@ -40,13 +40,13 @@ export default function App() {
   const [usageOpen, setUsageOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [workspaceIcons, setWorkspaceIcons] = useState(() => readWorkspaceIcons());
+  const workspaceIconsLive = useRef(workspaceIcons);
   const [iconPickerWorkspaceId, setIconPickerWorkspaceId] = useState<string | null>(null);
   const [, setNow] = useState(0);
-
   const fleetLive = useRef(fleet);
   const viewLive = useRef(view);
   const overlayLive = useRef({ palette: false, usage: false, terminal: false, workspaceIcon: false });
-  fleetLive.current = fleet;
+  workspaceIconsLive.current = workspaceIcons;
   viewLive.current = view;
   overlayLive.current = {
     palette: paletteOpen,
@@ -67,7 +67,9 @@ export default function App() {
   };
   const syncWorkspaceIcons = (f: Fleet) => {
     const workspaceIds = [...f.workspaces.map((workspace) => workspace.id), ...f.panes.map((pane) => pane.workspace_id)];
-    setWorkspaceIcons(ensureWorkspaceIcons(workspaceIds));
+    const icons = ensureWorkspaceIcons(workspaceIds, workspaceIconsLive.current);
+    workspaceIconsLive.current = icons;
+    setWorkspaceIcons(icons);
   };
 
   useEffect(() => {
@@ -202,17 +204,7 @@ export default function App() {
         return;
       }
 
-      const pickerNavigationChord =
-        (hasMod &&
-          (key === "ArrowDown" ||
-            key === "ArrowUp" ||
-            (e.shiftKey && lower === "a") ||
-            digitFromEvent(e) != null)) ||
-        (e.altKey && !hasMod && (lower === "j" || lower === "k" || key === "[" || key === "]"));
-      if (overlayLive.current.workspaceIcon && pickerNavigationChord) {
-        e.preventDefault();
-        return;
-      }
+      if (overlayLive.current.workspaceIcon) return;
 
       // Editable fields keep plain keys. Modifier chords still navigate.
       const blockPlain = typing || overlayLive.current.palette;
@@ -307,7 +299,9 @@ export default function App() {
   const openWorkspaceIconPicker = (workspaceId: string) => setIconPickerWorkspaceId(workspaceId);
   const selectWorkspaceIcon = (iconName: IconName) => {
     if (iconPickerWorkspaceId === null) return;
-    setWorkspaceIcons(saveWorkspaceIcon(iconPickerWorkspaceId, iconName));
+    const icons = saveWorkspaceIcon(iconPickerWorkspaceId, iconName);
+    workspaceIconsLive.current = icons;
+    setWorkspaceIcons(icons);
     setIconPickerWorkspaceId(null);
   };
   const pickerWorkspaceLabel = iconPickerWorkspaceId
