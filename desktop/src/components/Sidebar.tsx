@@ -5,6 +5,7 @@ import {
 import type { IconName } from "lucide-react/dynamic";
 import type { Fleet, Pane } from "../types";
 import { attentionSort } from "../fleetSort";
+import type { WorkspaceIconMap } from "../workspaceIcons";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { WorkspaceIcon } from "./WorkspaceIcon";
 
@@ -104,7 +105,7 @@ export function Sidebar({
   onSelectPane: (paneId: string) => void;
   onOpenWorkspaceIcon: (workspaceId: string) => void;
   onOpenSettings: () => void;
-  workspaceIcons: Readonly<Record<string, IconName>>;
+  workspaceIcons: Readonly<WorkspaceIconMap>;
 }) {
   const totalPanes = fleet?.panes.length ?? 0;
   const wsLabelMap = new Map(fleet?.workspaces.map((w) => [w.id, w.label]) ?? []);

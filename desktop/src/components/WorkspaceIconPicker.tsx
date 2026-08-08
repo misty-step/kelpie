@@ -4,7 +4,6 @@ import { iconNames } from "lucide-react/dynamic";
 import type { IconName } from "lucide-react/dynamic";
 import { WorkspaceIcon } from "./WorkspaceIcon";
 
-const MAX_VISIBLE_ICONS = 64;
 
 function readableIconName(name: IconName): string {
   return name.replace(/-/g, " ");
@@ -22,6 +21,7 @@ export function WorkspaceIconPicker({
   onClose: () => void;
 }) {
   const [query, setQuery] = React.useState("");
+  const [activeOption, setActiveOption] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const optionRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
   const returnFocusRef = React.useRef<HTMLElement | null>(
@@ -34,15 +34,13 @@ export function WorkspaceIconPicker({
   }, []);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const matchingIcons = iconNames.filter((name) =>
+  const visibleIcons = iconNames.filter((name) =>
     readableIconName(name).toLowerCase().includes(normalizedQuery),
   );
-  const visibleIcons = matchingIcons.slice(0, MAX_VISIBLE_ICONS);
-  if (!normalizedQuery && selectedIcon && !visibleIcons.includes(selectedIcon)) {
-    visibleIcons.splice(-1, 1, selectedIcon);
-  }
+  const activeIndex = visibleIcons.length > 0 ? Math.min(activeOption, visibleIcons.length - 1) : -1;
 
   const focusOption = (index: number) => {
+    setActiveOption(index);
     optionRefs.current[index]?.focus();
   };
 
@@ -63,6 +61,23 @@ export function WorkspaceIconPicker({
             event.preventDefault();
             event.stopPropagation();
             onClose();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>(
+              "button:not([disabled]):not([tabindex='-1']), input:not([disabled])",
+            ),
+          );
+          const first = focusable[0];
+          const last = focusable.at(-1);
+          if (!first || !last) return;
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
           }
         }}
         onMouseDown={(event) => event.stopPropagation()}
@@ -77,7 +92,7 @@ export function WorkspaceIconPicker({
           </button>
         </header>
 
-        <label className="workspace-icon-search-label" htmlFor="workspace-icon-search">
+        <label className="sr-only" htmlFor="workspace-icon-search">
           Search icons
         </label>
         <div className="workspace-icon-search">
@@ -114,7 +129,7 @@ export function WorkspaceIconPicker({
               }}
               type="button"
               role="option"
-              tabIndex={index === 0 ? 0 : -1}
+              tabIndex={index === activeIndex ? 0 : -1}
               className={`workspace-icon-option${iconName === selectedIcon ? " selected" : ""}`}
               aria-label={`Use ${readableIconName(iconName)} icon`}
               aria-selected={iconName === selectedIcon}

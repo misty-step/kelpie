@@ -1,49 +1,11 @@
 import { iconNames } from "lucide-react/dynamic";
 import type { IconName } from "lucide-react/dynamic";
 
-export const WORKSPACE_ICON_STORAGE_KEY = "kelpie.workspace-icons.v1";
-
-export const DEFAULT_WORKSPACE_ICON_NAMES = [
-  "rocket",
-  "anchor",
-  "compass",
-  "box",
-  "cpu",
-  "ghost",
-  "globe",
-  "key",
-  "map",
-  "moon",
-  "mountain",
-  "origami",
-  "palette",
-  "puzzle",
-  "radar",
-  "sailboat",
-  "telescope",
-  "turtle",
-  "leaf",
-  "cat",
-  "waypoints",
-  "landmark",
-  "skull",
-  "flask-conical",
-  "bird",
-  "wrench",
-  "hammer",
-  "flower-2",
-  "brain",
-  "git-branch",
-  "database",
-  "users",
-  "shield",
-  "gavel",
-  "notebook-pen",
-] as const satisfies readonly IconName[];
-
-export type WorkspaceIconMap = Record<string, IconName>;
+const WORKSPACE_ICON_STORAGE_KEY = "kelpie.workspace-icons.v1";
 
 const catalog = new Set<string>(iconNames);
+
+export type WorkspaceIconMap = Partial<Record<string, IconName>>;
 
 export function isIconName(value: unknown): value is IconName {
   return typeof value === "string" && catalog.has(value);
@@ -77,7 +39,7 @@ export function readWorkspaceIcons(): WorkspaceIconMap {
 }
 
 function randomDefaultIcon(): IconName {
-  return DEFAULT_WORKSPACE_ICON_NAMES[Math.floor(Math.random() * DEFAULT_WORKSPACE_ICON_NAMES.length)];
+  return iconNames[Math.floor(Math.random() * iconNames.length)];
 }
 
 export function ensureWorkspaceIcons(workspaceIds: readonly string[]): WorkspaceIconMap {
@@ -100,3 +62,4 @@ export function saveWorkspaceIcon(workspaceId: string, iconName: unknown): Works
   }
   return icons;
 }
+
