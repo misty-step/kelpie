@@ -138,8 +138,10 @@ export default function App() {
 
       // Always-on: palette, quit, text size, escape
       if (hasMod && !e.altKey && lower === "k") {
-        e.preventDefault();
-        if (!overlayLive.current.workspaceIcon) setPaletteOpen((open) => !open);
+        if (!overlayLive.current.workspaceIcon) {
+          e.preventDefault();
+          setPaletteOpen((open) => !open);
+        }
         return;
       }
 
@@ -200,9 +202,14 @@ export default function App() {
         return;
       }
 
-      // Keep modifier navigation inside the picker. Plain keys remain available
-      // to the focused search field and icon buttons.
-      if (overlayLive.current.workspaceIcon && (hasMod || e.altKey)) {
+      const pickerNavigationChord =
+        (hasMod &&
+          (key === "ArrowDown" ||
+            key === "ArrowUp" ||
+            (e.shiftKey && lower === "a") ||
+            digitFromEvent(e) != null)) ||
+        (e.altKey && !hasMod && (lower === "j" || lower === "k" || key === "[" || key === "]"));
+      if (overlayLive.current.workspaceIcon && pickerNavigationChord) {
         e.preventDefault();
         return;
       }
