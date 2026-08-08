@@ -93,7 +93,7 @@ export function CommandPalette({
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="palette" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel palette" onClick={(e) => e.stopPropagation()}>
         <div className="palette-search">
           <Search size={16} className="palette-search-icon" />
           <input

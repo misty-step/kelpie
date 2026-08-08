@@ -1860,17 +1860,20 @@ button {
   padding: 24px;
 }
 
+.modal-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
 .workspace-icon-picker {
   width: 560px;
   max-width: 100%;
   max-height: 78vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow-xl);
 }
 
 .workspace-icon-picker-head {
@@ -1983,16 +1986,28 @@ button {
   color: var(--text-muted);
   font-size: 13px;
 }
+.workspace-icon-more {
+  align-self: center;
+  margin: 0 14px 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.workspace-icon-more:hover {
+  border-color: var(--brand-soft);
+  color: var(--brand-ink);
+  background: var(--brand-bg);
+}
+
 
 
 .palette {
   width: 560px;
   max-width: calc(100vw - 40px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
 }
 
 .palette-input-row {
@@ -2049,11 +2064,6 @@ button {
   max-height: 78vh;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
 }
 
 .usage-head {

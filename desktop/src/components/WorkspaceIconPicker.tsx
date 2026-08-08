@@ -4,7 +4,7 @@ import { iconNames } from "lucide-react/dynamic";
 import type { IconName } from "lucide-react/dynamic";
 import { WorkspaceIcon } from "./WorkspaceIcon";
 
-
+const ICON_PAGE_SIZE = 96;
 function readableIconName(name: IconName): string {
   return name.replace(/-/g, " ");
 }
@@ -21,6 +21,7 @@ export function WorkspaceIconPicker({
   onClose: () => void;
 }) {
   const [query, setQuery] = React.useState("");
+  const [visibleCount, setVisibleCount] = React.useState(ICON_PAGE_SIZE);
   const [activeOption, setActiveOption] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const optionRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
@@ -34,9 +35,13 @@ export function WorkspaceIconPicker({
   }, []);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleIcons = iconNames.filter((name) =>
+  const matchingIcons = iconNames.filter((name) =>
     readableIconName(name).toLowerCase().includes(normalizedQuery),
   );
+  const visibleIcons = matchingIcons.slice(0, visibleCount);
+  if (selectedIcon && matchingIcons.includes(selectedIcon) && !visibleIcons.includes(selectedIcon)) {
+    visibleIcons.splice(-1, 1, selectedIcon);
+  }
   const activeIndex = visibleIcons.length > 0 ? Math.min(activeOption, visibleIcons.length - 1) : -1;
 
   const focusOption = (index: number) => {
@@ -52,7 +57,7 @@ export function WorkspaceIconPicker({
       }}
     >
       <section
-        className="workspace-icon-picker"
+        className="modal-panel workspace-icon-picker"
         role="dialog"
         aria-modal="true"
         aria-labelledby="workspace-icon-picker-title"
@@ -108,7 +113,10 @@ export function WorkspaceIconPicker({
                 focusOption(0);
               }
             }}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setVisibleCount(ICON_PAGE_SIZE);
+            }}
             placeholder="Search icons…"
             aria-controls="workspace-icon-options"
             autoComplete="off"
@@ -156,6 +164,15 @@ export function WorkspaceIconPicker({
           ))}
           {visibleIcons.length === 0 && <p className="workspace-icon-empty">No matching icons</p>}
         </div>
+        {visibleIcons.length < matchingIcons.length && (
+          <button
+            type="button"
+            className="workspace-icon-more"
+            onClick={() => setVisibleCount((count) => count + ICON_PAGE_SIZE)}
+          >
+            Show more icons ({matchingIcons.length - visibleIcons.length})
+          </button>
+        )}
       </section>
     </div>
   );

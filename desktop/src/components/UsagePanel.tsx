@@ -61,7 +61,7 @@ export function UsagePanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="usage-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel usage-panel" onClick={(e) => e.stopPropagation()}>
         <header className="usage-head">
           <span className="usage-title">
             <Gauge size={16} />
