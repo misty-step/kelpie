@@ -31,9 +31,6 @@ log() { printf '%s install-desktop: %s\n' "$(date +%H:%M:%S)" "$*"; }
 exec 9>"$runtime_dir/install.lock"
 flock 9
 
-was_running=0
-if pgrep -fx "$target" >/dev/null 2>&1; then was_running=1; fi
-
 log "building release binary (bundling is off; binary only)"
 cd "$repo/desktop"
 env -u CI -u TAURI_CI npm run tauri -- build
@@ -45,7 +42,9 @@ install -m 755 "$built" "$target.new"
 mv -f "$target.new" "$target"
 log "installed $target ($(md5sum "$target" | cut -c1-8))"
 
-if [ "$was_running" = 0 ]; then
+# Checked after the build, not before: an instance may start while we compile,
+# and it would otherwise keep running the superseded image.
+if ! pgrep -fx "$target" >/dev/null 2>&1; then
   log "app was not running; nothing to relaunch"
   exit 0
 fi

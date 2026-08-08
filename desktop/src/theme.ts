@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
@@ -14,7 +14,8 @@ export function useTheme(): Theme {
   }, []);
   // Dark tokens live on :root[data-theme="dark"], so the attribute belongs on
   // the document element — an app-level wrapper would leave them unresolved.
-  useEffect(() => {
+  // Layout effect, not a passive one: the write lands before the first paint.
+  useLayoutEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
   return theme;
