@@ -7,7 +7,7 @@ const catalog = new Set<string>(iconNames);
 
 export type WorkspaceIconMap = Partial<Record<string, IconName>>;
 
-export function isIconName(value: unknown): value is IconName {
+function isIconName(value: unknown): value is IconName {
   return typeof value === "string" && catalog.has(value);
 }
 

@@ -6,8 +6,7 @@
 # --no-relaunch to leave the running app alone.
 #
 # Concurrent callers (parallel agent sessions, a commit hook racing a manual
-# run) serialize on a lock; the loser skips, since the winner produces the
-# newer binary anyway.
+# run) serialize on a lock so every caller installs its own source revision.
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,10 +26,7 @@ esac
 log() { printf '%s install-desktop: %s\n' "$(date +%H:%M:%S)" "$*"; }
 
 exec 9>"${TMPDIR:-/tmp}/kelpie-install.lock"
-if ! flock -n 9; then
-  log "another build holds the lock; skipping"
-  exit 0
-fi
+flock 9
 
 was_running=0
 if pgrep -fx "$target" >/dev/null 2>&1; then was_running=1; fi

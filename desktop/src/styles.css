@@ -523,9 +523,7 @@ button {
 
 .pane-workspace-icon:hover,
 .chat-workspace-icon:hover {
-  background: var(--brand-bg);
   border-color: var(--brand-soft);
-  color: var(--brand);
 }
 
 

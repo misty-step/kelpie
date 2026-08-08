@@ -67,7 +67,7 @@ export default function App() {
   };
   const syncWorkspaceIcons = (f: Fleet) => {
     const workspaceIds = [...f.workspaces.map((workspace) => workspace.id), ...f.panes.map((pane) => pane.workspace_id)];
-    setWorkspaceIcons(ensureWorkspaceIcons([...new Set(workspaceIds)]));
+    setWorkspaceIcons(ensureWorkspaceIcons(workspaceIds));
   };
 
   useEffect(() => {
