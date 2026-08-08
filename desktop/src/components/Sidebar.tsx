@@ -103,7 +103,6 @@ export function Sidebar({
   selectedPaneId: string | null;
   onSelectPane: (paneId: string) => void;
   onOpenWorkspaceIcon: (workspaceId: string) => void;
-  onOpenUsage?: () => void;
   onOpenSettings: () => void;
   workspaceIcons: Readonly<Record<string, IconName>>;
 }) {

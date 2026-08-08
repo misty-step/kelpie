@@ -646,6 +646,12 @@ button {
   min-width: 0;
   flex: 1;
 }
+.chat-workspace {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
 
 .chat-workspace-icon {
   width: 28px;

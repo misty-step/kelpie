@@ -23,9 +23,14 @@ export function WorkspaceIconPicker({
 }) {
   const [query, setQuery] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const optionRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
+  const returnFocusRef = React.useRef<HTMLElement | null>(
+    document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  );
 
   React.useEffect(() => {
     inputRef.current?.focus();
+    return () => returnFocusRef.current?.focus();
   }, []);
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -36,6 +41,10 @@ export function WorkspaceIconPicker({
   if (!normalizedQuery && selectedIcon && !visibleIcons.includes(selectedIcon)) {
     visibleIcons.splice(-1, 1, selectedIcon);
   }
+
+  const focusOption = (index: number) => {
+    optionRefs.current[index]?.focus();
+  };
 
   return (
     <div
@@ -78,6 +87,12 @@ export function WorkspaceIconPicker({
             id="workspace-icon-search"
             type="search"
             value={query}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" && visibleIcons.length > 0) {
+                event.preventDefault();
+                focusOption(0);
+              }
+            }}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search icons…"
             aria-controls="workspace-icon-options"
@@ -85,19 +100,39 @@ export function WorkspaceIconPicker({
           />
         </div>
         <div
+          className="workspace-icon-grid"
           id="workspace-icon-options"
           role="listbox"
           aria-label="Workspace icons"
           aria-multiselectable="false"
         >
-          {visibleIcons.map((iconName) => (
+          {visibleIcons.map((iconName, index) => (
             <button
               key={iconName}
+              ref={(node) => {
+                optionRefs.current[index] = node;
+              }}
               type="button"
               role="option"
+              tabIndex={index === 0 ? 0 : -1}
               className={`workspace-icon-option${iconName === selectedIcon ? " selected" : ""}`}
               aria-label={`Use ${readableIconName(iconName)} icon`}
               aria-selected={iconName === selectedIcon}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  focusOption((index + 1) % visibleIcons.length);
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  focusOption((index - 1 + visibleIcons.length) % visibleIcons.length);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  focusOption(0);
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  focusOption(visibleIcons.length - 1);
+                }
+              }}
               onClick={() => onSelect(iconName)}
             >
               <WorkspaceIcon name={iconName} size={20} />

@@ -1,18 +1,17 @@
 import { CircleHelp } from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import type { IconName } from "lucide-react/dynamic";
-import { isIconName } from "../workspaceIcons";
 
 export function WorkspaceIcon({
   name,
   size = 18,
   className,
 }: {
-  name: unknown;
+  name: IconName | undefined;
   size?: number;
   className?: string;
 }) {
-  const iconName: IconName = isIconName(name) ? name : "box";
+  const iconName: IconName = name ?? "box";
   return (
     <DynamicIcon
       name={iconName}

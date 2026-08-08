@@ -14,7 +14,7 @@ import { UsagePanel } from "./components/UsagePanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { WorkspaceIconPicker } from "./components/WorkspaceIconPicker";
 import { ensureWorkspaceIcons, readWorkspaceIcons, saveWorkspaceIcon } from "./workspaceIcons";
-import { attentionSort, sidebarOrder } from "./fleetSort";
+import { attentionSort, sidebarOrder, workspaceLabelOf } from "./fleetSort";
 import { win } from "./windowApi";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TYPE_SCALE_DEFAULT, applyTypeScale, bumpTypeScale, getSavedTypeScale } from "./typeScale";
@@ -148,7 +148,7 @@ export default function App() {
         void quit();
         return;
       }
-      if (hasMod && !e.altKey) {
+      if (hasMod && !e.altKey && !overlayLive.current.workspaceIcon) {
         if (key === "=" || key === "+" || e.code === "NumpadAdd") {
           e.preventDefault();
           bumpTypeScale(1);
@@ -200,8 +200,15 @@ export default function App() {
         return;
       }
 
+      // Keep modifier navigation inside the picker. Plain keys remain available
+      // to the focused search field and icon buttons.
+      if (overlayLive.current.workspaceIcon && (hasMod || e.altKey)) {
+        e.preventDefault();
+        return;
+      }
+
       // Editable fields keep plain keys. Modifier chords still navigate.
-      const blockPlain = typing || overlayLive.current.palette || overlayLive.current.workspaceIcon;
+      const blockPlain = typing || overlayLive.current.palette;
       // Agent navigation (sidebar order)
       // Alt/Ctrl/Cmd + ↑↓, Alt+[ ], Alt+J/K — safe while typing
       if ((e.altKey || hasMod) && key === "ArrowDown") {
@@ -287,20 +294,18 @@ export default function App() {
 
   const selectedPane: Pane | null =
     view.kind === "chat" ? (fleet?.panes.find((p) => p.pane_id === view.paneId) ?? null) : null;
-  const selectedWorkspace = selectedPane
-    ? fleet?.workspaces.find((workspace) => workspace.id === selectedPane.workspace_id)
-    : undefined;
-  const selectedWorkspaceLabel = selectedWorkspace?.label ?? selectedPane?.workspace_id ?? "Workspace";
+  const selectedWorkspaceLabel = selectedPane
+    ? workspaceLabelOf(fleet, selectedPane.workspace_id)
+    : "Workspace";
   const openWorkspaceIconPicker = (workspaceId: string) => setIconPickerWorkspaceId(workspaceId);
   const selectWorkspaceIcon = (iconName: IconName) => {
     if (iconPickerWorkspaceId === null) return;
     setWorkspaceIcons(saveWorkspaceIcon(iconPickerWorkspaceId, iconName));
     setIconPickerWorkspaceId(null);
   };
-  const pickerWorkspaceLabel =
-    fleet?.workspaces.find((workspace) => workspace.id === iconPickerWorkspaceId)?.label ??
-    iconPickerWorkspaceId ??
-    "Workspace";
+  const pickerWorkspaceLabel = iconPickerWorkspaceId
+    ? workspaceLabelOf(fleet, iconPickerWorkspaceId)
+    : "Workspace";
 
   return (
     <div className="app" data-theme={theme}>
@@ -319,7 +324,6 @@ export default function App() {
             selectedPaneId={view.kind === "chat" ? view.paneId : null}
             onSelectPane={(paneId) => setView({ kind: "chat", paneId })}
             onOpenWorkspaceIcon={openWorkspaceIconPicker}
-            onOpenUsage={() => setUsageOpen(true)}
             onOpenSettings={() => setView({ kind: "settings" })}
             workspaceIcons={workspaceIcons}
           />
