@@ -47,6 +47,7 @@ export default function App() {
   const viewLive = useRef(view);
   const overlayLive = useRef({ palette: false, usage: false, terminal: false, workspaceIcon: false });
   workspaceIconsLive.current = workspaceIcons;
+  fleetLive.current = fleet;
   viewLive.current = view;
   overlayLive.current = {
     palette: paletteOpen,
