@@ -20,7 +20,8 @@ proves the code compiles — it says nothing about what the operator sees.
 - Launch detached processes with `setsid nohup …`; a plain `nohup … &` from a
   tool shell does not outlive the session.
 
-## Board
+## Work
 
-Work lives on the Powder board, repo label `misty-step/kelpie`:
-`powder list-cards --repo misty-step/kelpie`. No local ticket files.
+Work proceeds ad hoc from current operator requests; no backlog ticket is
+required. Check current sessions and handoffs for overlapping work, then keep
+scope, ownership, and results in the session or a brief project note.
