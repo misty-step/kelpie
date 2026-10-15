@@ -74,12 +74,21 @@ if '--wait' in sys.argv[2:]:
     readiness_deadline = time.monotonic() + 120
     observations = []
     consecutive = 0
+    stable_since = None
     while time.monotonic() < readiness_deadline:
         results = sweep()
-        observations.append(results)
+        observations.append({'elapsed_seconds': round(time.monotonic() - (readiness_deadline - 120), 3), 'checks': results})
         Path('cloudflare-readiness-proof.json').write_text(json.dumps(observations, indent=2) + '\n')
-        consecutive = consecutive + 1 if all(result['passed'] for result in results) else 0
-        if consecutive == 2:
+        if all(result['passed'] for result in results):
+            consecutive += 1
+            stable_since = time.monotonic() if stable_since is None else stable_since
+        else:
+            consecutive = 0
+            stable_since = None
+        # Actual fresh-Worker probes regressed to per-object404 after two
+        # passing sweeps. Require a measured all-object quiet window, not a
+        # blind delay or a discarded failed observation.
+        if consecutive >= 2 and time.monotonic() - stable_since >= 30:
             break
         time.sleep(5)
     else:
