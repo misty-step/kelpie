@@ -55,17 +55,60 @@ jobs:
         run: |
           name=$(python3 -c 'import json; print(json.load(open("cloudflare/wrangler.json"))["name"])')
           python3 cloudflare/verify.py "https://$name.misty-step.workers.dev"
+      - name: Stage isolated synthetic rollback probe B
+        run: |
+          python3 cloudflare/rollback_canary.py absent
+          python3 cloudflare/rollback_canary.py stage
+      - name: Deploy isolated synthetic B (never production)
+        id: synthetic_deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: b069014f6a46558ea9146fb6c4ff8f6c
+          wranglerVersion: '4.151.0'
+          command: deploy --config cloudflare/wrangler.json
+      - name: Observe synthetic B
+        run: python3 cloudflare/rollback_canary.py visible
+      - name: Native rollback to the immediately preceding verified A
+        if: always() && steps.synthetic_deploy.conclusion == 'success'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: b069014f6a46558ea9146fb6c4ff8f6c
+          wranglerVersion: '4.151.0'
+          command: rollback --config cloudflare/wrangler.json --yes
+      - name: Verify restored A and unchanged promotion artifact
+        run: |
+          python3 cloudflare/rollback_canary.py restored
+          sha256sum --check cloudflare/files.sha256
+          name=$(python3 -c 'import json; print(json.load(open("cloudflare/wrangler.json"))["name"])')
+          python3 cloudflare/verify.py "https://$name.misty-step.workers.dev"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cloudflare-http-proof
-          path: cloudflare-http-proof.json
+          path: |
+            cloudflare-http-proof.json
+            rollback-*.json
           if-no-files-found: ignore
+      - name: Refuse stale default-branch promotion
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.CLOUDFLARE_SITE_PROMOTED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')
+          test "$current" = "$GITHUB_SHA"
       - name: Promote the same verified assets (enabled only after migration review)
-        if: github.event_name != 'pull_request' && vars.CLOUDFLARE_SITE_PROMOTED == 'true'
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.CLOUDFLARE_SITE_PROMOTED == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: b069014f6a46558ea9146fb6c4ff8f6c
           wranglerVersion: '4.151.0'
           command: deploy --config cloudflare/wrangler.json --env production
+      - name: Verify every canonical production object
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.CLOUDFLARE_SITE_PROMOTED == 'true'
+        run: |
+          host=$(python3 -c 'import json; print(json.load(open("cloudflare/wrangler.json"))["env"]["production"]["routes"][0]["pattern"])')
+          python3 cloudflare/verify.py "https://$host"
