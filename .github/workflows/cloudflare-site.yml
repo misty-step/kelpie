@@ -82,6 +82,7 @@ jobs:
           wranglerVersion: '4.151.0'
           command: rollback --config cloudflare/wrangler.json --yes
       - name: Verify restored A and unchanged promotion artifact
+        if: always() && steps.synthetic_deploy.conclusion == 'success'
         run: |
           python3 cloudflare/rollback_canary.py restored
           sha256sum --check cloudflare/files.sha256

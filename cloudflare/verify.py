@@ -11,6 +11,7 @@ import urllib.request
 
 base = sys.argv[1].rstrip('/')
 config = json.loads(Path('cloudflare/site.json').read_text())
+readiness_deadline = None
 
 def request(path, digest=None):
     url = base + '/' + urllib.parse.quote(path, safe='/')
@@ -18,7 +19,7 @@ def request(path, digest=None):
         response = urllib.request.urlopen(urllib.request.Request(url, headers={
             'Accept-Encoding': 'identity',
             'User-Agent': 'MistyStep-static-site-parity/1.0 (+https://foundations.mistystep.io/)',
-        }), timeout=30)
+        }), timeout=min(30, max(0.01, readiness_deadline - time.monotonic())) if readiness_deadline is not None else 30)
     except urllib.error.HTTPError as exc:
         response = exc
     with response:
@@ -39,6 +40,8 @@ def request(path, digest=None):
 def checked(pair):
     path, digest = pair
     try:
+        if readiness_deadline is not None and time.monotonic() >= readiness_deadline:
+            raise TimeoutError('readiness budget exhausted before request')
         return dict(request(path, digest), passed=True, base=base)
     except Exception as error:
         return {'path': path, 'base': base, 'passed': False,
@@ -67,10 +70,10 @@ def sweep():
 if '--wait' in sys.argv[2:]:
     # Edge routing and individual assets converge separately. A ready homepage
     # alone is not evidence that the full deployed artifact is ready.
-    deadline = time.monotonic() + 120
+    readiness_deadline = time.monotonic() + 120
     observations = []
     consecutive = 0
-    while time.monotonic() < deadline:
+    while time.monotonic() < readiness_deadline:
         results = sweep()
         observations.append(results)
         Path('cloudflare-readiness-proof.json').write_text(json.dumps(observations, indent=2) + '\n')
@@ -79,7 +82,8 @@ if '--wait' in sys.argv[2:]:
             break
         time.sleep(5)
     else:
-        raise RuntimeError('edge readiness failed after 120s; observations retained')
+        raise RuntimeError('edge readiness deadline exceeded; observations retained')
+    readiness_deadline = None
 results = sweep()
 if not all(result['passed'] for result in results):
     raise RuntimeError('HTTP parity failed; per-object failure evidence retained')
