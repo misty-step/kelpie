@@ -18,6 +18,7 @@ def request(path, digest=None):
     try:
         response = urllib.request.urlopen(urllib.request.Request(url, headers={
             'Accept-Encoding': 'identity',
+            'Cache-Control': 'no-cache',
             'User-Agent': 'MistyStep-static-site-parity/1.0 (+https://foundations.mistystep.io/)',
         }), timeout=min(30, max(0.01, readiness_deadline - time.monotonic())) if readiness_deadline is not None else 30)
     except urllib.error.HTTPError as exc:
