@@ -35,13 +35,27 @@ def request(path, digest=None):
                 raise RuntimeError(result)
         return result
 
+def checked(pair):
+    path, digest = pair
+    try:
+        return dict(request(path, digest), passed=True, base=base)
+    except Exception as error:
+        return {'path': path, 'base': base, 'passed': False,
+                'error_type': type(error).__name__, 'error': str(error)[:500]}
+
+
 files = [line.split('  ', 1) for line in Path('cloudflare/files.sha256').read_text().splitlines()]
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-    results = list(pool.map(lambda pair: request(str(Path(pair[1]).relative_to('_site')), pair[0]), files))
+checks = [(str(Path(path).relative_to('_site')), digest) for digest, path in files]
 index = next(digest for digest, path in files if path == '_site/' + (config['project_prefix'] + '/' if config['project_prefix'] else '') + 'index.html')
-results.append(request(config['project_prefix'] + '/' if config['project_prefix'] else '', index))
-results.append(request('__migration_missing_t_c60b5646__'))
+checks.append((config['project_prefix'] + '/' if config['project_prefix'] else '', index))
+checks.append(('__migration_missing_t_c60b5646__', None))
 if config['repo'].endswith('/the-farm-house-demo'):
-    results.append(request('the-farm-house-demo/_astro/index.2xZUTRFX.css'))
-Path('cloudflare-http-proof.json').write_text(json.dumps(results, indent=2) + '\n')
+    checks.append(('the-farm-house-demo/_astro/index.2xZUTRFX.css', None))
+results = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    for result in pool.map(checked, checks):
+        results.append(result)
+        Path('cloudflare-http-proof.json').write_text(json.dumps(results, indent=2) + '\n')
+if not all(result['passed'] for result in results):
+    raise RuntimeError('HTTP parity failed; per-object failure evidence retained')
 print(f'PASS {len(results)} real HTTP/hash/refusal checks at {base}')
