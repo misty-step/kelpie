@@ -49,31 +49,38 @@ files = [line.split('  ', 1) for line in Path('cloudflare/files.sha256').read_te
 checks = [(str(Path(path).relative_to('_site')), digest) for digest, path in files]
 index = next(digest for digest, path in files if path == '_site/' + (config['project_prefix'] + '/' if config['project_prefix'] else '') + 'index.html')
 homepage = config['project_prefix'] + '/' if config['project_prefix'] else ''
+checks.append((homepage, index))
+checks.append(('__migration_missing_t_c60b5646__', None))
+if config['repo'].endswith('/the-farm-house-demo'):
+    checks.append(('the-farm-house-demo/_astro/index.2xZUTRFX.css', None))
+
+
+def sweep():
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        for result in pool.map(checked, checks):
+            results.append(result)
+            Path('cloudflare-http-proof.json').write_text(json.dumps(results, indent=2) + '\n')
+    return results
+
+
 if '--wait' in sys.argv[2:]:
-    # Fresh workers.dev routing can lag a successful upload. Keep each real
-    # observation and bound readiness separately from the final parity pass.
+    # Edge routing and individual assets converge separately. A ready homepage
+    # alone is not evidence that the full deployed artifact is ready.
     deadline = time.monotonic() + 120
     observations = []
     consecutive = 0
     while time.monotonic() < deadline:
-        result = checked((homepage, index))
-        observations.append(result)
+        results = sweep()
+        observations.append(results)
         Path('cloudflare-readiness-proof.json').write_text(json.dumps(observations, indent=2) + '\n')
-        consecutive = consecutive + 1 if result['passed'] else 0
+        consecutive = consecutive + 1 if all(result['passed'] for result in results) else 0
         if consecutive == 2:
             break
         time.sleep(5)
     else:
         raise RuntimeError('edge readiness failed after 120s; observations retained')
-checks.append((homepage, index))
-checks.append(('__migration_missing_t_c60b5646__', None))
-if config['repo'].endswith('/the-farm-house-demo'):
-    checks.append(('the-farm-house-demo/_astro/index.2xZUTRFX.css', None))
-results = []
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-    for result in pool.map(checked, checks):
-        results.append(result)
-        Path('cloudflare-http-proof.json').write_text(json.dumps(results, indent=2) + '\n')
+results = sweep()
 if not all(result['passed'] for result in results):
     raise RuntimeError('HTTP parity failed; per-object failure evidence retained')
 print(f'PASS {len(results)} real HTTP/hash/refusal checks at {base}')
