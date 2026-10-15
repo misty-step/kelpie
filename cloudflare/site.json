@@ -1,0 +1,8 @@
+{
+  "repo": "misty-step/kelpie",
+  "source_commit": "d40643e9afb8efb7e79409a11e68b1ef96261c7d",
+  "source_folder": "docs",
+  "project_prefix": "kelpie",
+  "before_url": "https://misty-step.github.io/kelpie/",
+  "build_kind": "static"
+}
