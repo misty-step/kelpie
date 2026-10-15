@@ -58,7 +58,7 @@ jobs:
       - name: Verify every deployed object, homepage and refusal
         run: |
           name=$(python3 -c 'import json; print(json.load(open("cloudflare/wrangler.json"))["name"])')
-          python3 cloudflare/verify.py "https://$name.misty-step.workers.dev"
+          python3 cloudflare/verify.py "https://$name.misty-step.workers.dev" --wait
       - name: Stage isolated synthetic rollback probe B
         run: |
           python3 cloudflare/rollback_canary.py absent
@@ -86,13 +86,14 @@ jobs:
           python3 cloudflare/rollback_canary.py restored
           sha256sum --check cloudflare/files.sha256
           name=$(python3 -c 'import json; print(json.load(open("cloudflare/wrangler.json"))["name"])')
-          python3 cloudflare/verify.py "https://$name.misty-step.workers.dev"
+          python3 cloudflare/verify.py "https://$name.misty-step.workers.dev" --wait
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: cloudflare-http-proof
           path: |
             cloudflare-http-proof.json
+            cloudflare-readiness-proof.json
             rollback-*.json
           if-no-files-found: ignore
       - name: Refuse stale default-branch promotion
@@ -115,4 +116,4 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.CLOUDFLARE_SITE_PROMOTED == 'true'
         run: |
           host=$(python3 -c 'import json; print(json.load(open("cloudflare/wrangler.json"))["env"]["production"]["routes"][0]["pattern"])')
-          python3 cloudflare/verify.py "https://$host"
+          python3 cloudflare/verify.py "https://$host" --wait

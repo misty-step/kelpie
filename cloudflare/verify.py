@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -47,7 +48,24 @@ def checked(pair):
 files = [line.split('  ', 1) for line in Path('cloudflare/files.sha256').read_text().splitlines()]
 checks = [(str(Path(path).relative_to('_site')), digest) for digest, path in files]
 index = next(digest for digest, path in files if path == '_site/' + (config['project_prefix'] + '/' if config['project_prefix'] else '') + 'index.html')
-checks.append((config['project_prefix'] + '/' if config['project_prefix'] else '', index))
+homepage = config['project_prefix'] + '/' if config['project_prefix'] else ''
+if '--wait' in sys.argv[2:]:
+    # Fresh workers.dev routing can lag a successful upload. Keep each real
+    # observation and bound readiness separately from the final parity pass.
+    deadline = time.monotonic() + 120
+    observations = []
+    consecutive = 0
+    while time.monotonic() < deadline:
+        result = checked((homepage, index))
+        observations.append(result)
+        Path('cloudflare-readiness-proof.json').write_text(json.dumps(observations, indent=2) + '\n')
+        consecutive = consecutive + 1 if result['passed'] else 0
+        if consecutive == 2:
+            break
+        time.sleep(5)
+    else:
+        raise RuntimeError('edge readiness failed after 120s; observations retained')
+checks.append((homepage, index))
 checks.append(('__migration_missing_t_c60b5646__', None))
 if config['repo'].endswith('/the-farm-house-demo'):
     checks.append(('the-farm-house-demo/_astro/index.2xZUTRFX.css', None))
