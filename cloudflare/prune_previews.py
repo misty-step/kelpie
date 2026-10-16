@@ -74,9 +74,12 @@ def main():
     current = next(r for r in runs if r['id'] == current_id)
     names = {row['id'] for row in cf()}
     keep, delete = plan(names, runs, prefix, pinned, current_id, current_attempt, current['workflow_id'])
+    if '--native-transition' in sys.argv:
+        keep = {pinned, prefix}
+        delete = sorted(name for name in names if re.fullmatch(re.escape(prefix) + r'-[1-9][0-9]*-[1-9][0-9]*', name) and name != pinned)
     # This one unsuffixed migration predecessor was attributed to real Actions
     # provider output before publication. Never infer ownership from prefix alone.
-    if prefix in names:
+    if prefix in names and '--native-transition' not in sys.argv:
         legacy = next(r for r in runs if r['id'] == int(os.environ['LEGACY_PREVIEW_RUN']))
         if legacy['workflow_id'] != current['workflow_id'] or legacy['status'] != 'completed':
             raise RuntimeError('Unattributed legacy preview')
