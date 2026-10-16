@@ -3,12 +3,12 @@ import json
 import os
 from pathlib import Path
 import re
-from uuid import UUID
+
 
 config = json.loads(Path('cloudflare/wrangler.json').read_text())
-versions = re.findall(r'Current Version ID: ([0-9a-f-]{36})', os.environ['WRANGLER_OUTPUT'])
+versions = re.findall(r'Current Version ID: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=\s|$)', os.environ['WRANGLER_OUTPUT'])
 assert len(versions) == 1, 'Expected exactly one native version identity'
-version = str(UUID(versions[0]))
+version = versions[0]
 url = 'https://' + version[:8] + '-' + config['name'] + '.misty-step.workers.dev'
 proof = {'version': version, 'url': url, 'run': os.environ['GITHUB_RUN_ID'],
          'attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'workflow_revision': os.environ['GITHUB_SHA']}
